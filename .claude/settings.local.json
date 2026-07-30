@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -c \"import PySide6; import openpyxl; import pandas; print\\('All packages OK'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(.venv/bin/pip list *)",
+      "Bash(.venv/bin/python -c \"import pytest\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -c ' *)",
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 15 .venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/ -q)",
+      "Bash(apt list *)",
+      "Bash(command -v git)",
+      "Bash(apt-cache policy *)",
+      "Bash(sudo apt install -y git)",
+      "Bash(git --version)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Build output
+build/
+dist/
+dist_auto_number/
+*.spec.bak
+
+# Local data
+data/app.db
+data/*.xlsx
+matama.db
+matama_dist_before_*.db
+src/data/app.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Generated exports and local AI notes
+exports/
+AI_HANDOFF.md
+
+# VS Code / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
