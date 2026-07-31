@@ -4,12 +4,15 @@ Order letter (رسالة الطلبية) — formal supplier request with live l
 Editable meal quantities, auto-fill from student counts, saved history.
 """
 import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
+from PySide6.QtGui import (
+    QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
+)
 from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QFrame, QGroupBox, QHBoxLayout,
+    QComboBox, QDateEdit, QFileDialog, QFrame, QGroupBox, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QScrollArea,
     QSizePolicy, QSpinBox, QSplitter, QTextBrowser,
     QTextEdit, QVBoxLayout, QWidget,
@@ -25,6 +28,7 @@ from data.database import (
     delete_order_letter, get_all_order_letters, get_order_items,
     get_school_settings, get_student_counts, save_order_letter,
 )
+from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE         = "رسالة الطلبية"
@@ -34,6 +38,12 @@ _BTN_PREVIEW   = "👁  معاينة الرسالة"
 _BTN_SAVE      = "💾  حفظ الرسالة"
 _BTN_NEW       = "➕  رسالة جديدة"
 _BTN_DELETE    = "🗑️  حذف"
+_BTN_EXPORT_PDF = "📄  تصدير PDF"
+_PDF_DIALOG_TITLE = "تصدير رسالة الطلبية"
+_PDF_DEFAULT_NAME = "رسالة_الطلبية"
+_PDF_FILTER = "PDF (*.pdf)"
+_PDF_SAVED_OK = "تم تصدير رسالة الطلبية بنجاح."
+_PDF_SAVE_ERROR = "تعذر تصدير رسالة الطلبية:"
 _LBL_DATE      = "تاريخ الرسالة:"
 _LBL_FROM      = "من:"
 _LBL_TO        = "إلى:"
@@ -307,6 +317,193 @@ def _generate_letter_html(
 </body></html>"""
 
 
+def _draw_letter_pdf_text(
+    painter: QPainter,
+    rect: QRectF,
+    text: str,
+    *,
+    size: int,
+    color: str,
+    bold: bool = False,
+    align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter,
+) -> None:
+    font = QFont("Segoe UI")
+    font.setPointSize(size)
+    font.setBold(bold)
+    painter.setFont(font)
+    painter.setPen(QColor(color))
+    option = QTextOption()
+    option.setTextDirection(Qt.LayoutDirection.RightToLeft)
+    option.setAlignment(align)
+    option.setWrapMode(QTextOption.WrapMode.WordWrap)
+    painter.drawText(rect, text, option)
+
+
+def _draw_letter_pdf_cell(
+    painter: QPainter,
+    rect: QRectF,
+    *,
+    background: str,
+    border: str,
+    text: str,
+    text_color: str,
+    size: int,
+    bold: bool = False,
+) -> None:
+    painter.setPen(QPen(QColor(border), 1))
+    painter.setBrush(QColor(background))
+    painter.drawRect(rect)
+    _draw_letter_pdf_text(
+        painter,
+        rect.adjusted(4, 2, -4, -2),
+        text,
+        size=size,
+        color=text_color,
+        bold=bold,
+    )
+
+
+def _write_order_letter_pdf(
+    path: Path,
+    settings,
+    letter_date: str,
+    period_start: str,
+    period_end: str,
+    cards: Dict[str, "_MealQtyCard"],
+    notes: str,
+) -> None:
+    """Render the order letter as an official PDF, using the same
+    header/footer helpers already proven on the meal program PDF export.
+    Mirrors _generate_letter_html's fields exactly, just on a printable page
+    instead of an HTML preview."""
+    s = settings
+    supplier = (s.supplier_name if s else "") or "—"
+    company = (s.company_name if s else "") or "—"
+    supplier_addr = (s.supplier_address if s else "") or "—"
+    contract_num = (s.contract_number if s else "") or "—"
+    city = (s.city if s else "") or "—"
+    director = (s.director if s else "") or "—"
+    # "-" gets visually reordered inside RTL text by Qt's bidi algorithm;
+    # "/" does not (same workaround as daily_contact_screen._format_doc_date).
+    letter_date = letter_date.replace("-", "/")
+    period_start = period_start.replace("-", "/")
+    period_end = period_end.replace("-", "/")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer = QPdfWriter(str(path))
+    writer.setResolution(96)
+    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    writer.setPageOrientation(QPageLayout.Orientation.Portrait)
+    writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter)
+    writer.setTitle(_TITLE)
+
+    painter = QPainter(writer)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        page_w = float(writer.width())
+        page_h = float(writer.height())
+        margin = 38.0
+        content_w = page_w - (margin * 2)
+
+        y = draw_official_pdf_header(
+            painter,
+            page_width=page_w,
+            margin=margin,
+            top=18.0,
+            settings=settings,
+            title=_TITLE,
+        )
+
+        meta_lines = [
+            f"{city}، بتاريخ: {letter_date}",
+            f"إلى السيد/ة: {supplier} — {company}",
+            f"العنوان: {supplier_addr}",
+            f"الموضوع: طلبية المواد الغذائية للفترة من {period_start} إلى {period_end} "
+            f"— في إطار الصفقة رقم {contract_num}",
+        ]
+        for line in meta_lines:
+            _draw_letter_pdf_text(
+                painter,
+                QRectF(margin, y, content_w, 18),
+                line,
+                size=10,
+                color=COLOR_TEXT_SECONDARY,
+                align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+            )
+            y += 20
+        y += 10
+
+        columns = ["الوجبة", "إعدادي", "تأهيلي", "معلمو الداخلية", "المجموع"]
+        col_w = content_w / len(columns)
+        header_h = 32.0
+        row_h = 40.0
+        n_rows = len(_MEAL_ORDER) + 1  # + total row
+        table_h = header_h + (row_h * n_rows)
+        right = margin + content_w
+
+        current_right = right
+        for col_label in columns:
+            rect = QRectF(current_right - col_w, y, col_w, header_h)
+            _draw_letter_pdf_cell(
+                painter, rect,
+                background=COLOR_ACCENT, border=COLOR_ACCENT,
+                text=col_label, text_color="white", size=11, bold=True,
+            )
+            current_right = rect.left()
+
+        row_y = y + header_h
+        grand_total = 0
+        for meal_key, meal_label in _MEAL_ORDER:
+            card = cards[meal_key]
+            tot = card.total()
+            grand_total += tot
+            values = [meal_label, str(card.collegial()), str(card.qualifying()),
+                      str(card.monitors()), str(tot)]
+            current_right = right
+            for index, value in enumerate(values):
+                rect = QRectF(current_right - col_w, row_y, col_w, row_h)
+                _draw_letter_pdf_cell(
+                    painter, rect,
+                    background="#F8F9FA" if index == 0 else "white",
+                    border=COLOR_BORDER,
+                    text=value,
+                    text_color=_MEAL_COLORS.get(meal_key, COLOR_TEXT_PRIMARY) if index == 0 else COLOR_TEXT_PRIMARY,
+                    size=11, bold=(index == 0),
+                )
+                current_right = rect.left()
+            row_y += row_h
+
+        total_rect = QRectF(right - col_w * len(columns), row_y, col_w * len(columns), row_h)
+        _draw_letter_pdf_cell(
+            painter, total_rect,
+            background="#0f172a", border="#0f172a",
+            text=f"الإجمالي العام: {grand_total}", text_color="white", size=12, bold=True,
+        )
+        y += table_h + 16
+
+        if notes.strip():
+            _draw_letter_pdf_text(
+                painter,
+                QRectF(margin, y, content_w, 18),
+                f"ملاحظات: {notes.strip()}",
+                size=10,
+                color=COLOR_TEXT_PRIMARY,
+                align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+            )
+
+        footer_h = 90.0
+        footer_y = page_h - margin - footer_h + 6
+        draw_official_pdf_footer(
+            painter,
+            page_width=page_w,
+            margin=margin,
+            top=footer_y,
+            settings=settings,
+        )
+    finally:
+        painter.end()
+
+
 # ── Main screen ───────────────────────────────────────────────────────────────
 
 class OrderLetterScreen(QWidget):
@@ -359,17 +556,20 @@ class OrderLetterScreen(QWidget):
         save_btn   = _btn(_BTN_SAVE,    COLOR_ACCENT)
         delete_btn = _btn(_BTN_DELETE,  COLOR_DANGER)
         preview_btn= _btn(_BTN_PREVIEW, _INK)
+        export_pdf_btn = _btn(_BTN_EXPORT_PDF, _INK)
 
         new_btn.clicked.connect(self._on_new)
         save_btn.clicked.connect(self._on_save)
         delete_btn.clicked.connect(self._on_delete)
         preview_btn.clicked.connect(self._update_preview)
+        export_pdf_btn.clicked.connect(self._on_export_pdf)
 
         row.addWidget(new_btn)
         row.addWidget(save_btn)
         row.addWidget(delete_btn)
         row.addSpacing(12)
         row.addWidget(preview_btn)
+        row.addWidget(export_pdf_btn)
         row.addStretch()
 
         # History selector
@@ -525,6 +725,35 @@ class OrderLetterScreen(QWidget):
             notes=self._notes_edit.toPlainText(),
         )
         self._preview.setHtml(html)
+
+    def _on_export_pdf(self) -> None:
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            _PDF_DIALOG_TITLE,
+            f"{_PDF_DEFAULT_NAME}_{self._letter_date.date().toString('yyyy-MM-dd')}.pdf",
+            _PDF_FILTER,
+        )
+        if not path_str:
+            return
+
+        path = Path(path_str)
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
+
+        try:
+            settings = get_school_settings()
+            _write_order_letter_pdf(
+                path,
+                settings,
+                letter_date=self._letter_date.date().toString("yyyy-MM-dd"),
+                period_start=self._period_start.date().toString("yyyy-MM-dd"),
+                period_end=self._period_end.date().toString("yyyy-MM-dd"),
+                cards=self._cards,
+                notes=self._notes_edit.toPlainText() if self._notes_edit else "",
+            )
+            QMessageBox.information(self, "تم", _PDF_SAVED_OK)
+        except Exception as exc:
+            QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
 
     def _auto_fill(self) -> None:
         """Fill all three cards with the current student counts."""
