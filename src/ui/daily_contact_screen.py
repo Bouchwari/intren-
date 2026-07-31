@@ -883,16 +883,12 @@ class _MealCard(QGroupBox):
         return super().eventFilter(obj, event)
 
     def _update_totals(self) -> None:
-        pt = self._pg.value() + self._pc.value()
-        ct = self._cg.value() + self._cc.value()
-        qt = self._qg.value() + self._qc.value()
-        mt = self._mo.value() + self._mc.value()
-        gt = pt + ct + qt + mt
-        self._pt_lbl.setText(str(pt))
-        self._ct_lbl.setText(str(ct))
-        self._qt_lbl.setText(str(qt))
-        self._mt_lbl.setText(str(mt))
-        self._gt_lbl.setText(str(gt))
+        contact = self.to_contact("")
+        self._pt_lbl.setText(str(contact.primary_total))
+        self._ct_lbl.setText(str(contact.collegial_total))
+        self._qt_lbl.setText(str(contact.qualifying_total))
+        self._mt_lbl.setText(str(contact.monitors_total))
+        self._gt_lbl.setText(str(contact.grand_total))
 
     # Public API
     def load(self, contact: Optional[DailyContact]) -> None:

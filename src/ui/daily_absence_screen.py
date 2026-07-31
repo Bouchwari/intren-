@@ -173,12 +173,10 @@ class _AbsenceCard(QGroupBox):
             sp.valueChanged.connect(self._update_totals)
 
     def _update_totals(self) -> None:
-        ct = self._cg.value() + self._cp.value() + self._cc.value()
-        qt = self._qg.value() + self._qp.value() + self._qc.value()
-        gt = ct + qt + self._mo.value()
-        self._ct_lbl.setText(str(ct))
-        self._qt_lbl.setText(str(qt))
-        self._gt_lbl.setText(str(gt))
+        absence = self.to_absence("")
+        self._ct_lbl.setText(str(absence.collegial_total))
+        self._qt_lbl.setText(str(absence.qualifying_total))
+        self._gt_lbl.setText(str(absence.grand_total))
 
     def load(self, absence: Optional[DailyAbsence]) -> None:
         if absence is None:
