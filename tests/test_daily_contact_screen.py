@@ -93,13 +93,8 @@ class DailyContactDocumentTests(unittest.TestCase):
         database.add_student(Student(full_name="D", grant_type="full", is_monitor=True))
         database.add_student(Student(full_name="E", student_class="الأولى إعدادي", grant_type="غير صالح"))
         screen = daily_contact_screen.DailyContactScreen()
-        original_random = daily_contact_screen.random.random
-        daily_contact_screen.random.random = lambda: 0.9
-        try:
-            screen._on_mode_changed(True)
-            screen._on_load_today_clicked()
-        finally:
-            daily_contact_screen.random.random = original_random
+        screen._on_mode_changed(True)
+        screen._on_load_today_clicked()
 
         ftour = screen._cards[daily_contact_screen.MEAL_FTOUR].to_contact("2026-06-11")
         ghada = screen._cards[daily_contact_screen.MEAL_GHADA].to_contact("2026-06-11")

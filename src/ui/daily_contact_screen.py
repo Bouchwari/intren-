@@ -25,6 +25,7 @@ from config.settings import (
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
 )
 from core.attendance_estimate import EstimateResult, estimate_attendance
+from core.contact_counts import count_students, empty_counts
 from core.models import DailyContact
 from data.database import (
     get_day_contacts,
@@ -1300,23 +1301,15 @@ class DailyContactScreen(QWidget):
             return
         self._generate_today_counts()
 
-    def _empty_generated_counts(self) -> Dict[str, Dict[str, int]]:
-        return {
-            "primary": {"full": 0, "lunch": 0},
-            "collegial": {"full": 0, "lunch": 0},
-            "qualifying": {"full": 0, "lunch": 0},
-            "monitors": {"full": 0, "lunch": 0},
-        }
-
     def _generate_today_counts(self) -> None:
         students = get_all_students()
         if not students:
-            self._apply_generated_counts(self._empty_generated_counts())
+            self._apply_generated_counts(empty_counts())
             self._set_estimate_note(None)
             self._show_toast(_TOAST_NO_STUDENTS)
             return
 
-        active_roster = self._compute_active_roster(students)
+        active_roster = self._flatten_counts(count_students(students))
         target_date = self._date_edit.date().toPython()
         history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
 
@@ -1326,73 +1319,24 @@ class DailyContactScreen(QWidget):
         # — matching the previous behavior of one roll applied to all 3 cards.
         result = estimate_attendance(active_roster, history, target_date, MEAL_GHADA)
 
-        self._apply_generated_counts(self._counts_from_roster(result.counts))
+        self._apply_generated_counts(self._unflatten_counts(result.counts))
         self._set_estimate_note(result)
 
-    def _compute_active_roster(self, students: list) -> Dict[str, int]:
-        """Every active student, split by category and grant kind — the
-        denominator `estimate_attendance` scales its historical rates by."""
-        roster = {
-            f"{category}_{grant_kind}": 0
-            for category in ("primary", "collegial", "qualifying", "monitors")
-            for grant_kind in ("full", "lunch")
+    def _flatten_counts(self, counts: Dict[str, Dict[str, int]]) -> Dict[str, int]:
+        """`{category: {grant_kind: count}}` -> `{category_grant_kind: count}`
+        — the flat shape `estimate_attendance` scales its historical rates by."""
+        return {
+            f"{category}_{grant_kind}": count
+            for category, grants in counts.items()
+            for grant_kind, count in grants.items()
         }
-        for student in students:
-            category = self._student_category(student)
-            grant_kind = self._student_grant_kind(student)
-            if not category or not grant_kind:
-                continue
-            roster[f"{category}_{grant_kind}"] += 1
-        return roster
 
-    def _counts_from_roster(self, roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
-        counts = self._empty_generated_counts()
+    def _unflatten_counts(self, roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
+        counts = empty_counts()
         for key, value in roster.items():
             category, grant_kind = key.rsplit("_", 1)
             counts[category][grant_kind] = value
         return counts
-
-    def _student_category(self, student) -> str | None:
-        if getattr(student, "is_monitor", False):
-            return "monitors"
-        level_text = " ".join(
-            str(value or "")
-            for value in (
-                getattr(student, "student_class", ""),
-                getattr(student, "cycle", ""),
-                getattr(student, "education_type", ""),
-            )
-        )
-        normalized = (
-            level_text
-            .replace("أ", "ا")
-            .replace("إ", "ا")
-            .replace("آ", "ا")
-        )
-        if "ابتدائي" in normalized:
-            return "primary"
-        if "اعدادي" in normalized:
-            return "collegial"
-        if "تاهيلي" in normalized:
-            return "qualifying"
-        return None
-
-    def _student_grant_kind(self, student) -> str | None:
-        grant_type = str(getattr(student, "grant_type", "") or "").strip()
-        grant_number = str(getattr(student, "grant_number", "") or "").strip()
-        grant_text = f"{grant_type} {grant_number}".strip()
-        normalized = (
-            grant_text
-            .replace("أ", "ا")
-            .replace("إ", "ا")
-            .replace("آ", "ا")
-            .replace("ة", "ه")
-        )
-        if grant_type == "full" or "منحه كامله" in normalized or "كاملة" in grant_text:
-            return "full"
-        if grant_type in {"half", "lunch", "meal", "ghada"} or "وجبه غذاء" in normalized or "غداء" in grant_text:
-            return "lunch"
-        return None
 
     def _apply_generated_counts(self, counts: Dict[str, Dict[str, int]]) -> None:
         primary = counts.get("primary", {})
