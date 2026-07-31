@@ -46,7 +46,16 @@
       "Bash(.venv/bin/python -m py_compile src/ui/daily_contact_screen.py)",
       "Bash(.venv/bin/python -m py_compile src/ui/daily_contact_screen.py src/ui/daily_absence_screen.py)",
       "Bash(.venv/bin/python -m py_compile src/data/database.py src/data/settings_repo.py src/data/students_repo.py src/data/program_repo.py src/data/daily_repo.py src/data/monthly_repo.py)",
-      "Bash(timeout 8 .venv/bin/python -c ' *)"
+      "Bash(timeout 8 .venv/bin/python -c ' *)",
+      "Bash(pdftoppm -png -r 100 /tmp/test_contact.pdf /tmp/test_contact)",
+      "Read(//tmp/**)",
+      "Bash(pdftoppm -png -r 100 /tmp/test_contact2.pdf /tmp/test_contact2)",
+      "Bash(pdftoppm -png -r 200 -x 0 -y 380 -W 1654 -H 100 /tmp/test_contact2.pdf /tmp/test_contact2_zoom)",
+      "Bash(pdftoppm -png -r 200 -x 0 -y 400 -W 1654 -H 60 /tmp/test_contact2.pdf /tmp/test_contact2_zoom2)",
+      "Bash(pdftoppm -png -r 200 /tmp/test_contact2.pdf /tmp/full200)",
+      "Bash(python3 -c \"from PIL import Image; print\\('ok'\\)\")",
+      "Bash(pdftoppm -png -r 200 /tmp/test_contact3.pdf /tmp/full3)",
+      "Bash(rm -f /tmp/test_contact*.pdf /tmp/test_contact*.png /tmp/full*.png /tmp/crop_line.png *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
