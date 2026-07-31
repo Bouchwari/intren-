@@ -10,8 +10,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from PySide6.QtCore import QDate, QEvent, QPoint, QRectF, QTimer, Signal, Qt
-from PySide6.QtGui import QColor, QFont, QIntValidator, QPainter
+from PySide6.QtCore import QDate, QEvent, QMarginsF, QPoint, QRectF, QTimer, Signal, Qt
+from PySide6.QtGui import (
+    QColor, QFont, QIntValidator, QPageLayout, QPageSize, QPainter, QPdfWriter,
+    QPen, QTextOption,
+)
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QComboBox, QFileDialog, QFrame, QGraphicsDropShadowEffect,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
@@ -27,6 +30,7 @@ from config.settings import (
 from core.attendance_estimate import EstimateResult, estimate_attendance
 from core.contact_counts import count_students, empty_counts
 from core.models import DailyContact
+from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
 from data.database import (
     get_day_contacts,
     get_all_students,
@@ -70,6 +74,12 @@ _DOCX_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _DOCX_SAVED_OK = "تم تحميل ورقة الاتصال اليومية بنجاح."
 _DOCX_TEMPLATE_MISSING = "تعذر العثور على نموذج ورقة الاتصال اليومية."
 _DOCX_SAVE_ERROR = "تعذر تحميل ورقة الاتصال اليومية:"
+_BTN_EXPORT_PDF = "📄  تصدير PDF"
+_PDF_DIALOG_TITLE = "تصدير ورقة الاتصال اليومية"
+_PDF_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
+_PDF_FILTER = "PDF (*.pdf)"
+_PDF_SAVED_OK = "تم تصدير ورقة الاتصال اليومية بنجاح."
+_PDF_SAVE_ERROR = "تعذر تصدير ورقة الاتصال اليومية:"
 _CONTACT_TEMPLATE_FILE = "ورقة الاتصال  اليومية.docx"
 _WORD_FILTER = "Word (*.docx)"
 
@@ -329,6 +339,213 @@ def _fill_contact_document_xml(
         total_index = meal_index + 1
         if total_index < len(total_cells):
             _set_cell_text(total_cells[total_index], contact.grand_total)
+
+
+def _draw_contact_pdf_text(
+    painter: QPainter,
+    rect: QRectF,
+    text: str,
+    *,
+    size: int,
+    color: str,
+    bold: bool = False,
+    align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter,
+) -> None:
+    font = QFont("Segoe UI")
+    font.setPointSize(size)
+    font.setBold(bold)
+    painter.setFont(font)
+    painter.setPen(QColor(color))
+    option = QTextOption()
+    option.setTextDirection(Qt.LayoutDirection.RightToLeft)
+    option.setAlignment(align)
+    option.setWrapMode(QTextOption.WrapMode.WordWrap)
+    painter.drawText(rect, text, option)
+
+
+def _draw_contact_pdf_cell(
+    painter: QPainter,
+    rect: QRectF,
+    *,
+    background: str,
+    border: str,
+    text: str,
+    text_color: str,
+    size: int,
+    bold: bool = False,
+) -> None:
+    painter.setPen(QPen(QColor(border), 1))
+    painter.setBrush(QColor(background))
+    painter.drawRect(rect)
+    _draw_contact_pdf_text(
+        painter,
+        rect.adjusted(4, 2, -4, -2),
+        text,
+        size=size,
+        color=text_color,
+        bold=bold,
+    )
+
+
+def _write_daily_contact_pdf(
+    path: Path,
+    date_str: str,
+    contacts: List[DailyContact],
+    *,
+    document_number: str = "",
+    place: str = "",
+) -> None:
+    """Render the daily contact sheet as an official PDF, using the same
+    header/footer helpers already proven on the meal program PDF export.
+    academy/province/school_name are not accepted here (unlike the DOCX
+    writer) because draw_official_pdf_header reads them straight off the
+    SchoolSettings row instead of taking them as separate strings."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    contact_by_meal = {contact.meal_type: contact for contact in contacts}
+    display_date = _format_doc_date(date_str)
+    place_text = place.strip() or "..............."
+
+    writer = QPdfWriter(str(path))
+    writer.setResolution(96)
+    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    writer.setPageOrientation(QPageLayout.Orientation.Portrait)
+    writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter)
+    writer.setTitle(_TITLE)
+
+    painter = QPainter(writer)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        page_w = float(writer.width())
+        page_h = float(writer.height())
+        margin = 38.0
+        content_w = page_w - (margin * 2)
+        settings = get_school_settings()
+
+        title = f"{_TITLE}  رقم: {document_number or '....'} ليوم: {display_date}"
+        table_y = draw_official_pdf_header(
+            painter,
+            page_width=page_w,
+            margin=margin,
+            top=18.0,
+            settings=settings,
+            title=title,
+        )
+        table_y += 4
+        _draw_contact_pdf_text(
+            painter,
+            QRectF(margin, table_y, content_w, 18),
+            f"حرر ب{place_text} بتاريخ {display_date}",
+            size=10,
+            color=COLOR_TEXT_SECONDARY,
+            align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+        )
+        table_y += 24
+
+        rows_data = [
+            (_LBL_PRIMARY, "primary_granted", "primary_complement"),
+            (_LBL_COLLEGIAL, "collegial_granted", "collegial_complement"),
+            (_LBL_QUALIFYING, "qualifying_granted", "qualifying_complement"),
+            (_LBL_MONITORS, "monitors", "monitors_complement"),
+        ]
+
+        footer_h = 90.0
+        table_x = margin
+        table_w = content_w
+        header_rows_h = 62.0
+        n_data_rows = len(rows_data) + 1  # + total row
+        table_h = page_h - table_y - footer_h - margin
+        row_h = (table_h - header_rows_h) / n_data_rows
+        label_w = 130.0
+        meal_w = (table_w - label_w) / len(_MEAL_ORDER)
+        sub_w = meal_w / 2
+        right = table_x + table_w
+
+        # Header row 1: label column + one cell per meal name
+        label_header = QRectF(right - label_w, table_y, label_w, header_rows_h / 2)
+        _draw_contact_pdf_cell(
+            painter, label_header,
+            background=COLOR_ACCENT, border=COLOR_ACCENT,
+            text="", text_color="white", size=11, bold=True,
+        )
+        current_right = label_header.left()
+        for _, meal_label in _MEAL_ORDER:
+            rect = QRectF(current_right - meal_w, table_y, meal_w, header_rows_h / 2)
+            _draw_contact_pdf_cell(
+                painter, rect,
+                background=COLOR_ACCENT, border=COLOR_ACCENT,
+                text=meal_label, text_color="white", size=12, bold=True,
+            )
+            current_right = rect.left()
+
+        # Header row 2: granted / complement sub-labels under each meal
+        sub_y = table_y + (header_rows_h / 2)
+        label_subheader = QRectF(right - label_w, sub_y, label_w, header_rows_h / 2)
+        _draw_contact_pdf_cell(
+            painter, label_subheader,
+            background=COLOR_ACCENT, border="white",
+            text="الفئة", text_color="white", size=10, bold=True,
+        )
+        current_right = label_subheader.left()
+        for _ in _MEAL_ORDER:
+            for sub_label in (_LBL_GRANTED, _LBL_COMPLEMENT):
+                rect = QRectF(current_right - sub_w, sub_y, sub_w, header_rows_h / 2)
+                _draw_contact_pdf_cell(
+                    painter, rect,
+                    background=COLOR_ACCENT, border="white",
+                    text=sub_label, text_color="white", size=9,
+                )
+                current_right = rect.left()
+
+        # Data rows
+        for row_index, (row_label, granted_field, complement_field) in enumerate(rows_data):
+            row_y = table_y + header_rows_h + (row_index * row_h)
+            label_rect = QRectF(right - label_w, row_y, label_w, row_h)
+            _draw_contact_pdf_cell(
+                painter, label_rect,
+                background="#F8F9FA", border=COLOR_BORDER,
+                text=row_label, text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
+            )
+            current_right = label_rect.left()
+            for meal_key, _ in _MEAL_ORDER:
+                contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
+                for field_name in (granted_field, complement_field):
+                    rect = QRectF(current_right - sub_w, row_y, sub_w, row_h)
+                    _draw_contact_pdf_cell(
+                        painter, rect,
+                        background="white", border=COLOR_BORDER,
+                        text=str(getattr(contact, field_name)), text_color=COLOR_TEXT_PRIMARY, size=11,
+                    )
+                    current_right = rect.left()
+
+        # Total row
+        total_y = table_y + header_rows_h + (len(rows_data) * row_h)
+        total_label_rect = QRectF(right - label_w, total_y, label_w, row_h)
+        _draw_contact_pdf_cell(
+            painter, total_label_rect,
+            background=COLOR_ACCENT, border=COLOR_ACCENT,
+            text=_LBL_TOTAL, text_color="white", size=11, bold=True,
+        )
+        current_right = total_label_rect.left()
+        for meal_key, _ in _MEAL_ORDER:
+            contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
+            rect = QRectF(current_right - meal_w, total_y, meal_w, row_h)
+            _draw_contact_pdf_cell(
+                painter, rect,
+                background="#F8F9FA", border=COLOR_BORDER,
+                text=str(contact.grand_total), text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
+            )
+            current_right = rect.left()
+
+        footer_y = page_h - margin - footer_h + 6
+        draw_official_pdf_footer(
+            painter,
+            page_width=page_w,
+            margin=margin,
+            top=footer_y,
+            settings=settings,
+        )
+    finally:
+        painter.end()
 
 
 def _spin_style(read_only: bool = False) -> str:
@@ -1010,8 +1227,11 @@ class DailyContactScreen(QWidget):
         save_btn.clicked.connect(self._on_save)
         export_btn = self._btn(_BTN_EXPORT_DOC, _INK)
         export_btn.clicked.connect(self._on_export_docx)
+        export_pdf_btn = self._btn(_BTN_EXPORT_PDF, _INK)
+        export_pdf_btn.clicked.connect(self._on_export_pdf)
         actions_row.addWidget(save_btn)
         actions_row.addWidget(export_btn)
+        actions_row.addWidget(export_pdf_btn)
         actions.layout().addLayout(actions_row)
 
         document = self._toolbar_group(_LBL_DOCUMENT)
@@ -1388,6 +1608,9 @@ class DailyContactScreen(QWidget):
     def _default_docx_name(self) -> str:
         return f"{_DOCX_DEFAULT_NAME}_{self._selected_date_str()}.docx"
 
+    def _default_pdf_name(self) -> str:
+        return f"{_PDF_DEFAULT_NAME}_{self._selected_date_str()}.pdf"
+
     def _load_today(self) -> None:
         self._date_edit.setDate(QDate.currentDate())
         self._load_selected()
@@ -1487,6 +1710,41 @@ class DailyContactScreen(QWidget):
             QMessageBox.information(self, "تم", _DOCX_SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"{_DOCX_SAVE_ERROR}\n{exc}")
+
+    def _on_export_pdf(self) -> None:
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            _PDF_DIALOG_TITLE,
+            self._default_pdf_name(),
+            _PDF_FILTER,
+        )
+        if not path_str:
+            return
+
+        path = Path(path_str)
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
+
+        try:
+            settings = get_school_settings()
+            date_str = self._selected_date_str()
+            contacts = self._current_contacts()
+            document_number = self._document_number_int()
+            _write_daily_contact_pdf(
+                path,
+                date_str,
+                contacts,
+                document_number=str(document_number),
+                place=settings.city if settings else "",
+            )
+            for contact in contacts:
+                save_daily_contact(contact)
+            record_daily_contact_document(date_str, document_number, "print", contacts, str(path))
+            self._advance_document_number(document_number)
+            self._refresh_history()
+            QMessageBox.information(self, "تم", _PDF_SAVED_OK)
+        except Exception as exc:
+            QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
 
     def _on_save(self) -> None:
         date_str = self._selected_date_str()
