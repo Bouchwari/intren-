@@ -44,7 +44,9 @@
       "Bash(git stash *)",
       "Bash(.venv/bin/python -m pytest tests/test_daily_contact_screen.py::DailyContactDocumentTests::test_auto_mode_generates_counts_from_students -v)",
       "Bash(.venv/bin/python -m py_compile src/ui/daily_contact_screen.py)",
-      "Bash(.venv/bin/python -m py_compile src/ui/daily_contact_screen.py src/ui/daily_absence_screen.py)"
+      "Bash(.venv/bin/python -m py_compile src/ui/daily_contact_screen.py src/ui/daily_absence_screen.py)",
+      "Bash(.venv/bin/python -m py_compile src/data/database.py src/data/settings_repo.py src/data/students_repo.py src/data/program_repo.py src/data/daily_repo.py src/data/monthly_repo.py)",
+      "Bash(timeout 8 .venv/bin/python -c ' *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
