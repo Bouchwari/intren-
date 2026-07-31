@@ -19,7 +19,22 @@
       "Bash(git --version)",
       "Bash(git init *)",
       "Bash(git config *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(.venv/bin/python src/main.py)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import ftfy; print\\(ftfy.__version__\\)\")",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import ftfy\")",
+      "Bash(python3 -m pip install ftfy --quiet)",
+      "Bash(python3 -c \"import ftfy; print\\('OK', ftfy.__version__\\)\")",
+      "Bash(python3)",
+      "Bash(mkdir -p /home/abbdo/Downloads/intren--main/.claude/skills/matama/references)",
+      "Bash(cp /tmp/claude-1000/-home-abbdo-Downloads-intren--main/6bdcb839-559a-4e29-9578-d5d1fbf15c40/scratchpad/SKILL.md.raw /home/abbdo/Downloads/intren--main/.claude/skills/matama/SKILL.md *)",
+      "Bash(grep -E \"\\\\.db$|matama\\\\.db\")"
+    ],
+    "additionalDirectories": [
+      "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
     ]
   }
 }
