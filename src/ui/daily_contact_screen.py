@@ -4,7 +4,6 @@ Daily contact sheet (ورقة الاتصال اليومية) — count beneficia
 Layout: date picker → 3 meal cards (فطور/غداء/عشاء) → history table.
 """
 import datetime
-import random
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -25,12 +24,14 @@ from config.settings import (
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
 )
+from core.attendance_estimate import EstimateResult, estimate_attendance
 from core.models import DailyContact
 from data.database import (
     get_day_contacts,
     get_all_students,
     get_daily_contact_document_number_draft,
     get_next_daily_contact_document_number,
+    get_recent_contacts,
     get_recent_daily_contact_documents,
     get_school_settings,
     record_daily_contact_document,
@@ -108,6 +109,15 @@ _MODE_AUTO_LABEL = "وضع: توليد تلقائي 🤖"
 _TOAST_MANUAL = "تم التحويل إلى الإدخال اليدوي — يمكنك تعديل الأرقام"
 _TOAST_AUTO = "اضغط تحميل اليوم لتوليد الأرقام تلقائياً"
 _TOAST_NO_STUDENTS = "لا يوجد تلاميذ في اللائحة"
+_ESTIMATE_HISTORY_LIMIT = 900
+_CONFIDENCE_LABELS = {"low": "منخفضة", "medium": "متوسطة", "high": "عالية"}
+_ESTIMATE_NOTE_LOW = (
+    "⚠️ لا يوجد سجل كافٍ لتقدير الحضور (متوفر {records} من 3 أيام على الأقل لنفس اليوم والوجبة)"
+    " — تم عرض العدد الكامل للائحة، يرجى المراجعة يدوياً."
+)
+_ESTIMATE_NOTE_ESTIMATED = (
+    "🧮 أعداد مُقدَّرة اعتماداً على {records} يوم سابق لنفس اليوم والوجبة — مستوى الثقة: {confidence}."
+)
 _WORD_NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
 _XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 _W_NS = _WORD_NS["w"]
@@ -960,6 +970,7 @@ class DailyContactScreen(QWidget):
 
         inner.addLayout(self._build_header())
         inner.addWidget(self._build_date_bar())
+        inner.addWidget(self._build_estimate_note())
         inner.addLayout(self._build_cards_row())
         inner.addWidget(self._build_history())
         inner.addStretch()
@@ -1087,6 +1098,32 @@ class DailyContactScreen(QWidget):
         self._date_edit.dateChanged.connect(self._sync_document_number)
         self._number_edit.textChanged.connect(self._remember_document_number)
         return panel
+
+    def _build_estimate_note(self) -> QLabel:
+        label = QLabel("")
+        label.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        label.setWordWrap(True)
+        label.setStyleSheet(
+            f"color:{_INK}; background:#fbf6e3; border:1px solid #e6d68a;"
+            "border-radius:10px; padding:6px 12px; font-size:12px;"
+        )
+        label.setVisible(False)
+        self._estimate_note = label
+        return label
+
+    def _set_estimate_note(self, result: EstimateResult | None) -> None:
+        if result is None:
+            self._estimate_note.setVisible(False)
+            return
+        if result.reason == "insufficient_history":
+            text = _ESTIMATE_NOTE_LOW.format(records=result.records_used)
+        else:
+            text = _ESTIMATE_NOTE_ESTIMATED.format(
+                records=result.records_used,
+                confidence=_CONFIDENCE_LABELS[result.confidence],
+            )
+        self._estimate_note.setText(text)
+        self._estimate_note.setVisible(True)
 
     def _toolbar_group(self, title: str) -> QFrame:
         frame = QFrame()
@@ -1254,6 +1291,8 @@ class DailyContactScreen(QWidget):
         self._auto_mode = auto
         for card in self._cards.values():
             card.set_read_only(auto)
+        if not auto:
+            self._set_estimate_note(None)
         self._show_toast(_TOAST_AUTO if auto else _TOAST_MANUAL)
 
     def _on_load_today_clicked(self) -> None:
@@ -1271,22 +1310,47 @@ class DailyContactScreen(QWidget):
 
     def _generate_today_counts(self) -> None:
         students = get_all_students()
-        counts = self._empty_generated_counts()
         if not students:
-            self._apply_generated_counts(counts)
+            self._apply_generated_counts(self._empty_generated_counts())
+            self._set_estimate_note(None)
             self._show_toast(_TOAST_NO_STUDENTS)
             return
 
+        active_roster = self._compute_active_roster(students)
+        target_date = self._date_edit.date().toPython()
+        history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
+
+        # Same-weekday, same-meal history differs by meal (e.g. ghada carries
+        # the وجبة غذاء attendance pattern; ftour/asha never do), but a single
+        # generate action should still produce one set of numbers for the day
+        # — matching the previous behavior of one roll applied to all 3 cards.
+        result = estimate_attendance(active_roster, history, target_date, MEAL_GHADA)
+
+        self._apply_generated_counts(self._counts_from_roster(result.counts))
+        self._set_estimate_note(result)
+
+    def _compute_active_roster(self, students: list) -> Dict[str, int]:
+        """Every active student, split by category and grant kind — the
+        denominator `estimate_attendance` scales its historical rates by."""
+        roster = {
+            f"{category}_{grant_kind}": 0
+            for category in ("primary", "collegial", "qualifying", "monitors")
+            for grant_kind in ("full", "lunch")
+        }
         for student in students:
             category = self._student_category(student)
             grant_kind = self._student_grant_kind(student)
             if not category or not grant_kind:
                 continue
-            if random.random() <= 0.2:
-                continue
-            counts[category][grant_kind] += 1
+            roster[f"{category}_{grant_kind}"] += 1
+        return roster
 
-        self._apply_generated_counts(counts)
+    def _counts_from_roster(self, roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
+        counts = self._empty_generated_counts()
+        for key, value in roster.items():
+            category, grant_kind = key.rsplit("_", 1)
+            counts[category][grant_kind] = value
+        return counts
 
     def _student_category(self, student) -> str | None:
         if getattr(student, "is_monitor", False):
