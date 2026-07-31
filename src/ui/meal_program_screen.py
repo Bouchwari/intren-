@@ -830,6 +830,7 @@ class MealProgramScreen(QWidget):
                 margin=margin,
                 top=footer_y,
                 settings=settings,
+                roles=["رئيس المؤسسة", "مسير المصالح المادية والمالية", "الحارس العام للداخلية"],
             )
         finally:
             painter.end()

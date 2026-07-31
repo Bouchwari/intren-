@@ -537,12 +537,14 @@ def _write_daily_contact_pdf(
             current_right = rect.left()
 
         footer_y = page_h - margin - footer_h + 6
+        # WARDEN + HEADMASTER — the signers documents.md lists for contact_sheet.
         draw_official_pdf_footer(
             painter,
             page_width=page_w,
             margin=margin,
             top=footer_y,
             settings=settings,
+            roles=["الحارس العام للداخلية", "مدير المؤسسة"],
         )
     finally:
         painter.end()

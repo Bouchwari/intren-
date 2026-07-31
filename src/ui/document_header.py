@@ -174,16 +174,16 @@ def draw_official_pdf_footer(
     margin: float,
     top: float,
     settings: SchoolSettings | None,
+    roles: list[str],
 ) -> None:
-    """Draw the official signature area at the bottom of exported documents."""
+    """Draw the official signature area at the bottom of exported documents.
+    roles are the Arabic signer labels for this specific document (see
+    SKILL.md section 1 and documents.md's per-document signature lists) —
+    every caller must pass the roles that document actually needs, since
+    they differ per document."""
     content_width = page_width - (margin * 2)
-    col_w = content_width / 3
+    col_w = content_width / len(roles)
     footer_h = 66.0
-    roles = [
-        "رئيس المؤسسة",
-        "مسير المصالح المادية والمالية",
-        "الحارس العام للداخلية",
-    ]
 
     right = page_width - margin
     y = top + 10

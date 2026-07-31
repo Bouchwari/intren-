@@ -493,12 +493,14 @@ def _write_order_letter_pdf(
 
         footer_h = 90.0
         footer_y = page_h - margin - footer_h + 6
+        # STEWARD + HEADMASTER — the signers documents.md lists for order_letter.
         draw_official_pdf_footer(
             painter,
             page_width=page_w,
             margin=margin,
             top=footer_y,
             settings=settings,
+            roles=["مسير المصالح المادية والمالية", "مدير المؤسسة"],
         )
     finally:
         painter.end()
