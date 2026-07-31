@@ -38,7 +38,11 @@
       "Bash(python3 -m unittest discover -s tests -v)",
       "Bash(python -m pytest tests/test_contact_counts.py -v)",
       "Bash(python3 -m pytest tests/test_contact_counts.py -v)",
-      "Bash(.venv/bin/python -m pytest tests/test_contact_counts.py -v)"
+      "Bash(.venv/bin/python -m pytest tests/test_contact_counts.py -v)",
+      "Bash(.venv/bin/python -c \"import ast,sys; ast.parse\\(open\\('src/core/contact_counts.py'\\).read\\(\\)\\)\")",
+      "Bash(.venv/bin/python -m pytest tests/ -v)",
+      "Bash(git stash *)",
+      "Bash(.venv/bin/python -m pytest tests/test_daily_contact_screen.py::DailyContactDocumentTests::test_auto_mode_generates_counts_from_students -v)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
