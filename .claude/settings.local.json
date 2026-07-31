@@ -31,7 +31,14 @@
       "Bash(python3)",
       "Bash(mkdir -p /home/abbdo/Downloads/intren--main/.claude/skills/matama/references)",
       "Bash(cp /tmp/claude-1000/-home-abbdo-Downloads-intren--main/6bdcb839-559a-4e29-9578-d5d1fbf15c40/scratchpad/SKILL.md.raw /home/abbdo/Downloads/intren--main/.claude/skills/matama/SKILL.md *)",
-      "Bash(grep -E \"\\\\.db$|matama\\\\.db\")"
+      "Bash(grep -E \"\\\\.db$|matama\\\\.db\")",
+      "Bash(git commit *)",
+      "Bash(python3 -m unittest tests.test_attendance_estimate -v)",
+      "Bash(python3 -m py_compile src/ui/daily_contact_screen.py src/core/attendance_estimate.py)",
+      "Bash(python3 -m unittest discover -s tests -v)",
+      "Bash(python -m pytest tests/test_contact_counts.py -v)",
+      "Bash(python3 -m pytest tests/test_contact_counts.py -v)",
+      "Bash(.venv/bin/python -m pytest tests/test_contact_counts.py -v)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
