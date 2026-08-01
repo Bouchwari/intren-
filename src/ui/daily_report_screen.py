@@ -31,7 +31,7 @@ from data.database import (
     save_daily_report,
 )
 from ui.daily_contact_screen import _academy_line, _province_line
-from ui.document_header import _template_header_image
+from ui.document_header import _template_header_image, official_font_family
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "التقرير اليومي"
@@ -164,7 +164,7 @@ def _draw_report_text(
     bold: bool = False,
     align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignRight,
 ) -> None:
-    font = QFont("Segoe UI")
+    font = QFont(official_font_family())
     font.setPointSize(size)
     font.setBold(bold)
     painter.setFont(font)
@@ -342,21 +342,22 @@ def _draw_report_header(
         logo_h = logo_w * image.height() / image.width()
         painter.drawImage(QRectF(x + (width - logo_w) / 2, y, logo_w, logo_h), image)
 
-    line_y = y + logo_h + 3
-    line_h = 12.0
+    line_y = y + logo_h + 5
+    line_h = 13.0
+    line_gap = 4.0
     for line in (academy, province, school_name):
         _draw_report_text(
             painter, QRectF(x, line_y, width, line_h), line,
             size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
         )
-        line_y += line_h
+        line_y += line_h + line_gap
 
     _draw_report_text(
-        painter, QRectF(x, line_y + 2, width, 13),
+        painter, QRectF(x, line_y + 3, width, 14),
         f"{_SUBTITLE}  —  بتاريخ: {display_date}",
         size=8.5, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
     )
-    return line_y + 2 + 13 + 4
+    return line_y + 3 + 14 + 5
 
 
 def _draw_report_copy(
