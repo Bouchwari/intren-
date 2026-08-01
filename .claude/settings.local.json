@@ -101,7 +101,8 @@
       "Bash(pdftoppm -png -r 150 /tmp/report_v6.pdf /tmp/report_v6)",
       "Bash(right - label_w)",
       "Bash(pdftoppm -png -r 150 /tmp/report_v7.pdf /tmp/report_v7)",
-      "Bash(pdftoppm -png -r 150 /tmp/report_v8.pdf /tmp/report_v8)"
+      "Bash(pdftoppm -png -r 150 /tmp/report_v8.pdf /tmp/report_v8)",
+      "Bash(pdftoppm -png -r 150 /tmp/report_v9.pdf /tmp/report_v9)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"

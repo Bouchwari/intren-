@@ -154,6 +154,9 @@ def _section_title(text: str, color: str = "") -> QLabel:
 # _write_daily_report_docx can reuse the exact same rows without touching
 # this file's PDF drawing code.
 
+_BODY_FONT = "Segoe UI"
+
+
 def _draw_report_text(
     painter: QPainter,
     rect: QRectF,
@@ -163,8 +166,12 @@ def _draw_report_text(
     color: str,
     bold: bool = False,
     align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignRight,
+    font_family: str = _BODY_FONT,
 ) -> None:
-    font = QFont(official_font_family())
+    """font_family defaults to a plain, legible font for table content.
+    Pass official_font_family() explicitly for header/footer text only —
+    the calligraphic font is meant to brand those, not the dense tables."""
+    font = QFont(font_family)
     font.setPointSize(size)
     font.setBold(bold)
     painter.setFont(font)
@@ -349,6 +356,7 @@ def _draw_report_header(
         _draw_report_text(
             painter, QRectF(x, line_y, width, line_h), line,
             size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+            font_family=official_font_family(),
         )
         line_y += line_h + line_gap
 
@@ -356,6 +364,7 @@ def _draw_report_header(
         painter, QRectF(x, line_y + 3, width, 14),
         f"{_SUBTITLE}  —  بتاريخ: {display_date}",
         size=8.5, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+        font_family=official_font_family(),
     )
     return line_y + 3 + 14 + 5
 
@@ -423,6 +432,7 @@ def _draw_report_copy(
         _draw_report_text(
             painter, QRectF(rx, sig_y, sig_w, 14), role,
             size=8.5, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+            font_family=official_font_family(),
         )
         painter.setPen(QPen(QColor("#9CA3AF"), 1))
         painter.drawLine(int(rx + 24), int(sig_line_y), int(rx + sig_w - 24), int(sig_line_y))
