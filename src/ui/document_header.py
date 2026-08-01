@@ -7,8 +7,11 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QImage, QPainter, QPen, QTextOption,
 )
+from PySide6.QtWidgets import QMessageBox, QWidget
 
-from config.settings import BASE_DIR
+from config.settings import (
+    BASE_DIR, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
+)
 from core.models import SchoolSettings
 
 
@@ -201,3 +204,23 @@ def draw_official_pdf_footer(
         line_y = rect.bottom() - 12
         painter.setPen(QPen(QColor("#9CA3AF"), 1))
         painter.drawLine(int(rect.left() + 28), int(line_y), int(rect.right() - 28), int(line_y))
+
+
+def ask_export_format(parent: QWidget) -> str | None:
+    """Shared PDF-or-Word chooser, shown when the export-format preference
+    (see settings_repo.get_document_export_format) is set to 'ask'. Returns
+    EXPORT_FORMAT_PDF/DOCX, or None if the user cancelled."""
+    box = QMessageBox(parent)
+    box.setWindowTitle("اختر صيغة التصدير")
+    box.setText("هل تريد تصدير الوثيقة بصيغة PDF أم Word؟")
+    pdf_btn = box.addButton("PDF", QMessageBox.ButtonRole.AcceptRole)
+    docx_btn = box.addButton("Word", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("إلغاء", QMessageBox.ButtonRole.RejectRole)
+    box.exec()
+
+    clicked = box.clickedButton()
+    if clicked is pdf_btn:
+        return EXPORT_FORMAT_PDF
+    if clicked is docx_btn:
+        return EXPORT_FORMAT_DOCX
+    return None

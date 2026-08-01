@@ -4,8 +4,10 @@ Order letter (رسالة الطلبية) — formal supplier request with live l
 Editable meal quantities, auto-fill from student counts, saved history.
 """
 import datetime
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
 from PySide6.QtGui import (
@@ -22,13 +24,18 @@ from config.settings import (
     COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
 )
 from core.models import OrderItem, OrderLetter
 from data.database import (
-    delete_order_letter, get_all_order_letters, get_order_items,
-    get_school_settings, get_student_counts, save_order_letter,
+    delete_order_letter, get_all_order_letters, get_document_export_format,
+    get_order_items, get_school_settings, get_student_counts, save_order_letter,
 )
-from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
+from ui.daily_contact_screen import (
+    _normalize_template_name, _set_cell_text, _set_docx_text, _template_dirs,
+    _WORD_NS,
+)
+from ui.document_header import ask_export_format, draw_official_pdf_footer, draw_official_pdf_header
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE         = "رسالة الطلبية"
@@ -38,12 +45,17 @@ _BTN_PREVIEW   = "👁  معاينة الرسالة"
 _BTN_SAVE      = "💾  حفظ الرسالة"
 _BTN_NEW       = "➕  رسالة جديدة"
 _BTN_DELETE    = "🗑️  حذف"
-_BTN_EXPORT_PDF = "📄  تصدير PDF"
+_BTN_EXPORT    = "📄  تصدير"
 _PDF_DIALOG_TITLE = "تصدير رسالة الطلبية"
 _PDF_DEFAULT_NAME = "رسالة_الطلبية"
 _PDF_FILTER = "PDF (*.pdf)"
 _PDF_SAVED_OK = "تم تصدير رسالة الطلبية بنجاح."
 _PDF_SAVE_ERROR = "تعذر تصدير رسالة الطلبية:"
+_DOCX_DIALOG_TITLE = "تصدير رسالة الطلبية"
+_DOCX_DEFAULT_NAME = "رسالة_الطلبية"
+_WORD_FILTER = "Word (*.docx)"
+_DOCX_SAVED_OK = "تم تصدير رسالة الطلبية بنجاح."
+_DOCX_SAVE_ERROR = "تعذر تصدير رسالة الطلبية:"
 _LBL_DATE      = "تاريخ الرسالة:"
 _LBL_FROM      = "من:"
 _LBL_TO        = "إلى:"
@@ -201,6 +213,10 @@ def _generate_letter_html(
     contract_num = s.contract_number if s else "—"
     school_year  = s.school_year if s else "—"
 
+    # Matches templets/رسالة الطلبية.docx — the real form the directorate
+    # accepts shows one aggregate count per meal, not a collegial/qualifying/
+    # monitors breakdown. The meal cards still collect that breakdown on
+    # screen (useful for planning); only the generated document is aggregate.
     meal_rows = ""
     grand_total = 0
     for meal_key, meal_label in _MEAL_ORDER:
@@ -211,10 +227,8 @@ def _generate_letter_html(
         <tr>
             <td style="padding:8px 14px; font-weight:bold; color:{_MEAL_COLORS[meal_key]};">
                 {meal_label}</td>
-            <td style="padding:8px 14px; text-align:center;">{card.collegial()}</td>
-            <td style="padding:8px 14px; text-align:center;">{card.qualifying()}</td>
-            <td style="padding:8px 14px; text-align:center;">{card.monitors()}</td>
             <td style="padding:8px 14px; text-align:center; font-weight:bold;">{tot}</td>
+            <td style="padding:8px 14px;"></td>
         </tr>"""
 
     notes_block = (
@@ -283,18 +297,16 @@ def _generate_letter_html(
   <thead>
     <tr>
       <th>الوجبة</th>
-      <th>إعدادي</th>
-      <th>تأهيلي</th>
-      <th>معلمو الداخلية</th>
-      <th>المجموع الكلي</th>
+      <th>الأعداد</th>
+      <th>ملاحظات</th>
     </tr>
   </thead>
   <tbody>
     {meal_rows}
     <tr class="total-row">
       <td>الإجمالي العام</td>
-      <td colspan="3"></td>
       <td style="background:{COLOR_ACCENT};">{grand_total}</td>
+      <td></td>
     </tr>
   </tbody>
 </table>
@@ -304,13 +316,16 @@ def _generate_letter_html(
 <!-- Closing -->
 <p class="greet">تفضلوا بقبول فائق الاحترام والتقدير.</p>
 
-<!-- Signatures -->
+<!-- Signatures — matches templets/رسالة الطلبية.docx's signature line -->
 <div class="signature">
+  <div class="sig-block">
+    <div class="sig-line">مسير المصالح المادية والمالية</div>
+  </div>
   <div class="sig-block">
     <div class="sig-line">مدير المؤسسة<br><b>{director}</b></div>
   </div>
   <div class="sig-block">
-    <div class="sig-line">ختم المؤسسة</div>
+    <div class="sig-line">ممثل الشركة النائلة</div>
   </div>
 </div>
 
@@ -433,8 +448,12 @@ def _write_order_letter_pdf(
             y += 20
         y += 10
 
-        columns = ["الوجبة", "إعدادي", "تأهيلي", "معلمو الداخلية", "المجموع"]
-        col_w = content_w / len(columns)
+        # Matches templets/رسالة الطلبية.docx — the real accepted form shows
+        # one aggregate count per meal, not a collegial/qualifying/monitors
+        # breakdown. The on-screen cards still collect that breakdown for
+        # planning; only the generated document is aggregate.
+        columns = ["الوجبة", "الأعداد", "ملاحظات"]
+        col_widths = [content_w * 0.25, content_w * 0.20, content_w * 0.55]
         header_h = 32.0
         row_h = 40.0
         n_rows = len(_MEAL_ORDER) + 1  # + total row
@@ -442,7 +461,7 @@ def _write_order_letter_pdf(
         right = margin + content_w
 
         current_right = right
-        for col_label in columns:
+        for col_label, col_w in zip(columns, col_widths):
             rect = QRectF(current_right - col_w, y, col_w, header_h)
             _draw_letter_pdf_cell(
                 painter, rect,
@@ -457,10 +476,9 @@ def _write_order_letter_pdf(
             card = cards[meal_key]
             tot = card.total()
             grand_total += tot
-            values = [meal_label, str(card.collegial()), str(card.qualifying()),
-                      str(card.monitors()), str(tot)]
+            values = [meal_label, str(tot), ""]
             current_right = right
-            for index, value in enumerate(values):
+            for index, (value, col_w) in enumerate(zip(values, col_widths)):
                 rect = QRectF(current_right - col_w, row_y, col_w, row_h)
                 _draw_letter_pdf_cell(
                     painter, rect,
@@ -473,7 +491,7 @@ def _write_order_letter_pdf(
                 current_right = rect.left()
             row_y += row_h
 
-        total_rect = QRectF(right - col_w * len(columns), row_y, col_w * len(columns), row_h)
+        total_rect = QRectF(right - sum(col_widths), row_y, sum(col_widths), row_h)
         _draw_letter_pdf_cell(
             painter, total_rect,
             background="#0f172a", border="#0f172a",
@@ -493,17 +511,107 @@ def _write_order_letter_pdf(
 
         footer_h = 90.0
         footer_y = page_h - margin - footer_h + 6
-        # STEWARD + HEADMASTER — the signers documents.md lists for order_letter.
+        # STEWARD + HEADMASTER + CONTRACTOR — matches the signature line in
+        # the real templets/رسالة الطلبية.docx form (templets/ wins over
+        # documents.md's shorter STEWARD+HEADMASTER list where they differ).
         draw_official_pdf_footer(
             painter,
             page_width=page_w,
             margin=margin,
             top=footer_y,
             settings=settings,
-            roles=["مسير المصالح المادية والمالية", "مدير المؤسسة"],
+            roles=["مسير المصالح المادية والمالية", "مدير المؤسسة", "ممثل الشركة النائلة"],
         )
     finally:
         painter.end()
+
+
+def _find_order_letter_template() -> Path | None:
+    for directory in _template_dirs():
+        if not directory.exists():
+            continue
+        for candidate in directory.glob("*.docx"):
+            if "رسالةالطلبية" in _normalize_template_name(candidate.stem):
+                return candidate
+    return None
+
+
+def _fill_order_letter_document_xml(
+    root: ET.Element,
+    *,
+    school_year: str,
+    number: str,
+    display_date: str,
+    supplier_line: str,
+    place: str,
+    cards: Dict[str, "_MealQtyCard"],
+) -> None:
+    for paragraph in root.findall(".//w:p", _WORD_NS):
+        text = "".join(node.text or "" for node in paragraph.findall(".//w:t", _WORD_NS))
+        stripped = text.strip()
+        if stripped.startswith("الموسم الدراسي"):
+            _set_docx_text(paragraph, f"الموسم الدراسي  :  {school_year}")
+        elif stripped.startswith("رسالة الطلبية رقم"):
+            _set_docx_text(paragraph, f"رسالة الطلبية رقم: {number}")
+        elif stripped.startswith("ليوم"):
+            _set_docx_text(paragraph, f"ليوم : {display_date}")
+        elif stripped.startswith("صاحب الصفقة"):
+            _set_docx_text(paragraph, f"صاحب الصفقة:   {supplier_line}")
+        elif "حرر ب" in stripped:
+            _set_docx_text(paragraph, f"حرر ب{place} بتاريخ : {display_date}")
+
+    tables = root.findall(".//w:tbl", _WORD_NS)
+    if not tables:
+        return
+    rows = tables[0].findall("./w:tr", _WORD_NS)
+    for row_index, (meal_key, _) in enumerate(_MEAL_ORDER, start=1):
+        if row_index >= len(rows):
+            break
+        cells = rows[row_index].findall("./w:tc", _WORD_NS)
+        if len(cells) >= 2:
+            _set_cell_text(cells[1], cards[meal_key].total())
+
+
+def _write_order_letter_docx(
+    path: Path,
+    settings,
+    letter_date: str,
+    cards: Dict[str, "_MealQtyCard"],
+) -> None:
+    """Fill the real order-letter template (templets/رسالة الطلبية.docx) —
+    the form the directorate actually accepts. Unlike the PDF/HTML preview,
+    the template has no period_start/period_end or free-notes fields, only
+    a single date and one aggregate count per meal — matched exactly rather
+    than invented, per PLAN's 'templets/ wins' rule."""
+    template_path = _find_order_letter_template()
+    if template_path is None:
+        raise FileNotFoundError("تعذر العثور على نموذج رسالة الطلبية.")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    s = settings
+    school_year = (s.school_year if s else "") or "—"
+    supplier = (s.supplier_name if s else "") or ""
+    company = (s.company_name if s else "") or ""
+    supplier_line = " — ".join(part for part in (supplier, company) if part) or "—"
+    place = (s.city if s else "") or "—"
+    display_date = letter_date.replace("-", "/")
+
+    with ZipFile(template_path, "r") as source, ZipFile(path, "w", ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "word/document.xml":
+                root = ET.fromstring(data)
+                _fill_order_letter_document_xml(
+                    root,
+                    school_year=school_year,
+                    number="....",
+                    display_date=display_date,
+                    supplier_line=supplier_line,
+                    place=place,
+                    cards=cards,
+                )
+                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+            target.writestr(item, data)
 
 
 # ── Main screen ───────────────────────────────────────────────────────────────
@@ -558,20 +666,20 @@ class OrderLetterScreen(QWidget):
         save_btn   = _btn(_BTN_SAVE,    COLOR_ACCENT)
         delete_btn = _btn(_BTN_DELETE,  COLOR_DANGER)
         preview_btn= _btn(_BTN_PREVIEW, _INK)
-        export_pdf_btn = _btn(_BTN_EXPORT_PDF, _INK)
+        export_btn = _btn(_BTN_EXPORT,  _INK)
 
         new_btn.clicked.connect(self._on_new)
         save_btn.clicked.connect(self._on_save)
         delete_btn.clicked.connect(self._on_delete)
         preview_btn.clicked.connect(self._update_preview)
-        export_pdf_btn.clicked.connect(self._on_export_pdf)
+        export_btn.clicked.connect(self._on_export)
 
         row.addWidget(new_btn)
         row.addWidget(save_btn)
         row.addWidget(delete_btn)
         row.addSpacing(12)
         row.addWidget(preview_btn)
-        row.addWidget(export_pdf_btn)
+        row.addWidget(export_btn)
         row.addStretch()
 
         # History selector
@@ -728,34 +836,48 @@ class OrderLetterScreen(QWidget):
         )
         self._preview.setHtml(html)
 
-    def _on_export_pdf(self) -> None:
+    def _on_export(self) -> None:
+        fmt = get_document_export_format()
+        if fmt == EXPORT_FORMAT_ASK:
+            fmt = ask_export_format(self)
+            if fmt is None:
+                return
+        is_pdf = fmt == EXPORT_FORMAT_PDF
+        letter_date = self._letter_date.date().toString("yyyy-MM-dd")
+
         path_str, _ = QFileDialog.getSaveFileName(
             self,
-            _PDF_DIALOG_TITLE,
-            f"{_PDF_DEFAULT_NAME}_{self._letter_date.date().toString('yyyy-MM-dd')}.pdf",
-            _PDF_FILTER,
+            _PDF_DIALOG_TITLE if is_pdf else _DOCX_DIALOG_TITLE,
+            f"{_PDF_DEFAULT_NAME if is_pdf else _DOCX_DEFAULT_NAME}_{letter_date}."
+            f"{'pdf' if is_pdf else 'docx'}",
+            _PDF_FILTER if is_pdf else _WORD_FILTER,
         )
         if not path_str:
             return
 
         path = Path(path_str)
-        if path.suffix.lower() != ".pdf":
-            path = path.with_suffix(".pdf")
+        suffix = ".pdf" if is_pdf else ".docx"
+        if path.suffix.lower() != suffix:
+            path = path.with_suffix(suffix)
 
         try:
             settings = get_school_settings()
-            _write_order_letter_pdf(
-                path,
-                settings,
-                letter_date=self._letter_date.date().toString("yyyy-MM-dd"),
-                period_start=self._period_start.date().toString("yyyy-MM-dd"),
-                period_end=self._period_end.date().toString("yyyy-MM-dd"),
-                cards=self._cards,
-                notes=self._notes_edit.toPlainText() if self._notes_edit else "",
-            )
-            QMessageBox.information(self, "تم", _PDF_SAVED_OK)
+            if is_pdf:
+                _write_order_letter_pdf(
+                    path,
+                    settings,
+                    letter_date=letter_date,
+                    period_start=self._period_start.date().toString("yyyy-MM-dd"),
+                    period_end=self._period_end.date().toString("yyyy-MM-dd"),
+                    cards=self._cards,
+                    notes=self._notes_edit.toPlainText() if self._notes_edit else "",
+                )
+            else:
+                _write_order_letter_docx(path, settings, letter_date, self._cards)
+            QMessageBox.information(self, "تم", _PDF_SAVED_OK if is_pdf else _DOCX_SAVED_OK)
         except Exception as exc:
-            QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
+            error_prefix = _PDF_SAVE_ERROR if is_pdf else _DOCX_SAVE_ERROR
+            QMessageBox.critical(self, "خطأ", f"{error_prefix}\n{exc}")
 
     def _auto_fill(self) -> None:
         """Fill all three cards with the current student counts."""

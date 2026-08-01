@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
+    QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QPushButton,
     QScrollArea, QFrame, QSizePolicy, QVBoxLayout, QWidget,
 )
@@ -17,12 +17,13 @@ from config.settings import (
     COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     DB_PATH, LOGO_PATH,
+    EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF, EXPORT_FORMAT_LABELS,
 )
 from core.excel_handler import load_level_catalog
 from core.models import SchoolSettings
 from data.database import (
-    get_level_preferences, get_school_settings,
-    save_level_preferences, save_school_settings,
+    get_document_export_format, get_level_preferences, get_school_settings,
+    save_document_export_format, save_level_preferences, save_school_settings,
 )
 
 _PAGE_BG = "#f5f5f0"
@@ -38,6 +39,7 @@ _GRP_CONTRACT   = "صفقة المطعمة"
 _GRP_PRICES     = "أثمان الوجبات"
 _GRP_LEVELS     = "المستويات المستعملة"
 _GRP_LOGO       = "شعار المؤسسة"
+_GRP_EXPORT     = "تصدير الوثائق"
 _GRP_BACKUP     = "النسخ الاحتياطي"
 _BTN_SAVE       = "💾  حفظ التغييرات"
 _BTN_LOGO       = "📁  اختيار صورة الشعار"
@@ -161,6 +163,7 @@ class SettingsScreen(QWidget):
         self._build_prices_section()
         self._build_levels_section()
         self._build_logo_section()
+        self._build_export_format_section()
         self._build_backup_section()
         self._form_layout.addStretch()
 
@@ -360,6 +363,44 @@ class SettingsScreen(QWidget):
         layout.addLayout(right_col)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
 
+    def _build_export_format_section(self) -> None:
+        grp = QGroupBox(_GRP_EXPORT)
+        grp.setMinimumWidth(760)
+        grp.setMaximumWidth(1120)
+        grp.setStyleSheet(f"""
+            QGroupBox {{
+                background:{_PANEL_BG};
+                font-weight:bold; font-size:13px; color:{_INK};
+                border:1px solid {_PANEL_BORDER}; border-radius:16px;
+                margin-top:14px; padding:14px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin:margin; subcontrol-position:top right;
+                padding:0 8px; right:14px;
+            }}
+        """)
+        layout = QVBoxLayout(grp)
+        note = QLabel(
+            "عند الضغط على زر الطباعة/التصدير في ورقة الاتصال أو رسالة الطلبية، "
+            "اختر هل يسألك التطبيق PDF أو Word في كل مرة، أو يستعمل صيغة ثابتة دائماً."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px; font-weight:400;")
+
+        self._export_format_combo = QComboBox()
+        self._export_format_combo.setMinimumHeight(36)
+        self._export_format_combo.setStyleSheet(
+            f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
+            "padding:4px 10px; font-size:13px;"
+        )
+        for value in (EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX):
+            self._export_format_combo.addItem(EXPORT_FORMAT_LABELS[value], value)
+        self._export_format_combo.currentIndexChanged.connect(self._on_export_format_changed)
+
+        layout.addWidget(note)
+        layout.addWidget(self._export_format_combo)
+        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+
     def _build_backup_section(self) -> None:
         grp = QGroupBox(_GRP_BACKUP)
         grp.setMinimumWidth(760)
@@ -394,6 +435,7 @@ class SettingsScreen(QWidget):
     # ── Load / Save ────────────────────────────────────────────────────────
 
     def _load_current_settings(self) -> None:
+        self._load_export_format_preference()
         s = get_school_settings()
         if s is None:
             self._load_level_preferences()
@@ -431,6 +473,17 @@ class SettingsScreen(QWidget):
         if hasattr(self, "_type_checks"):
             for label, check in self._type_checks.items():
                 check.setChecked(not education_types or label in education_types)
+
+    def _load_export_format_preference(self) -> None:
+        value = get_document_export_format()
+        index = self._export_format_combo.findData(value)
+        self._export_format_combo.blockSignals(True)
+        self._export_format_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._export_format_combo.blockSignals(False)
+
+    def _on_export_format_changed(self, _index: int) -> None:
+        value = self._export_format_combo.currentData()
+        save_document_export_format(value)
 
     def _selected_level_preferences(self) -> tuple[list[str], list[str]] | None:
         cycle_checks = getattr(self, "_cycle_checks", {})

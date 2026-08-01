@@ -104,3 +104,20 @@ ARABIC_DAY_NAMES: list = [
     "الاثنين", "الثلاثاء", "الأربعاء", "الخميس",
     "الجمعة", "السبت", "الأحد",
 ]
+
+# ── Document export format preference ─────────────────────────────────────────
+# Controls what the single "طباعة/تصدير" button on each document screen does:
+# ASK shows a PDF-or-Word popup every click; PDF/DOCX skip the popup and
+# always export in that format. Stored in app_preferences (see settings_repo).
+
+EXPORT_FORMAT_ASK: str  = "ask"
+EXPORT_FORMAT_PDF: str  = "pdf"
+EXPORT_FORMAT_DOCX: str = "docx"
+
+EXPORT_FORMAT_DEFAULT: str = EXPORT_FORMAT_ASK
+
+EXPORT_FORMAT_LABELS: dict[str, str] = {
+    EXPORT_FORMAT_ASK:  "اسأل في كل مرة",
+    EXPORT_FORMAT_PDF:  "PDF",
+    EXPORT_FORMAT_DOCX: "Word",
+}

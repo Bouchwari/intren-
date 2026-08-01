@@ -1,8 +1,12 @@
 """School settings CRUD — moved out of database.py (Stage 1.5, Prompt 6)."""
 from typing import Optional
 
+from config.settings import EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF
 from core.models import SchoolSettings
 from data.database import _connection
+
+_EXPORT_FORMAT_KEY = "document_export_format"
+_VALID_EXPORT_FORMATS = {EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX}
 
 
 def save_school_settings(s: SchoolSettings) -> None:
@@ -89,3 +93,25 @@ def get_school_settings() -> Optional[SchoolSettings]:
         price_asha_ramadan=_r("price_asha_ramadan"),
         price_shour=_r("price_shour"),
     )
+
+
+def get_document_export_format() -> str:
+    """Return the saved export-format preference (EXPORT_FORMAT_ASK/PDF/DOCX),
+    defaulting to asking every time when nothing has been saved yet."""
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_preferences WHERE key=?", (_EXPORT_FORMAT_KEY,)
+        ).fetchone()
+    value = row["value"] if row else ""
+    return value if value in _VALID_EXPORT_FORMATS else EXPORT_FORMAT_ASK
+
+
+def save_document_export_format(value: str) -> None:
+    """Persist which format the export button should use (or ask each time)."""
+    if value not in _VALID_EXPORT_FORMATS:
+        value = EXPORT_FORMAT_ASK
+    with _connection() as conn:
+        conn.execute("""
+            INSERT INTO app_preferences (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, (_EXPORT_FORMAT_KEY, value))

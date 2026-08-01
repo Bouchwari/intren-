@@ -26,15 +26,17 @@ from config.settings import (
     COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
 )
 from core.attendance_estimate import EstimateResult, estimate_attendance
 from core.contact_counts import count_students, empty_counts
 from core.models import DailyContact
-from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
+from ui.document_header import ask_export_format, draw_official_pdf_footer, draw_official_pdf_header
 from data.database import (
     get_day_contacts,
     get_all_students,
     get_daily_contact_document_number_draft,
+    get_document_export_format,
     get_next_daily_contact_document_number,
     get_recent_contacts,
     get_recent_daily_contact_documents,
@@ -74,7 +76,6 @@ _DOCX_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _DOCX_SAVED_OK = "تم تحميل ورقة الاتصال اليومية بنجاح."
 _DOCX_TEMPLATE_MISSING = "تعذر العثور على نموذج ورقة الاتصال اليومية."
 _DOCX_SAVE_ERROR = "تعذر تحميل ورقة الاتصال اليومية:"
-_BTN_EXPORT_PDF = "📄  تصدير PDF"
 _PDF_DIALOG_TITLE = "تصدير ورقة الاتصال اليومية"
 _PDF_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _PDF_FILTER = "PDF (*.pdf)"
@@ -1228,12 +1229,9 @@ class DailyContactScreen(QWidget):
         save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS)
         save_btn.clicked.connect(self._on_save)
         export_btn = self._btn(_BTN_EXPORT_DOC, _INK)
-        export_btn.clicked.connect(self._on_export_docx)
-        export_pdf_btn = self._btn(_BTN_EXPORT_PDF, _INK)
-        export_pdf_btn.clicked.connect(self._on_export_pdf)
+        export_btn.clicked.connect(self._on_export)
         actions_row.addWidget(save_btn)
         actions_row.addWidget(export_btn)
-        actions_row.addWidget(export_pdf_btn)
         actions.layout().addLayout(actions_row)
 
         document = self._toolbar_group(_LBL_DOCUMENT)
@@ -1675,78 +1673,61 @@ class DailyContactScreen(QWidget):
             save_daily_contact(contact)
         return contacts
 
-    def _on_export_docx(self) -> None:
+    def _on_export(self) -> None:
+        fmt = get_document_export_format()
+        if fmt == EXPORT_FORMAT_ASK:
+            fmt = ask_export_format(self)
+            if fmt is None:
+                return
+        is_pdf = fmt == EXPORT_FORMAT_PDF
+
         path_str, _ = QFileDialog.getSaveFileName(
             self,
-            _DOCX_DIALOG_TITLE,
-            self._default_docx_name(),
-            _WORD_FILTER,
+            _PDF_DIALOG_TITLE if is_pdf else _DOCX_DIALOG_TITLE,
+            self._default_pdf_name() if is_pdf else self._default_docx_name(),
+            _PDF_FILTER if is_pdf else _WORD_FILTER,
         )
         if not path_str:
             return
 
         path = Path(path_str)
-        if path.suffix.lower() != ".docx":
-            path = path.with_suffix(".docx")
+        suffix = ".pdf" if is_pdf else ".docx"
+        if path.suffix.lower() != suffix:
+            path = path.with_suffix(suffix)
 
         try:
             settings = get_school_settings()
             date_str = self._selected_date_str()
             contacts = self._current_contacts()
             document_number = self._document_number_int()
-            _write_daily_contact_docx(
-                path,
-                date_str,
-                contacts,
-                document_number=str(document_number),
-                place=settings.city if settings else "",
-                academy=settings.aref if settings else "",
-                province=settings.direction_provinciale if settings else "",
-                school_name=settings.school_name if settings else "",
-            )
+            if is_pdf:
+                _write_daily_contact_pdf(
+                    path,
+                    date_str,
+                    contacts,
+                    document_number=str(document_number),
+                    place=settings.city if settings else "",
+                )
+            else:
+                _write_daily_contact_docx(
+                    path,
+                    date_str,
+                    contacts,
+                    document_number=str(document_number),
+                    place=settings.city if settings else "",
+                    academy=settings.aref if settings else "",
+                    province=settings.direction_provinciale if settings else "",
+                    school_name=settings.school_name if settings else "",
+                )
             for contact in contacts:
                 save_daily_contact(contact)
             record_daily_contact_document(date_str, document_number, "print", contacts, str(path))
             self._advance_document_number(document_number)
             self._refresh_history()
-            QMessageBox.information(self, "تم", _DOCX_SAVED_OK)
+            QMessageBox.information(self, "تم", _PDF_SAVED_OK if is_pdf else _DOCX_SAVED_OK)
         except Exception as exc:
-            QMessageBox.critical(self, "خطأ", f"{_DOCX_SAVE_ERROR}\n{exc}")
-
-    def _on_export_pdf(self) -> None:
-        path_str, _ = QFileDialog.getSaveFileName(
-            self,
-            _PDF_DIALOG_TITLE,
-            self._default_pdf_name(),
-            _PDF_FILTER,
-        )
-        if not path_str:
-            return
-
-        path = Path(path_str)
-        if path.suffix.lower() != ".pdf":
-            path = path.with_suffix(".pdf")
-
-        try:
-            settings = get_school_settings()
-            date_str = self._selected_date_str()
-            contacts = self._current_contacts()
-            document_number = self._document_number_int()
-            _write_daily_contact_pdf(
-                path,
-                date_str,
-                contacts,
-                document_number=str(document_number),
-                place=settings.city if settings else "",
-            )
-            for contact in contacts:
-                save_daily_contact(contact)
-            record_daily_contact_document(date_str, document_number, "print", contacts, str(path))
-            self._advance_document_number(document_number)
-            self._refresh_history()
-            QMessageBox.information(self, "تم", _PDF_SAVED_OK)
-        except Exception as exc:
-            QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
+            error_prefix = _PDF_SAVE_ERROR if is_pdf else _DOCX_SAVE_ERROR
+            QMessageBox.critical(self, "خطأ", f"{error_prefix}\n{exc}")
 
     def _on_save(self) -> None:
         date_str = self._selected_date_str()

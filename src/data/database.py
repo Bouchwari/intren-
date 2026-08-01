@@ -225,6 +225,8 @@ def init_database() -> None:
 from data.settings_repo import (  # noqa: E402
     save_school_settings,
     get_school_settings,
+    get_document_export_format,
+    save_document_export_format,
 )
 from data.students_repo import (  # noqa: E402
     get_all_students,
