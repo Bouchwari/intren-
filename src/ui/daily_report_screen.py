@@ -189,6 +189,13 @@ def _fill_daily_report_document_xml(
     i = 0
     while i < n:
         paragraph = paragraphs[i]
+        if paragraph.findall(".//w:p", _WORD_NS):
+            # Wrapper paragraph (e.g. a floating text box) — its .//w:t
+            # search would pick up every nested paragraph's text combined,
+            # so leave it alone and process the real nested paragraphs
+            # individually as this loop reaches them.
+            i += 1
+            continue
         text = "".join(nd.text or "" for nd in paragraph.findall(".//w:t", _WORD_NS)).strip()
         if text.startswith("الأكاديمية") and i + 2 < n:
             _set_docx_text(paragraph, _academy_line(academy))
@@ -196,7 +203,10 @@ def _fill_daily_report_document_xml(
             _set_docx_text(paragraphs[i + 2], school_name.strip() or "اسم المؤسسة")
             i += 3
             continue
-        if "ليوم" in text:
+        if "ليوم:" in text:
+            # NOT a bare "ليوم" check — that substring also occurs inside
+            # "اليومي" in the document's own title ("التقرير اليومي..."),
+            # which would wrongly overwrite the title paragraphs too.
             _set_docx_text(paragraph, f" الخاص بتتبع القسم الداخلي ليوم:  {display_date}")
         elif re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", text):
             _set_docx_text(paragraph, display_date)
