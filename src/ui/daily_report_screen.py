@@ -312,9 +312,12 @@ def _draw_report_header(
     settings,
     date_str: str,
 ) -> float:
-    """Compact official header: ministry crest + identity lines + title/date
-    — the same crest used on the contact sheet and order letter, sized down
-    to fit two copies on one sheet. Returns the Y position below it."""
+    """Official crest + identity lines, big-to-small (region, province,
+    school) stacked one per line — same order and pattern as
+    draw_official_pdf_header, which contact_sheet and order_letter already
+    use correctly. Crammed onto a single line, bidi reorders the segments
+    and the hierarchy is lost; that was the bug in the first version of
+    this header. Returns the Y position below it."""
     s = settings
     academy = _academy_line(s.aref if s else "")
     province = _province_line(s.direction_provinciale if s else "")
@@ -324,22 +327,25 @@ def _draw_report_header(
     image = _template_header_image()
     logo_h = 0.0
     if not image.isNull():
-        logo_w = min(width * 0.09, 60.0)
+        logo_w = min(width * 0.17, 170.0)
         logo_h = logo_w * image.height() / image.width()
         painter.drawImage(QRectF(x + (width - logo_w) / 2, y, logo_w, logo_h), image)
 
-    text_y = y + logo_h + 2
+    line_y = y + logo_h + 3
+    line_h = 12.0
+    for line in (academy, province, school_name):
+        _draw_report_text(
+            painter, QRectF(x, line_y, width, line_h), line,
+            size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+        )
+        line_y += line_h
+
     _draw_report_text(
-        painter, QRectF(x + 8, text_y, width - 16, 13),
-        f"{school_name}  —  {academy}  —  {province}",
-        size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
-    )
-    _draw_report_text(
-        painter, QRectF(x + 8, text_y + 13, width - 16, 13),
+        painter, QRectF(x, line_y + 2, width, 13),
         f"{_SUBTITLE}  —  بتاريخ: {display_date}",
-        size=8, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+        size=8.5, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
     )
-    return text_y + 26 + 4
+    return line_y + 2 + 13 + 4
 
 
 def _draw_report_copy(
