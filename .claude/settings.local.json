@@ -93,7 +93,8 @@
       "Bash(pdftoppm -png -r 110 ~/lo_check/generated3.pdf ~/lo_check/gen3_page)",
       "Bash(rm -rf ~/lo_check ~/lo_profile ~/lo_profile2 ~/lo_profile3)",
       "Bash(pkill -f \"src/main.py\")",
-      "Bash(pdftoppm -png -r 150 /tmp/report_v2.pdf /tmp/report_v2)"
+      "Bash(pdftoppm -png -r 150 /tmp/report_v2.pdf /tmp/report_v2)",
+      "Bash(pdftoppm -png -r 150 /tmp/report_v3.pdf /tmp/report_v3)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"

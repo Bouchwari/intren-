@@ -31,6 +31,7 @@ from data.database import (
     save_daily_report,
 )
 from ui.daily_contact_screen import _academy_line, _province_line
+from ui.document_header import _template_header_image
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "التقرير اليومي"
@@ -153,24 +154,6 @@ def _section_title(text: str, color: str = "") -> QLabel:
 # _write_daily_report_docx can reuse the exact same rows without touching
 # this file's PDF drawing code.
 
-def _report_copy_lines(report: DailyReport) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
-    """Return (hygiene_lines, quality_lines, building_lines), each a list of
-    (item label, rating text or '—' if not yet rated) — the same shape any
-    future renderer (PDF or Word) would draw from."""
-    def _lines(items: List[Tuple[str, str]], scale: List[str]) -> List[Tuple[str, str]]:
-        result = []
-        for field, label in items:
-            rating = getattr(report, field)
-            result.append((label, scale[rating] if 0 <= rating < len(scale) else _NOT_RATED))
-        return result
-
-    return (
-        _lines(_HYGIENE_ITEMS, _HYGIENE_SCALE),
-        _lines(_QUALITY_ITEMS, _THREE_SCALE),
-        _lines(_BUILDING_ITEMS, _THREE_SCALE),
-    )
-
-
 def _draw_report_text(
     painter: QPainter,
     rect: QRectF,
@@ -196,37 +179,167 @@ def _draw_report_text(
     painter.drawText(rect, text, option)
 
 
-def _draw_report_section(
+def _draw_report_cell(
+    painter: QPainter,
+    rect: QRectF,
+    text: str,
+    *,
+    background: str,
+    text_color: str,
+    size: float,
+    bold: bool = False,
+) -> None:
+    painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
+    painter.setBrush(QColor(background))
+    painter.drawRect(rect)
+    if text:
+        _draw_report_text(
+            painter, rect.adjusted(2, 0, -2, 0), text,
+            size=size, color=text_color, bold=bold, align=Qt.AlignmentFlag.AlignCenter,
+        )
+
+
+def _draw_rating_grid(
     painter: QPainter,
     *,
     x: float,
     y: float,
     width: float,
     title: str,
-    lines: List[Tuple[str, str]],
+    items: List[Tuple[str, str]],
+    scale: List[str],
+    report: DailyReport,
     row_h: float,
+    header_h: float,
 ) -> float:
-    """Draw a compact 'label — rating' list section, return the Y below it."""
+    """A bordered rating table — label column + one column per scale value,
+    'X' marking the selected rating — matching the real form's table style.
+    Returns the Y position below the drawn table."""
     _draw_report_text(
-        painter, QRectF(x, y, width, row_h), title,
+        painter, QRectF(x, y, width, header_h), title,
         size=8, color=COLOR_ACCENT, bold=True,
     )
-    y += row_h
-    label_w = width * 0.72
-    for label, value in lines:
-        painter.setPen(QPen(QColor(COLOR_BORDER), 0.5))
-        painter.drawLine(int(x), int(y + row_h), int(x + width), int(y + row_h))
+    y += header_h
+
+    n_scale = len(scale)
+    label_w = width * 0.34
+    col_w = (width - label_w) / n_scale
+    right = x + width
+
+    cur = right
+    for label in scale:
+        rect = QRectF(cur - col_w, y, col_w, header_h)
+        _draw_report_cell(painter, rect, label, background=COLOR_ACCENT, text_color="white", size=5.5, bold=True)
+        cur -= col_w
+    _draw_report_cell(painter, QRectF(cur - label_w, y, label_w, header_h), "", background=COLOR_ACCENT, text_color="white", size=5.5)
+    y += header_h
+
+    for field, item_label in items:
+        rating = getattr(report, field)
+        cur = right
+        for idx in range(n_scale):
+            rect = QRectF(cur - col_w, y, col_w, row_h)
+            mark = "X" if idx == rating else ""
+            _draw_report_cell(painter, rect, mark, background="white", text_color=COLOR_TEXT_PRIMARY, size=6, bold=True)
+            cur -= col_w
+        label_rect = QRectF(cur - label_w, y, label_w, row_h)
+        painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
+        painter.setBrush(QColor("#F8F9FA"))
+        painter.drawRect(label_rect)
         _draw_report_text(
-            painter, QRectF(x + width - label_w, y, label_w, row_h), label,
-            size=7, color=COLOR_TEXT_PRIMARY,
-        )
-        _draw_report_text(
-            painter, QRectF(x, y, width - label_w - 4, row_h), value,
-            size=7, color=COLOR_TEXT_SECONDARY, bold=True,
-            align=Qt.AlignmentFlag.AlignLeft,
+            painter, label_rect.adjusted(3, 0, -3, 0), item_label,
+            size=5.5, color=COLOR_TEXT_PRIMARY, align=Qt.AlignmentFlag.AlignRight,
         )
         y += row_h
     return y
+
+
+def _draw_beneficiary_grid(
+    painter: QPainter,
+    *,
+    x: float,
+    y: float,
+    width: float,
+    report: DailyReport,
+    row_h: float,
+    header_h: float,
+) -> float:
+    """Expected-vs-present-per-meal table, same bordered style as the
+    rating grids. Returns the Y position below the drawn table."""
+    _draw_report_text(
+        painter, QRectF(x, y, width, header_h), _LBL_BENEFICIARIES,
+        size=8, color=COLOR_ACCENT, bold=True,
+    )
+    y += header_h
+
+    columns = [_LBL_EXPECTED, _LBL_PRESENT]
+    label_w = width * 0.34
+    col_w = (width - label_w) / len(columns)
+    right = x + width
+
+    cur = right
+    for col_label in columns:
+        rect = QRectF(cur - col_w, y, col_w, header_h)
+        _draw_report_cell(painter, rect, col_label, background=COLOR_ACCENT, text_color="white", size=5.5, bold=True)
+        cur -= col_w
+    _draw_report_cell(painter, QRectF(cur - label_w, y, label_w, header_h), "", background=COLOR_ACCENT, text_color="white", size=5.5)
+    y += header_h
+
+    for key, meal_label in _MEAL_ORDER:
+        cur = right
+        for value in (getattr(report, f"{key}_expected"), getattr(report, f"{key}_present")):
+            rect = QRectF(cur - col_w, y, col_w, row_h)
+            _draw_report_cell(painter, rect, str(value), background="white", text_color=COLOR_TEXT_PRIMARY, size=6, bold=True)
+            cur -= col_w
+        label_rect = QRectF(cur - label_w, y, label_w, row_h)
+        painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
+        painter.setBrush(QColor("#F8F9FA"))
+        painter.drawRect(label_rect)
+        _draw_report_text(
+            painter, label_rect.adjusted(3, 0, -3, 0), meal_label,
+            size=6, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignRight,
+        )
+        y += row_h
+    return y
+
+
+def _draw_report_header(
+    painter: QPainter,
+    *,
+    x: float,
+    y: float,
+    width: float,
+    settings,
+    date_str: str,
+) -> float:
+    """Compact official header: ministry crest + identity lines + title/date
+    — the same crest used on the contact sheet and order letter, sized down
+    to fit two copies on one sheet. Returns the Y position below it."""
+    s = settings
+    academy = _academy_line(s.aref if s else "")
+    province = _province_line(s.direction_provinciale if s else "")
+    school_name = (s.school_name if s else "").strip() or "اسم المؤسسة"
+    display_date = date_str.replace("-", "/")
+
+    image = _template_header_image()
+    logo_h = 0.0
+    if not image.isNull():
+        logo_w = min(width * 0.09, 60.0)
+        logo_h = logo_w * image.height() / image.width()
+        painter.drawImage(QRectF(x + (width - logo_w) / 2, y, logo_w, logo_h), image)
+
+    text_y = y + logo_h + 2
+    _draw_report_text(
+        painter, QRectF(x + 8, text_y, width - 16, 13),
+        f"{school_name}  —  {academy}  —  {province}",
+        size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+    )
+    _draw_report_text(
+        painter, QRectF(x + 8, text_y + 13, width - 16, 13),
+        f"{_SUBTITLE}  —  بتاريخ: {display_date}",
+        size=8, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+    )
+    return text_y + 26 + 4
 
 
 def _draw_report_copy(
@@ -240,68 +353,49 @@ def _draw_report_copy(
     date_str: str,
     report: DailyReport,
 ) -> None:
-    """Draw one complete, compact copy of the report inside the given box."""
-    display_date = date_str.replace("-", "/")
-    s = settings
-    academy = _academy_line(s.aref if s else "")
-    province = _province_line(s.direction_provinciale if s else "")
-    school_name = (s.school_name if s else "").strip() or "اسم المؤسسة"
-
+    """Draw one complete copy of the report — header, four rating tables,
+    beneficiary table, notes and signatures — inside the given box."""
     painter.setPen(QPen(QColor(COLOR_BORDER), 1))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.drawRect(QRectF(x, y, width, height))
 
-    header_h = 16.0
-    _draw_report_text(
-        painter, QRectF(x + 8, y + 4, width - 16, header_h),
-        f"{school_name}  —  {academy}  —  {province}",
-        size=9, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
-    )
-    _draw_report_text(
-        painter, QRectF(x + 8, y + 4 + header_h, width - 16, header_h),
-        f"{_SUBTITLE}  —  بتاريخ: {display_date}",
-        size=8, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
-    )
+    body_y = _draw_report_header(painter, x=x, y=y + 4, width=width, settings=settings, date_str=date_str)
 
-    body_y = y + 4 + (header_h * 2) + 6
-    body_h = height - (body_y - y) - 30  # reserve room for signatures
     col_gap = 10.0
     col_w = (width - 16 - col_gap) / 2
     left_x = x + 8
     right_x = left_x + col_w + col_gap
-    row_h = min(11.0, body_h / 13)
+    row_h = 12.0
+    header_h = 18.0
 
-    hygiene_lines, quality_lines, building_lines = _report_copy_lines(report)
-
-    ly = _draw_report_section(
-        painter, x=left_x, y=body_y, width=col_w,
-        title=_LBL_HYGIENE, lines=hygiene_lines, row_h=row_h,
+    ly = _draw_rating_grid(
+        painter, x=left_x, y=body_y, width=col_w, title=_LBL_HYGIENE,
+        items=_HYGIENE_ITEMS, scale=_HYGIENE_SCALE, report=report,
+        row_h=row_h, header_h=header_h,
     )
-    beneficiary_lines = [
-        (meal_label, f"{getattr(report, f'{key}_present')}/{getattr(report, f'{key}_expected')}")
-        for key, meal_label in _MEAL_ORDER
-    ]
-    _draw_report_section(
-        painter, x=left_x, y=ly + 4, width=col_w,
-        title=f"{_LBL_BENEFICIARIES} ({_LBL_PRESENT}/{_LBL_EXPECTED})",
-        lines=beneficiary_lines, row_h=row_h,
+    _draw_beneficiary_grid(
+        painter, x=left_x, y=ly + 5, width=col_w,
+        report=report, row_h=row_h, header_h=header_h,
     )
 
-    ry = _draw_report_section(
-        painter, x=right_x, y=body_y, width=col_w,
-        title=_LBL_QUALITY, lines=quality_lines, row_h=row_h,
+    ry = _draw_rating_grid(
+        painter, x=right_x, y=body_y, width=col_w, title=_LBL_QUALITY,
+        items=_QUALITY_ITEMS, scale=_THREE_SCALE, report=report,
+        row_h=row_h, header_h=header_h,
     )
-    ry = _draw_report_section(
-        painter, x=right_x, y=ry + 4, width=col_w,
-        title=_LBL_BUILDING, lines=building_lines, row_h=row_h,
+    ry = _draw_rating_grid(
+        painter, x=right_x, y=ry + 5, width=col_w, title=_LBL_BUILDING,
+        items=_BUILDING_ITEMS, scale=_THREE_SCALE, report=report,
+        row_h=row_h, header_h=header_h,
     )
     if report.notes.strip():
         _draw_report_text(
-            painter, QRectF(right_x, ry + 4, col_w, row_h * 2),
+            painter, QRectF(right_x, ry + 5, col_w, row_h * 2),
             f"ملاحظات: {report.notes.strip()}",
             size=7, color=COLOR_TEXT_PRIMARY,
         )
 
-    sig_y = y + height - 26
+    sig_y = y + height - 24
     sig_w = (width - 16) / 2
     for index, role in enumerate(("مسير المصالح المادية والمالية", "مدير المؤسسة")):
         rx = x + 8 + (index * sig_w)
@@ -310,7 +404,7 @@ def _draw_report_copy(
             size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
         )
         painter.setPen(QPen(QColor("#9CA3AF"), 1))
-        painter.drawLine(int(rx + 20), int(sig_y + 22), int(rx + sig_w - 20), int(sig_y + 22))
+        painter.drawLine(int(rx + 20), int(sig_y + 20), int(rx + sig_w - 20), int(sig_y + 20))
 
 
 def _write_daily_report_pdf(
