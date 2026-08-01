@@ -227,14 +227,15 @@ def _draw_rating_grid(
     right = x + width
 
     # Item label sits at the right edge — reading right-to-left you see
-    # *what's being rated* first, then the scale. ضعيفة (worst) is drawn
-    # immediately left of the label, جيدة (best) at the far left, as
-    # requested — same right-anchored pattern as the contact sheet's PDF
+    # *what's being rated* first, then the scale, starting with جيدة (best)
+    # immediately left of the label and ending with ضعيفة (worst) at the
+    # far left — same right-anchored pattern as the contact sheet's PDF
     # table (label_rect at `right - label_w`, data columns extending left).
+    display_scale = list(reversed(scale))
     label_header = QRectF(right - label_w, y, label_w, header_h)
     _draw_report_cell(painter, label_header, "", background=COLOR_ACCENT, text_color="white", size=5.5)
     cur = right - label_w
-    for label in scale:
+    for label in display_scale:
         rect = QRectF(cur - col_w, y, col_w, header_h)
         _draw_report_cell(painter, rect, label, background=COLOR_ACCENT, text_color="white", size=5.5, bold=True)
         cur -= col_w
@@ -242,6 +243,7 @@ def _draw_rating_grid(
 
     for field, item_label in items:
         rating = getattr(report, field)
+        display_rating = (n_scale - 1 - rating) if 0 <= rating < n_scale else -1
         label_rect = QRectF(right - label_w, y, label_w, row_h)
         painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
         painter.setBrush(QColor("#F8F9FA"))
@@ -253,7 +255,7 @@ def _draw_rating_grid(
         cur = right - label_w
         for idx in range(n_scale):
             rect = QRectF(cur - col_w, y, col_w, row_h)
-            mark = "X" if idx == rating else ""
+            mark = "X" if idx == display_rating else ""
             _draw_report_cell(painter, rect, mark, background="white", text_color=COLOR_TEXT_PRIMARY, size=6, bold=True)
             cur -= col_w
         y += row_h
@@ -336,7 +338,7 @@ def _draw_report_header(
     image = _template_header_image()
     logo_h = 0.0
     if not image.isNull():
-        logo_w = min(width * 0.28, 170.0)
+        logo_w = min(width * 0.38, 220.0)
         logo_h = logo_w * image.height() / image.width()
         painter.drawImage(QRectF(x + (width - logo_w) / 2, y, logo_w, logo_h), image)
 
@@ -409,16 +411,20 @@ def _draw_report_copy(
             size=7.5, color=COLOR_TEXT_PRIMARY,
         )
 
-    sig_y = y + height - 26
+    # Leave real blank room between the role label and the line for an
+    # actual pen signature, instead of crowding the line against the
+    # bottom edge.
+    sig_y = y + height - 85
+    sig_line_y = sig_y + 55
     sig_w = content_w / 2
     for index, role in enumerate(("مسير المصالح المادية والمالية", "مدير المؤسسة")):
         rx = content_x + (index * sig_w)
         _draw_report_text(
-            painter, QRectF(rx, sig_y, sig_w, 13), role,
+            painter, QRectF(rx, sig_y, sig_w, 14), role,
             size=8.5, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
         )
         painter.setPen(QPen(QColor("#9CA3AF"), 1))
-        painter.drawLine(int(rx + 24), int(sig_y + 24), int(rx + sig_w - 24), int(sig_y + 24))
+        painter.drawLine(int(rx + 24), int(sig_line_y), int(rx + sig_w - 24), int(sig_line_y))
 
 
 def _write_daily_report_pdf(

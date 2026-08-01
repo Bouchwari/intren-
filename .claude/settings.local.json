@@ -99,7 +99,8 @@
       "Bash(pkill -f \"python src/main.py\")",
       "Bash(pdftoppm -png -r 150 /tmp/report_v5.pdf /tmp/report_v5)",
       "Bash(pdftoppm -png -r 150 /tmp/report_v6.pdf /tmp/report_v6)",
-      "Bash(right - label_w)"
+      "Bash(right - label_w)",
+      "Bash(pdftoppm -png -r 150 /tmp/report_v7.pdf /tmp/report_v7)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
