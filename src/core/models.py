@@ -180,10 +180,47 @@ class DailyAbsence:
 
 @dataclass
 class DailyReport:
-    """Stores the مسير's notes for a given day. Report data is read from
-    daily_contact and daily_absence tables — we only persist the notes."""
+    """The مسير's daily inspection report (التقرير اليومي للمصالح المادية
+    والمالية). Attendance/absence numbers are read from daily_contact and
+    daily_absence; everything here is the checklist that has no other home.
+
+    Rating fields are an index into the matching scale, -1 meaning not yet
+    rated. Item order and exact Arabic labels match the real accepted form
+    (templets/التقرير اليومي للمصالح المادية والمالية.docx), not the
+    ministry guide's blank annex."""
     date: str       # YYYY-MM-DD
     notes: str = ""
+
+    # 1 — تتبع النظافة (hygiene) — 6-point scale: 0=ضعيفة .. 5=جيدة
+    hygiene_staff: int = -1          # نظافة وهندام المستخدمين
+    hygiene_utensils: int = -1       # نظافة الأواني وأدوات العمل
+    hygiene_dining_hall: int = -1    # نظافة أرضيات وأسطح قاعة الأكل
+    hygiene_kitchen: int = -1        # نظافة أرضيات وأسطح المطعم
+    hygiene_storage: int = -1        # نظافة المخازن والثلاجات
+    hygiene_waste: int = -1          # طريقة التخلص من بقايا الطعام
+    hygiene_dorms: int = -1          # نظافة المراقد
+
+    # 2 — تتبع المستفيدين من خدمة المطعمة (beneficiary tracking, per meal)
+    ftour_expected: int = 0
+    ftour_present: int = 0
+    ghada_expected: int = 0
+    ghada_present: int = 0
+    asha_expected: int = 0
+    asha_present: int = 0
+
+    # 3 — تتبع الوجبات المقدمة (meal quality) — 3-point scale: 0=ناقصة .. 2=جيدة
+    quality_supplies: int = -1        # جودة السلع والتزود
+    quality_storage: int = -1         # ظروف التخزين
+    quality_program: int = -1         # احترام البرنامج الغذائي
+    quality_quantities: int = -1      # احترام الكميات المحددة
+    quality_sample_kept: int = -1     # الاحتفاظ بالوجبة الشاهد
+    quality_prep: int = -1            # ظروف وطريقة التحضير
+    quality_serving: int = -1         # طريقة تقديم الوجبات
+
+    # 4 — مراقبة وصيانة التجهيزات والبنايات — 3-point scale: 0=ناقصة .. 2=جيدة
+    building_condition: int = -1      # حالة وصيانة البنايات
+    equipment_condition: int = -1     # حالة التجهيزات والأدوات
+
     id: Optional[int] = None
 
 

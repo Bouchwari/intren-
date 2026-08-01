@@ -6,7 +6,7 @@ from typing import List, Optional
 from config.settings import MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA
 from core.models import (
     DailyAbsence, DailyContact, DailyContactDocumentLog,
-    OrderItem, OrderLetter, Violation,
+    DailyReport, OrderItem, OrderLetter, Violation,
 )
 from data.database import _connection
 
@@ -271,22 +271,46 @@ def get_recent_absences(limit: int = 60) -> List[DailyAbsence]:
 
 # ── Daily report CRUD ─────────────────────────────────────────────────────────
 
-def get_report_notes(date: str) -> str:
-    """Return the saved notes for a given date, or empty string."""
+_REPORT_COLUMNS = (
+    "notes",
+    "hygiene_staff", "hygiene_utensils", "hygiene_dining_hall", "hygiene_kitchen",
+    "hygiene_storage", "hygiene_waste", "hygiene_dorms",
+    "ftour_expected", "ftour_present", "ghada_expected", "ghada_present",
+    "asha_expected", "asha_present",
+    "quality_supplies", "quality_storage", "quality_program", "quality_quantities",
+    "quality_sample_kept", "quality_prep", "quality_serving",
+    "building_condition", "equipment_condition",
+)
+
+
+def _row_to_daily_report(r: sqlite3.Row) -> DailyReport:
+    return DailyReport(
+        id=r["id"],
+        date=r["date"],
+        **{col: r[col] for col in _REPORT_COLUMNS},
+    )
+
+
+def get_daily_report(date: str) -> Optional[DailyReport]:
+    """Return the saved report (checklist + notes) for a date, or None."""
     with _connection() as conn:
         row = conn.execute(
-            "SELECT notes FROM daily_reports WHERE date=?", (date,)
+            "SELECT * FROM daily_reports WHERE date=?", (date,)
         ).fetchone()
-    return row["notes"] if row else ""
+    return _row_to_daily_report(row) if row else None
 
 
-def save_report_notes(date: str, notes: str) -> None:
-    """Upsert the مسير notes for a given date."""
+def save_daily_report(report: DailyReport) -> None:
+    """Upsert the مسير's daily report (checklist ratings + notes)."""
+    columns = ("date",) + _REPORT_COLUMNS
+    placeholders = ",".join("?" * len(columns))
+    update_clause = ",".join(f"{col}=excluded.{col}" for col in _REPORT_COLUMNS)
+    values = (report.date,) + tuple(getattr(report, col) for col in _REPORT_COLUMNS)
     with _connection() as conn:
-        conn.execute("""
-            INSERT INTO daily_reports (date, notes) VALUES (?, ?)
-            ON CONFLICT(date) DO UPDATE SET notes = excluded.notes
-        """, (date, notes))
+        conn.execute(f"""
+            INSERT INTO daily_reports ({",".join(columns)}) VALUES ({placeholders})
+            ON CONFLICT(date) DO UPDATE SET {update_clause}
+        """, values)
 
 
 def get_dates_with_data() -> List[str]:

@@ -66,6 +66,30 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "primary_complement INTEGER NOT NULL DEFAULT 0",
         "monitors_complement INTEGER NOT NULL DEFAULT 0",
     ]
+    daily_report_cols = [
+        "hygiene_staff INTEGER NOT NULL DEFAULT -1",
+        "hygiene_utensils INTEGER NOT NULL DEFAULT -1",
+        "hygiene_dining_hall INTEGER NOT NULL DEFAULT -1",
+        "hygiene_kitchen INTEGER NOT NULL DEFAULT -1",
+        "hygiene_storage INTEGER NOT NULL DEFAULT -1",
+        "hygiene_waste INTEGER NOT NULL DEFAULT -1",
+        "hygiene_dorms INTEGER NOT NULL DEFAULT -1",
+        "ftour_expected INTEGER NOT NULL DEFAULT 0",
+        "ftour_present INTEGER NOT NULL DEFAULT 0",
+        "ghada_expected INTEGER NOT NULL DEFAULT 0",
+        "ghada_present INTEGER NOT NULL DEFAULT 0",
+        "asha_expected INTEGER NOT NULL DEFAULT 0",
+        "asha_present INTEGER NOT NULL DEFAULT 0",
+        "quality_supplies INTEGER NOT NULL DEFAULT -1",
+        "quality_storage INTEGER NOT NULL DEFAULT -1",
+        "quality_program INTEGER NOT NULL DEFAULT -1",
+        "quality_quantities INTEGER NOT NULL DEFAULT -1",
+        "quality_sample_kept INTEGER NOT NULL DEFAULT -1",
+        "quality_prep INTEGER NOT NULL DEFAULT -1",
+        "quality_serving INTEGER NOT NULL DEFAULT -1",
+        "building_condition INTEGER NOT NULL DEFAULT -1",
+        "equipment_condition INTEGER NOT NULL DEFAULT -1",
+    ]
     for col_def in settings_cols:
         try:
             conn.execute(f"ALTER TABLE school_settings ADD COLUMN {col_def}")
@@ -84,6 +108,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for col_def in daily_absence_cols:
         try:
             conn.execute(f"ALTER TABLE daily_absence ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
+    for col_def in daily_report_cols:
+        try:
+            conn.execute(f"ALTER TABLE daily_reports ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
             pass
 
@@ -262,8 +291,8 @@ from data.daily_repo import (  # noqa: E402
     get_day_absences,
     save_daily_absence,
     get_recent_absences,
-    get_report_notes,
-    save_report_notes,
+    get_daily_report,
+    save_daily_report,
     get_dates_with_data,
     save_order_letter,
     get_all_order_letters,
