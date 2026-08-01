@@ -91,7 +91,9 @@
       "Bash(rm -rf ~/lo_profile3)",
       "Bash(timeout 90 libreoffice --headless --norestore -env:UserInstallation=file:///home/abbdo/lo_profile3 --convert-to pdf --outdir ~/lo_check ~/lo_check/generated3.docx)",
       "Bash(pdftoppm -png -r 110 ~/lo_check/generated3.pdf ~/lo_check/gen3_page)",
-      "Bash(rm -rf ~/lo_check ~/lo_profile ~/lo_profile2 ~/lo_profile3)"
+      "Bash(rm -rf ~/lo_check ~/lo_profile ~/lo_profile2 ~/lo_profile3)",
+      "Bash(pkill -f \"src/main.py\")",
+      "Bash(pdftoppm -png -r 150 /tmp/report_v2.pdf /tmp/report_v2)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"

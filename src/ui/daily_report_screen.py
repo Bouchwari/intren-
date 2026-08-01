@@ -5,14 +5,13 @@ plus the مسير's inspection checklist (hygiene / meal quality / building) and
 notes, matching the real accepted form.
 """
 import datetime
-import re
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from zipfile import ZIP_DEFLATED, ZipFile
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
+from PySide6.QtGui import (
+    QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
+)
 from PySide6.QtWidgets import (
     QComboBox, QDateEdit, QFileDialog, QFrame, QGridLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QMessageBox,
@@ -31,10 +30,7 @@ from data.database import (
     get_dates_with_data, get_daily_report, get_school_settings,
     save_daily_report,
 )
-from ui.daily_contact_screen import (
-    _academy_line, _normalize_template_name, _province_line,
-    _set_cell_text, _set_docx_text, _template_dirs, _WORD_NS,
-)
+from ui.daily_contact_screen import _academy_line, _province_line
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "التقرير اليومي"
@@ -50,13 +46,12 @@ _NOTES_HINT     = "أدخل ملاحظاتك هنا..."
 _NO_DATA        = "لا توجد بيانات لهذا اليوم.\nأدخل بيانات ورقة الاتصال أو الغياب أولاً."
 _SAVED_OK       = "تم حفظ التقرير بنجاح."
 _BTN_SAVE_REPORT = "💾  حفظ التقرير"
-_BTN_EXPORT     = "📄  تصدير"
-_DOCX_DIALOG_TITLE = "تصدير التقرير اليومي"
-_DOCX_DEFAULT_NAME = "التقرير_اليومي"
-_WORD_FILTER    = "Word (*.docx)"
-_DOCX_SAVED_OK  = "تم تصدير التقرير اليومي بنجاح."
-_DOCX_SAVE_ERROR = "تعذر تصدير التقرير اليومي:"
-_DOCX_TEMPLATE_MISSING = "تعذر العثور على نموذج التقرير اليومي."
+_BTN_EXPORT     = "📄  تصدير PDF"
+_PDF_DIALOG_TITLE = "تصدير التقرير اليومي"
+_PDF_DEFAULT_NAME = "التقرير_اليومي"
+_PDF_FILTER     = "PDF (*.pdf)"
+_PDF_SAVED_OK   = "تم تصدير التقرير اليومي بنجاح."
+_PDF_SAVE_ERROR = "تعذر تصدير التقرير اليومي:"
 
 _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_FTOUR, MEAL_LABELS[MEAL_FTOUR]),
@@ -147,154 +142,216 @@ def _section_title(text: str, color: str = "") -> QLabel:
     return lbl
 
 
-# ── Word export — fills the real template exactly ─────────────────────────────
-# The template prints two identical copies on one page (نظيرين); every helper
-# below matches by content/structure rather than fixed index, so it fills
-# both copies without needing to know there even are two.
+# ── PDF export — our own compact design ────────────────────────────────────
+# Two full copies (نظيرين) stacked on one landscape sheet, not a filled copy
+# of the real template: that template's layout doesn't cleanly split into
+# two clean full-page copies (see git history for what was tried first). One
+# sheet keeps paper use down and both signers can sign the same page.
+#
+# A Word version isn't built yet — deliberately left for later. Everything
+# a renderer needs is already isolated in _report_copy_lines(), so a future
+# _write_daily_report_docx can reuse the exact same rows without touching
+# this file's PDF drawing code.
 
-def _find_daily_report_template() -> Path | None:
-    for directory in _template_dirs():
-        if not directory.exists():
-            continue
-        for candidate in directory.glob("*.docx"):
-            if "التقريراليوميللمصالحالماديةوالمالية" in _normalize_template_name(candidate.stem):
-                return candidate
-    return None
+def _report_copy_lines(report: DailyReport) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    """Return (hygiene_lines, quality_lines, building_lines), each a list of
+    (item label, rating text or '—' if not yet rated) — the same shape any
+    future renderer (PDF or Word) would draw from."""
+    def _lines(items: List[Tuple[str, str]], scale: List[str]) -> List[Tuple[str, str]]:
+        result = []
+        for field, label in items:
+            rating = getattr(report, field)
+            result.append((label, scale[rating] if 0 <= rating < len(scale) else _NOT_RATED))
+        return result
+
+    return (
+        _lines(_HYGIENE_ITEMS, _HYGIENE_SCALE),
+        _lines(_QUALITY_ITEMS, _THREE_SCALE),
+        _lines(_BUILDING_ITEMS, _THREE_SCALE),
+    )
 
 
-def _row_cells(row: ET.Element) -> List[ET.Element]:
-    return row.findall("./w:tc", _WORD_NS)
-
-
-def _mark_rating(cells: List[ET.Element], rating_range: range, rating: int) -> None:
-    """Clear a block of rating cells, then mark the one matching `rating`
-    (an index into the scale) with 'x'. rating=-1 (not rated) clears all."""
-    for i in rating_range:
-        if i >= len(cells):
-            continue
-        _set_cell_text(cells[i], "x" if (i - rating_range.start) == rating else "")
-
-
-def _fill_daily_report_document_xml(
-    root: ET.Element,
+def _draw_report_text(
+    painter: QPainter,
+    rect: QRectF,
+    text: str,
     *,
-    academy: str,
-    province: str,
-    school_name: str,
-    display_date: str,
+    size: int,
+    color: str,
+    bold: bool = False,
+    align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignRight,
+) -> None:
+    font = QFont("Segoe UI")
+    font.setPointSize(size)
+    font.setBold(bold)
+    painter.setFont(font)
+    painter.setPen(QColor(color))
+    # AlignAbsolute forces true visual left/right — under RTL text direction,
+    # plain AlignRight/AlignLeft are direction-relative and land reversed.
+    if align in (Qt.AlignmentFlag.AlignRight, Qt.AlignmentFlag.AlignLeft):
+        align = align | Qt.AlignmentFlag.AlignAbsolute
+    option = QTextOption()
+    option.setTextDirection(Qt.LayoutDirection.RightToLeft)
+    option.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+    painter.drawText(rect, text, option)
+
+
+def _draw_report_section(
+    painter: QPainter,
+    *,
+    x: float,
+    y: float,
+    width: float,
+    title: str,
+    lines: List[Tuple[str, str]],
+    row_h: float,
+) -> float:
+    """Draw a compact 'label — rating' list section, return the Y below it."""
+    _draw_report_text(
+        painter, QRectF(x, y, width, row_h), title,
+        size=8, color=COLOR_ACCENT, bold=True,
+    )
+    y += row_h
+    label_w = width * 0.72
+    for label, value in lines:
+        painter.setPen(QPen(QColor(COLOR_BORDER), 0.5))
+        painter.drawLine(int(x), int(y + row_h), int(x + width), int(y + row_h))
+        _draw_report_text(
+            painter, QRectF(x + width - label_w, y, label_w, row_h), label,
+            size=7, color=COLOR_TEXT_PRIMARY,
+        )
+        _draw_report_text(
+            painter, QRectF(x, y, width - label_w - 4, row_h), value,
+            size=7, color=COLOR_TEXT_SECONDARY, bold=True,
+            align=Qt.AlignmentFlag.AlignLeft,
+        )
+        y += row_h
+    return y
+
+
+def _draw_report_copy(
+    painter: QPainter,
+    *,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    settings,
+    date_str: str,
     report: DailyReport,
 ) -> None:
-    paragraphs = root.findall(".//w:p", _WORD_NS)
-    n = len(paragraphs)
-    i = 0
-    while i < n:
-        paragraph = paragraphs[i]
-        if paragraph.findall(".//w:p", _WORD_NS):
-            # Wrapper paragraph (e.g. a floating text box) — its .//w:t
-            # search would pick up every nested paragraph's text combined,
-            # so leave it alone and process the real nested paragraphs
-            # individually as this loop reaches them.
-            i += 1
-            continue
-        text = "".join(nd.text or "" for nd in paragraph.findall(".//w:t", _WORD_NS)).strip()
-        if text.startswith("الأكاديمية") and i + 2 < n:
-            _set_docx_text(paragraph, _academy_line(academy))
-            _set_docx_text(paragraphs[i + 1], _province_line(province))
-            _set_docx_text(paragraphs[i + 2], school_name.strip() or "اسم المؤسسة")
-            i += 3
-            continue
-        if "ليوم:" in text:
-            # NOT a bare "ليوم" check — that substring also occurs inside
-            # "اليومي" in the document's own title ("التقرير اليومي..."),
-            # which would wrongly overwrite the title paragraphs too.
-            _set_docx_text(paragraph, f" الخاص بتتبع القسم الداخلي ليوم:  {display_date}")
-        elif re.fullmatch(r"\d{1,2}/\d{1,2}/\d{4}", text):
-            _set_docx_text(paragraph, display_date)
-        elif "ملاحظات عامة واقتراحات" in text and report.notes.strip():
-            for j in range(i + 1, min(i + 6, n)):
-                candidate = paragraphs[j]
-                candidate_text = "".join(
-                    nd.text or "" for nd in candidate.findall(".//w:t", _WORD_NS)
-                ).strip()
-                if not candidate_text:
-                    _set_docx_text(candidate, report.notes.strip())
-                    break
-        i += 1
+    """Draw one complete, compact copy of the report inside the given box."""
+    display_date = date_str.replace("-", "/")
+    s = settings
+    academy = _academy_line(s.aref if s else "")
+    province = _province_line(s.direction_provinciale if s else "")
+    school_name = (s.school_name if s else "").strip() or "اسم المؤسسة"
 
-    hygiene_ratings = [getattr(report, field) for field, _ in _HYGIENE_ITEMS]
-    quality_ratings = [getattr(report, field) for field, _ in _QUALITY_ITEMS]
-    building_ratings = [getattr(report, field) for field, _ in _BUILDING_ITEMS]
-    beneficiary_rows = [
-        (getattr(report, f"{key}_present"), getattr(report, f"{key}_expected"))
-        for key, _ in _MEAL_ORDER
+    painter.setPen(QPen(QColor(COLOR_BORDER), 1))
+    painter.drawRect(QRectF(x, y, width, height))
+
+    header_h = 16.0
+    _draw_report_text(
+        painter, QRectF(x + 8, y + 4, width - 16, header_h),
+        f"{school_name}  —  {academy}  —  {province}",
+        size=9, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+    )
+    _draw_report_text(
+        painter, QRectF(x + 8, y + 4 + header_h, width - 16, header_h),
+        f"{_SUBTITLE}  —  بتاريخ: {display_date}",
+        size=8, color=COLOR_ACCENT, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+    )
+
+    body_y = y + 4 + (header_h * 2) + 6
+    body_h = height - (body_y - y) - 30  # reserve room for signatures
+    col_gap = 10.0
+    col_w = (width - 16 - col_gap) / 2
+    left_x = x + 8
+    right_x = left_x + col_w + col_gap
+    row_h = min(11.0, body_h / 13)
+
+    hygiene_lines, quality_lines, building_lines = _report_copy_lines(report)
+
+    ly = _draw_report_section(
+        painter, x=left_x, y=body_y, width=col_w,
+        title=_LBL_HYGIENE, lines=hygiene_lines, row_h=row_h,
+    )
+    beneficiary_lines = [
+        (meal_label, f"{getattr(report, f'{key}_present')}/{getattr(report, f'{key}_expected')}")
+        for key, meal_label in _MEAL_ORDER
     ]
+    _draw_report_section(
+        painter, x=left_x, y=ly + 4, width=col_w,
+        title=f"{_LBL_BENEFICIARIES} ({_LBL_PRESENT}/{_LBL_EXPECTED})",
+        lines=beneficiary_lines, row_h=row_h,
+    )
 
-    for tbl in root.findall(".//w:tbl", _WORD_NS):
-        rows = tbl.findall("./w:tr", _WORD_NS)
-        if len(rows) < 2:
-            continue
-        header = tuple(
-            "".join(nd.text or "" for nd in c.findall(".//w:t", _WORD_NS)).strip()
-            for c in _row_cells(rows[0])
+    ry = _draw_report_section(
+        painter, x=right_x, y=body_y, width=col_w,
+        title=_LBL_QUALITY, lines=quality_lines, row_h=row_h,
+    )
+    ry = _draw_report_section(
+        painter, x=right_x, y=ry + 4, width=col_w,
+        title=_LBL_BUILDING, lines=building_lines, row_h=row_h,
+    )
+    if report.notes.strip():
+        _draw_report_text(
+            painter, QRectF(right_x, ry + 4, col_w, row_h * 2),
+            f"ملاحظات: {report.notes.strip()}",
+            size=7, color=COLOR_TEXT_PRIMARY,
         )
-        if not header:
-            continue
 
-        if header[0] == "ضعيفة":
-            for row, rating in zip(rows[1:], hygiene_ratings):
-                _mark_rating(_row_cells(row), range(0, 6), rating)
-
-        elif header[0] == "ملاحظات" and len(header) >= 2 and header[1] == "الحاضرون فعليا":
-            for row, (present, expected) in zip(rows[1:], beneficiary_rows):
-                cells = _row_cells(row)
-                if len(cells) >= 3:
-                    _set_cell_text(cells[1], present)
-                    _set_cell_text(cells[2], expected)
-
-        elif header[0] == "ملاحظات" and len(rows) - 1 == len(_QUALITY_ITEMS):
-            for row, rating in zip(rows[1:], quality_ratings):
-                _mark_rating(_row_cells(row), range(1, 4), rating)
-
-        elif header[0] == "ملاحظات" and len(rows) - 1 == len(_BUILDING_ITEMS):
-            for row, rating in zip(rows[1:], building_ratings):
-                _mark_rating(_row_cells(row), range(1, 4), rating)
+    sig_y = y + height - 26
+    sig_w = (width - 16) / 2
+    for index, role in enumerate(("مسير المصالح المادية والمالية", "مدير المؤسسة")):
+        rx = x + 8 + (index * sig_w)
+        _draw_report_text(
+            painter, QRectF(rx, sig_y, sig_w, 12), role,
+            size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+        )
+        painter.setPen(QPen(QColor("#9CA3AF"), 1))
+        painter.drawLine(int(rx + 20), int(sig_y + 22), int(rx + sig_w - 20), int(sig_y + 22))
 
 
-def _write_daily_report_docx(
+def _write_daily_report_pdf(
     path: Path,
     settings,
     date_str: str,
     report: DailyReport,
 ) -> None:
-    """Fill the real daily-report template (templets/التقرير اليومي
-    للمصالح المادية والمالية.docx) — the form the directorate accepts,
-    printed in two identical copies on one page."""
-    template_path = _find_daily_report_template()
-    if template_path is None:
-        raise FileNotFoundError(_DOCX_TEMPLATE_MISSING)
-
+    """Render two compact copies of the report stacked on one landscape
+    sheet — one for the مسير, one for the مدير, one sheet of paper."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    s = settings
-    academy = s.aref if s else ""
-    province = s.direction_provinciale if s else ""
-    school_name = s.school_name if s else ""
-    display_date = date_str.replace("-", "/")
+    writer = QPdfWriter(str(path))
+    writer.setResolution(96)
+    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    writer.setPageOrientation(QPageLayout.Orientation.Landscape)
+    writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter)
+    writer.setTitle(_SUBTITLE)
 
-    with ZipFile(template_path, "r") as source, ZipFile(path, "w", ZIP_DEFLATED) as target:
-        for item in source.infolist():
-            data = source.read(item.filename)
-            if item.filename == "word/document.xml":
-                root = ET.fromstring(data)
-                _fill_daily_report_document_xml(
-                    root,
-                    academy=academy,
-                    province=province,
-                    school_name=school_name,
-                    display_date=display_date,
-                    report=report,
-                )
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-            target.writestr(item, data)
+    painter = QPainter(writer)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        page_w = float(writer.width())
+        page_h = float(writer.height())
+        margin = 24.0
+        gap = 14.0
+        copy_h = (page_h - (margin * 2) - gap) / 2
+        copy_w = page_w - (margin * 2)
+
+        _draw_report_copy(
+            painter, x=margin, y=margin, width=copy_w, height=copy_h,
+            settings=settings, date_str=date_str, report=report,
+        )
+        painter.setPen(QPen(QColor(COLOR_BORDER), 1, Qt.PenStyle.DashLine))
+        cut_y = margin + copy_h + (gap / 2)
+        painter.drawLine(int(margin), int(cut_y), int(page_w - margin), int(cut_y))
+        _draw_report_copy(
+            painter, x=margin, y=margin + copy_h + gap, width=copy_w, height=copy_h,
+            settings=settings, date_str=date_str, report=report,
+        )
+    finally:
+        painter.end()
 
 
 class DailyReportScreen(QWidget):
@@ -837,27 +894,27 @@ class DailyReportScreen(QWidget):
         date_str = self._date_edit.date().toString("yyyy-MM-dd")
         path_str, _ = QFileDialog.getSaveFileName(
             self,
-            _DOCX_DIALOG_TITLE,
-            f"{_DOCX_DEFAULT_NAME}_{date_str}.docx",
-            _WORD_FILTER,
+            _PDF_DIALOG_TITLE,
+            f"{_PDF_DEFAULT_NAME}_{date_str}.pdf",
+            _PDF_FILTER,
         )
         if not path_str:
             return
 
         path = Path(path_str)
-        if path.suffix.lower() != ".docx":
-            path = path.with_suffix(".docx")
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
 
         try:
             report = self._current_report()
             save_daily_report(report)
             settings = get_school_settings()
-            _write_daily_report_docx(
+            _write_daily_report_pdf(
                 path,
                 settings,
                 date_str,
                 report,
             )
-            QMessageBox.information(self, "تم", _DOCX_SAVED_OK)
+            QMessageBox.information(self, "تم", _PDF_SAVED_OK)
         except Exception as exc:
-            QMessageBox.critical(self, "خطأ", f"{_DOCX_SAVE_ERROR}\n{exc}")
+            QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
