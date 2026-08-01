@@ -226,23 +226,23 @@ def _draw_rating_grid(
     col_w = (width - label_w) / n_scale
     right = x + width
 
-    cur = right
+    # Item label sits at the right edge — reading right-to-left you see
+    # *what's being rated* first, then the scale. ضعيفة (worst) is drawn
+    # immediately left of the label, جيدة (best) at the far left, as
+    # requested — same right-anchored pattern as the contact sheet's PDF
+    # table (label_rect at `right - label_w`, data columns extending left).
+    label_header = QRectF(right - label_w, y, label_w, header_h)
+    _draw_report_cell(painter, label_header, "", background=COLOR_ACCENT, text_color="white", size=5.5)
+    cur = right - label_w
     for label in scale:
         rect = QRectF(cur - col_w, y, col_w, header_h)
         _draw_report_cell(painter, rect, label, background=COLOR_ACCENT, text_color="white", size=5.5, bold=True)
         cur -= col_w
-    _draw_report_cell(painter, QRectF(cur - label_w, y, label_w, header_h), "", background=COLOR_ACCENT, text_color="white", size=5.5)
     y += header_h
 
     for field, item_label in items:
         rating = getattr(report, field)
-        cur = right
-        for idx in range(n_scale):
-            rect = QRectF(cur - col_w, y, col_w, row_h)
-            mark = "X" if idx == rating else ""
-            _draw_report_cell(painter, rect, mark, background="white", text_color=COLOR_TEXT_PRIMARY, size=6, bold=True)
-            cur -= col_w
-        label_rect = QRectF(cur - label_w, y, label_w, row_h)
+        label_rect = QRectF(right - label_w, y, label_w, row_h)
         painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
         painter.setBrush(QColor("#F8F9FA"))
         painter.drawRect(label_rect)
@@ -250,6 +250,12 @@ def _draw_rating_grid(
             painter, label_rect.adjusted(3, 0, -3, 0), item_label,
             size=5.5, color=COLOR_TEXT_PRIMARY, align=Qt.AlignmentFlag.AlignRight,
         )
+        cur = right - label_w
+        for idx in range(n_scale):
+            rect = QRectF(cur - col_w, y, col_w, row_h)
+            mark = "X" if idx == rating else ""
+            _draw_report_cell(painter, rect, mark, background="white", text_color=COLOR_TEXT_PRIMARY, size=6, bold=True)
+            cur -= col_w
         y += row_h
     return y
 
@@ -277,24 +283,27 @@ def _draw_beneficiary_grid(
     col_w = (width - label_w) / len(columns)
     right = x + width
 
-    cur = right
+    # Meal name sits at the right edge, same right-anchored pattern as
+    # _draw_rating_grid.
+    label_header = QRectF(right - label_w, y, label_w, header_h)
+    _draw_report_cell(painter, label_header, "", background=COLOR_ACCENT, text_color="white", size=5.5)
+    cur = right - label_w
     for col_label in columns:
         rect = QRectF(cur - col_w, y, col_w, header_h)
         _draw_report_cell(painter, rect, col_label, background=COLOR_ACCENT, text_color="white", size=5.5, bold=True)
         cur -= col_w
-    _draw_report_cell(painter, QRectF(cur - label_w, y, label_w, header_h), "", background=COLOR_ACCENT, text_color="white", size=5.5)
     y += header_h
 
     for key, meal_label in _MEAL_ORDER:
-        cur = right
+        label_rect = QRectF(right - label_w, y, label_w, row_h)
+        painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
+        painter.setBrush(QColor("#F8F9FA"))
+        painter.drawRect(label_rect)
+        cur = right - label_w
         for value in (getattr(report, f"{key}_expected"), getattr(report, f"{key}_present")):
             rect = QRectF(cur - col_w, y, col_w, row_h)
             _draw_report_cell(painter, rect, str(value), background="white", text_color=COLOR_TEXT_PRIMARY, size=6, bold=True)
             cur -= col_w
-        label_rect = QRectF(cur - label_w, y, label_w, row_h)
-        painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
-        painter.setBrush(QColor("#F8F9FA"))
-        painter.drawRect(label_rect)
         _draw_report_text(
             painter, label_rect.adjusted(3, 0, -3, 0), meal_label,
             size=6, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignRight,
@@ -327,7 +336,7 @@ def _draw_report_header(
     image = _template_header_image()
     logo_h = 0.0
     if not image.isNull():
-        logo_w = min(width * 0.17, 170.0)
+        logo_w = min(width * 0.28, 170.0)
         logo_h = logo_w * image.height() / image.width()
         painter.drawImage(QRectF(x + (width - logo_w) / 2, y, logo_w, logo_h), image)
 
@@ -360,57 +369,56 @@ def _draw_report_copy(
     report: DailyReport,
 ) -> None:
     """Draw one complete copy of the report — header, four rating tables,
-    beneficiary table, notes and signatures — inside the given box."""
+    beneficiary table, notes and signatures — inside the given box. Sections
+    stack in a single column since each copy is now tall-and-narrow
+    (side-by-side copies), not wide-and-short (stacked copies)."""
     painter.setPen(QPen(QColor(COLOR_BORDER), 1))
     painter.setBrush(Qt.BrushStyle.NoBrush)
     painter.drawRect(QRectF(x, y, width, height))
 
     body_y = _draw_report_header(painter, x=x, y=y + 4, width=width, settings=settings, date_str=date_str)
 
-    col_gap = 10.0
-    col_w = (width - 16 - col_gap) / 2
-    left_x = x + 8
-    right_x = left_x + col_w + col_gap
-    row_h = 12.0
-    header_h = 18.0
+    content_x = x + 8
+    content_w = width - 16
+    row_h = 15.0
+    header_h = 20.0
 
-    ly = _draw_rating_grid(
-        painter, x=left_x, y=body_y, width=col_w, title=_LBL_HYGIENE,
+    cy = _draw_rating_grid(
+        painter, x=content_x, y=body_y, width=content_w, title=_LBL_HYGIENE,
         items=_HYGIENE_ITEMS, scale=_HYGIENE_SCALE, report=report,
         row_h=row_h, header_h=header_h,
     )
-    _draw_beneficiary_grid(
-        painter, x=left_x, y=ly + 5, width=col_w,
+    cy = _draw_beneficiary_grid(
+        painter, x=content_x, y=cy + 6, width=content_w,
         report=report, row_h=row_h, header_h=header_h,
     )
-
-    ry = _draw_rating_grid(
-        painter, x=right_x, y=body_y, width=col_w, title=_LBL_QUALITY,
+    cy = _draw_rating_grid(
+        painter, x=content_x, y=cy + 6, width=content_w, title=_LBL_QUALITY,
         items=_QUALITY_ITEMS, scale=_THREE_SCALE, report=report,
         row_h=row_h, header_h=header_h,
     )
-    ry = _draw_rating_grid(
-        painter, x=right_x, y=ry + 5, width=col_w, title=_LBL_BUILDING,
+    cy = _draw_rating_grid(
+        painter, x=content_x, y=cy + 6, width=content_w, title=_LBL_BUILDING,
         items=_BUILDING_ITEMS, scale=_THREE_SCALE, report=report,
         row_h=row_h, header_h=header_h,
     )
     if report.notes.strip():
         _draw_report_text(
-            painter, QRectF(right_x, ry + 5, col_w, row_h * 2),
+            painter, QRectF(content_x, cy + 6, content_w, row_h * 2),
             f"ملاحظات: {report.notes.strip()}",
-            size=7, color=COLOR_TEXT_PRIMARY,
+            size=7.5, color=COLOR_TEXT_PRIMARY,
         )
 
-    sig_y = y + height - 24
-    sig_w = (width - 16) / 2
+    sig_y = y + height - 26
+    sig_w = content_w / 2
     for index, role in enumerate(("مسير المصالح المادية والمالية", "مدير المؤسسة")):
-        rx = x + 8 + (index * sig_w)
+        rx = content_x + (index * sig_w)
         _draw_report_text(
-            painter, QRectF(rx, sig_y, sig_w, 12), role,
-            size=8, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
+            painter, QRectF(rx, sig_y, sig_w, 13), role,
+            size=8.5, color=COLOR_TEXT_PRIMARY, bold=True, align=Qt.AlignmentFlag.AlignCenter,
         )
         painter.setPen(QPen(QColor("#9CA3AF"), 1))
-        painter.drawLine(int(rx + 20), int(sig_y + 20), int(rx + sig_w - 20), int(sig_y + 20))
+        painter.drawLine(int(rx + 24), int(sig_y + 24), int(rx + sig_w - 24), int(sig_y + 24))
 
 
 def _write_daily_report_pdf(
@@ -419,7 +427,7 @@ def _write_daily_report_pdf(
     date_str: str,
     report: DailyReport,
 ) -> None:
-    """Render two compact copies of the report stacked on one landscape
+    """Render two copies of the report side by side on one landscape
     sheet — one for the مسير, one for the مدير, one sheet of paper."""
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
@@ -436,18 +444,18 @@ def _write_daily_report_pdf(
         page_h = float(writer.height())
         margin = 24.0
         gap = 14.0
-        copy_h = (page_h - (margin * 2) - gap) / 2
-        copy_w = page_w - (margin * 2)
+        copy_w = (page_w - (margin * 2) - gap) / 2
+        copy_h = page_h - (margin * 2)
 
         _draw_report_copy(
             painter, x=margin, y=margin, width=copy_w, height=copy_h,
             settings=settings, date_str=date_str, report=report,
         )
         painter.setPen(QPen(QColor(COLOR_BORDER), 1, Qt.PenStyle.DashLine))
-        cut_y = margin + copy_h + (gap / 2)
-        painter.drawLine(int(margin), int(cut_y), int(page_w - margin), int(cut_y))
+        cut_x = margin + copy_w + (gap / 2)
+        painter.drawLine(int(cut_x), int(margin), int(cut_x), int(page_h - margin))
         _draw_report_copy(
-            painter, x=margin, y=margin + copy_h + gap, width=copy_w, height=copy_h,
+            painter, x=margin + copy_w + gap, y=margin, width=copy_w, height=copy_h,
             settings=settings, date_str=date_str, report=report,
         )
     finally:
