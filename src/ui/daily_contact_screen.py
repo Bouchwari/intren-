@@ -16,22 +16,25 @@ from PySide6.QtGui import (
     QPen, QTextOption,
 )
 from PySide6.QtWidgets import (
-    QApplication, QBoxLayout, QComboBox, QFileDialog, QFrame, QGraphicsDropShadowEffect,
+    QApplication, QBoxLayout, QComboBox, QFileDialog, QFrame,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QSizePolicy, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
+    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
     EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.attendance_estimate import EstimateResult, estimate_attendance
 from core.contact_counts import count_students, empty_counts
 from core.models import DailyContact
 from ui.document_header import ask_export_format, draw_official_pdf_footer, draw_official_pdf_header
+from ui.widgets.date_input import DateInput
+from ui.widgets.icon_button import IconButton
 from data.database import (
     get_day_contacts,
     get_all_students,
@@ -53,7 +56,8 @@ _BTN_PREV       = "اليوم السابق"
 _BTN_NEXT       = "اليوم التالي"
 _BTN_TODAY      = "اليوم"
 _BTN_LOAD       = "تحميل اليوم"
-_BTN_SAVE       = "💾  حفظ وتسجيل"
+_BTN_SAVE       = "حفظ وتسجيل"
+_BTN_SAVE_ICON  = "💾"
 _LBL_DATE       = "التاريخ:"
 _LBL_NUMBER     = "رقم:"
 _LBL_ACTIONS    = "الإجراء"
@@ -70,7 +74,8 @@ _LBL_TOTAL      = "المجموع"
 _LBL_GRAND_TOT  = "الإجمالي العام"
 _HDR_HISTORY    = ["رقم الوثيقة", "التاريخ", "العملية", "الفطور", "الغداء", "العشاء", "الإجمالي", "وقت التسجيل"]
 _SAVED_OK       = "تم حفظ ورقة الاتصال بنجاح."
-_BTN_EXPORT_DOC = "🖨  طباعة وتسجيل"
+_BTN_EXPORT_DOC = "طباعة وتسجيل"
+_BTN_EXPORT_DOC_ICON = "🖨"
 _DOCX_DIALOG_TITLE = "تحميل ورقة الاتصال اليومية"
 _DOCX_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _DOCX_SAVED_OK = "تم تحميل ورقة الاتصال اليومية بنجاح."
@@ -107,13 +112,6 @@ _ACTION_LABELS = {
     "save": "حفظ",
     "print": "طباعة",
 }
-_MONTH_NAMES = [
-    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-]
-_WEEKDAY_HEADERS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]
-_BTN_BACK = "رجوع"
-_BTN_APPLY = "تطبيق"
 _MODE_MANUAL = "إدخال يدوي"
 _MODE_AUTO = "توليد تلقائي"
 _MODE_MANUAL_LABEL = "وضع: إدخال يدوي 📝"
@@ -556,7 +554,7 @@ def _spin_style(read_only: bool = False) -> str:
     color = "#64748b" if read_only else "#000000"
     return (
         "QSpinBox {"
-        "width:55px; height:26px; font-size:13px;"
+        f"width:55px; height:26px; font-size:{FONT_BODY}px;"
         "padding:2px 4px; text-align:center;"
         "border:1px solid #ccc; border-radius:4px;"
         "box-sizing:border-box;"
@@ -581,287 +579,6 @@ def _bold_label(text: str, size: int = 13) -> QLabel:
     f = QFont(); f.setPointSize(size); f.setBold(True)
     lbl.setFont(f)
     return lbl
-
-
-class _CalendarDayButton(QPushButton):
-    """Circular day cell with hover, selected state, and today dot."""
-
-    def __init__(self, date: QDate, selected: bool, parent: QWidget | None = None) -> None:
-        super().__init__(str(date.day()), parent)
-        self._date = date
-        self._selected = selected
-        self._hovered = False
-        self._today = date == QDate.currentDate()
-        self.setFixedSize(36, 36)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFlat(True)
-        self.setStyleSheet("border:none; background:transparent;")
-
-    @property
-    def date(self) -> QDate:
-        return self._date
-
-    def set_selected(self, selected: bool) -> None:
-        self._selected = selected
-        self.update()
-
-    def enterEvent(self, event) -> None:  # type: ignore[override]
-        self._hovered = True
-        self.update()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:  # type: ignore[override]
-        self._hovered = False
-        self.update()
-        super().leaveEvent(event)
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        circle = QRectF(0, 0, 36, 36)
-        if self._selected:
-            painter.setBrush(QColor("#e53935"))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(circle)
-        elif self._hovered:
-            painter.setBrush(QColor("#fce4e4"))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(circle)
-
-        painter.setPen(QColor("white" if self._selected else "#111111"))
-        painter.drawText(QRectF(0, 3, 36, 23), Qt.AlignmentFlag.AlignCenter, self.text())
-
-        if self._today:
-            painter.setBrush(QColor("white" if self._selected else "#e53935"))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(QRectF(16, 29, 4, 4))
-
-
-class _CalendarPopup(QFrame):
-    """Small custom Arabic calendar popup for _DateInput."""
-
-    dateSelected = Signal(QDate)
-
-    def __init__(self, selected_date: QDate, parent: QWidget | None = None) -> None:
-        super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
-        self.setObjectName("contactCalendarPopup")
-        self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
-        self.setFixedWidth(300)
-        self._draft_date = selected_date if selected_date.isValid() else QDate.currentDate()
-        self._day_buttons: list[_CalendarDayButton] = []
-        self._building = False
-
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setOffset(0, 4)
-        shadow.setColor(QColor(0, 0, 0, 38))
-        self.setGraphicsEffect(shadow)
-
-        self.setStyleSheet("""
-            QFrame#contactCalendarPopup {
-                background: white;
-                border-radius: 12px;
-                padding: 16px;
-            }
-            QComboBox {
-                border-radius: 20px;
-                padding: 6px 14px;
-                border: 1px solid #ddd;
-                font-size: 14px;
-                background: white;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
-            QLabel#weekdayHeader {
-                color: #999;
-                font-size: 12px;
-            }
-            QPushButton#backButton {
-                border: 1px solid #ccc;
-                background: white;
-                border-radius: 20px;
-                padding: 8px 24px;
-                color: #333;
-            }
-            QPushButton#applyButton {
-                border: none;
-                background: #1a73e8;
-                color: white;
-                border-radius: 20px;
-                padding: 8px 24px;
-            }
-        """)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(12)
-
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        self._month_combo = QComboBox()
-        self._month_combo.addItems(_MONTH_NAMES)
-        self._year_combo = QComboBox()
-        self._year_combo.addItems([str(year) for year in range(2000, 2101)])
-        top.addWidget(self._month_combo, 1)
-        top.addWidget(self._year_combo, 1)
-        root.addLayout(top)
-
-        self._grid = QGridLayout()
-        self._grid.setHorizontalSpacing(4)
-        self._grid.setVerticalSpacing(4)
-        root.addLayout(self._grid)
-
-        footer = QHBoxLayout()
-        footer.setSpacing(8)
-        back_btn = QPushButton(_BTN_BACK)
-        back_btn.setObjectName("backButton")
-        apply_btn = QPushButton(_BTN_APPLY)
-        apply_btn.setObjectName("applyButton")
-        back_btn.clicked.connect(self.close)
-        apply_btn.clicked.connect(self._apply)
-        footer.addWidget(back_btn)
-        footer.addStretch()
-        footer.addWidget(apply_btn)
-        root.addLayout(footer)
-
-        self._month_combo.currentIndexChanged.connect(self._on_month_changed)
-        self._year_combo.currentIndexChanged.connect(self._on_year_changed)
-        self._sync_selects()
-        self._build_grid()
-
-    def showEvent(self, event) -> None:  # type: ignore[override]
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
-        super().showEvent(event)
-
-    def closeEvent(self, event) -> None:  # type: ignore[override]
-        app = QApplication.instance()
-        if app is not None:
-            app.removeEventFilter(self)
-        super().closeEvent(event)
-
-    def eventFilter(self, obj, event) -> bool:  # type: ignore[override]
-        if event.type() == QEvent.Type.MouseButtonPress:
-            if self._month_combo.view().isVisible() or self._year_combo.view().isVisible():
-                return super().eventFilter(obj, event)
-            global_pos = event.globalPosition().toPoint()
-            if not self.geometry().contains(global_pos):
-                self.close()
-        return super().eventFilter(obj, event)
-
-    def _sync_selects(self) -> None:
-        self._building = True
-        self._month_combo.setCurrentIndex(self._draft_date.month() - 1)
-        year_index = max(0, self._draft_date.year() - 2000)
-        self._year_combo.setCurrentIndex(min(year_index, self._year_combo.count() - 1))
-        self._building = False
-
-    def _on_month_changed(self, index: int) -> None:
-        if self._building or index < 0:
-            return
-        self._set_year_month(self._draft_date.year(), index + 1)
-
-    def _on_year_changed(self, index: int) -> None:
-        if self._building or index < 0:
-            return
-        self._set_year_month(2000 + index, self._draft_date.month())
-
-    def _set_year_month(self, year: int, month: int) -> None:
-        first_day = QDate(year, month, 1)
-        day = min(self._draft_date.day(), first_day.daysInMonth())
-        self._draft_date = QDate(year, month, day)
-        self._build_grid()
-
-    def _clear_grid(self) -> None:
-        while self._grid.count():
-            item = self._grid.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-    def _build_grid(self) -> None:
-        self._clear_grid()
-        self._day_buttons.clear()
-
-        for col, text in enumerate(_WEEKDAY_HEADERS):
-            label = QLabel(text)
-            label.setObjectName("weekdayHeader")
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._grid.addWidget(label, 0, col)
-
-        year = self._draft_date.year()
-        month = self._draft_date.month()
-        first_day = QDate(year, month, 1)
-        start_col = first_day.dayOfWeek() % 7
-        for day in range(1, first_day.daysInMonth() + 1):
-            date = QDate(year, month, day)
-            position = start_col + day - 1
-            row = (position // 7) + 1
-            col = position % 7
-            button = _CalendarDayButton(date, date == self._draft_date)
-            button.clicked.connect(lambda checked=False, btn=button: self._select_day(btn.date))
-            self._day_buttons.append(button)
-            self._grid.addWidget(button, row, col)
-
-    def _select_day(self, date: QDate) -> None:
-        self._draft_date = date
-        for button in self._day_buttons:
-            button.set_selected(button.date == date)
-
-    def _apply(self) -> None:
-        self.dateSelected.emit(self._draft_date)
-        self.close()
-
-
-class _DateInput(QLineEdit):
-    """Read-only date input that opens the custom calendar popup."""
-
-    dateChanged = Signal(QDate)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._date = QDate.currentDate()
-        self._popup: _CalendarPopup | None = None
-        self.setReadOnly(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setText(self._date.toString("dd-MM-yyyy"))
-
-    def date(self) -> QDate:
-        return self._date
-
-    def setDate(self, date: QDate) -> None:
-        if not date.isValid() or date == self._date:
-            return
-        self._date = date
-        self.setText(date.toString("dd-MM-yyyy"))
-        self.dateChanged.emit(date)
-
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        self._show_calendar()
-        super().mousePressEvent(event)
-
-    def keyPressEvent(self, event) -> None:  # type: ignore[override]
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-            self._show_calendar()
-            return
-        super().keyPressEvent(event)
-
-    def _show_calendar(self) -> None:
-        if self._popup is not None:
-            self._popup.close()
-        self._popup = _CalendarPopup(self._date, self)
-        self._popup.dateSelected.connect(self.setDate)
-        below_right = self.mapToGlobal(QPoint(self.width(), self.height() + 6))
-        x = below_right.x() - self._popup.width()
-        y = below_right.y()
-        self._popup.move(max(0, x), y)
-        self._popup.show()
-        self._popup.raise_()
 
 
 class _ModeToggle(QFrame):
@@ -894,7 +611,7 @@ class _ModeToggle(QFrame):
 
         self._state_label = QLabel()
         self._state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._state_label.setStyleSheet(f"color:{_INK}; font-weight:bold; font-size:11px;")
+        self._state_label.setStyleSheet(f"color:{_INK}; font-weight:bold; font-size:{FONT_CAPTION}px;")
         root.addWidget(self._state_label)
 
         row = QHBoxLayout()
@@ -927,14 +644,14 @@ class _ModeToggle(QFrame):
         super().mousePressEvent(event)
 
     def _update_style(self) -> None:
-        pill = "border-radius:10px; padding:3px 8px; font-size:11px; font-weight:bold;"
+        pill = f"border-radius:10px; padding:3px 8px; font-size:{FONT_CAPTION}px; font-weight:bold;"
         active = "background:#1fa37a; color:white;"
         inactive = "background:#eef7f2; color:#5A5A40;"
         self._state_label.setText(_MODE_AUTO_LABEL if self._auto else _MODE_MANUAL_LABEL)
         self._manual_label.setStyleSheet(pill + (inactive if self._auto else active))
         self._auto_label.setStyleSheet(pill + (active if self._auto else inactive))
         self._track_label.setText("────●" if self._auto else "●────")
-        self._track_label.setStyleSheet("color:#5A5A40; font-size:13px; font-weight:bold;")
+        self._track_label.setStyleSheet(f"color:#5A5A40; font-size:{FONT_BODY}px; font-weight:bold;")
 
 
 # ── Meal card widget ──────────────────────────────────────────────────────────
@@ -953,7 +670,7 @@ class _MealCard(QGroupBox):
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setStyleSheet(f"""
             QGroupBox {{
-                font-size: 15px; font-weight: bold;
+                font-size: {FONT_SECTION}px; font-weight: bold;
                 color: {color};
                 background: {_PANEL_BG};
                 border: 1px solid {color};
@@ -982,7 +699,7 @@ class _MealCard(QGroupBox):
             h = QLabel(lbl)
             h.setAlignment(Qt.AlignmentFlag.AlignCenter)
             h.setStyleSheet(
-                f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: bold;"
+                f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_CAPTION}px; font-weight: bold;"
             )
             hdr.addWidget(h, 0, col)
         layout.addLayout(hdr)
@@ -1017,7 +734,7 @@ class _MealCard(QGroupBox):
         for lbl in (self._pt_lbl, self._ct_lbl, self._qt_lbl, self._mt_lbl, self._gt_lbl):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(
-                f"color: {self._color}; font-weight: bold; font-size: 14px;"
+                f"color: {self._color}; font-weight: bold; font-size: {FONT_SECTION}px;"
             )
 
         rows = [
@@ -1039,9 +756,9 @@ class _MealCard(QGroupBox):
         gt_row = QHBoxLayout()
         gt_row.addStretch()
         gt_title = QLabel(f"{_LBL_GRAND_TOT}:")
-        gt_title.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:13px;")
+        gt_title.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px;")
         self._gt_lbl.setStyleSheet(
-            f"color:white; background:{self._color}; font-weight:bold; font-size:15px;"
+            f"color:white; background:{self._color}; font-weight:bold; font-size:{FONT_SECTION}px;"
             "border-radius:6px; padding:4px 12px;"
         )
         gt_row.addWidget(gt_title)
@@ -1202,7 +919,7 @@ class DailyContactScreen(QWidget):
         title.setFont(f)
         title.setStyleSheet(f"color:{_INK};")
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         col.addWidget(title)
         col.addWidget(sub)
         return col
@@ -1217,18 +934,16 @@ class DailyContactScreen(QWidget):
             }}
         """)
         row = QHBoxLayout(panel)
-        row.setDirection(QBoxLayout.Direction.RightToLeft)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(10)
         row.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         actions = self._toolbar_group(_LBL_ACTIONS)
         actions_row = QHBoxLayout()
-        actions_row.setDirection(QBoxLayout.Direction.RightToLeft)
         actions_row.setSpacing(8)
-        save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS)
+        save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS, icon=_BTN_SAVE_ICON)
         save_btn.clicked.connect(self._on_save)
-        export_btn = self._btn(_BTN_EXPORT_DOC, _INK)
+        export_btn = self._btn(_BTN_EXPORT_DOC, _INK, icon=_BTN_EXPORT_DOC_ICON)
         export_btn.clicked.connect(self._on_export)
         actions_row.addWidget(save_btn)
         actions_row.addWidget(export_btn)
@@ -1237,16 +952,15 @@ class DailyContactScreen(QWidget):
         document = self._toolbar_group(_LBL_DOCUMENT)
         document.setMinimumWidth(390)
         fields = QHBoxLayout()
-        fields.setDirection(QBoxLayout.Direction.RightToLeft)
         fields.setSpacing(8)
 
-        self._date_edit = _DateInput()
+        self._date_edit = DateInput()
         self._date_edit.setDate(QDate.currentDate())
         self._date_edit.setMinimumHeight(36)
         self._date_edit.setMinimumWidth(170)
         self._date_edit.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-            "padding:4px 10px; font-size:13px;"
+            f"padding:4px 10px; font-size:{FONT_BODY}px;"
         )
 
         self._number_edit = QLineEdit()
@@ -1258,22 +972,21 @@ class DailyContactScreen(QWidget):
         self._number_edit.setToolTip(_NUMBER_HINT)
         self._number_edit.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-            "padding:4px 10px; font-size:13px;"
+            f"padding:4px 10px; font-size:{FONT_BODY}px;"
         )
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.VLine)
         separator.setFixedHeight(28)
         separator.setStyleSheet(f"color:{_PANEL_BORDER};")
-        fields.addWidget(QLabel(_LBL_DATE, styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};"))
+        fields.addWidget(QLabel(_LBL_DATE, styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
         fields.addWidget(self._date_edit)
         fields.addWidget(separator)
-        fields.addWidget(QLabel(_LBL_NUMBER, styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};"))
+        fields.addWidget(QLabel(_LBL_NUMBER, styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
         fields.addWidget(self._number_edit)
         document.layout().addLayout(fields)
 
         navigation = self._toolbar_group(_LBL_NAVIGATION)
         automation_row = QHBoxLayout()
-        automation_row.setDirection(QBoxLayout.Direction.RightToLeft)
         automation_row.setSpacing(8)
         load_btn = self._btn(_BTN_LOAD, COLOR_ACCENT, compact=True)
         load_btn.setMinimumWidth(112)
@@ -1282,7 +995,6 @@ class DailyContactScreen(QWidget):
         automation_row.addWidget(self._mode_toggle)
 
         nav_row = QHBoxLayout()
-        nav_row.setDirection(QBoxLayout.Direction.RightToLeft)
         nav_row.setSpacing(10)
         today_btn = self._btn(_BTN_TODAY, _INK, compact=True)
         prev_btn = self._btn(_BTN_PREV, _INK, compact=True)
@@ -1322,7 +1034,7 @@ class DailyContactScreen(QWidget):
         label.setWordWrap(True)
         label.setStyleSheet(
             f"color:{_INK}; background:#fbf6e3; border:1px solid #e6d68a;"
-            "border-radius:10px; padding:6px 12px; font-size:12px;"
+            f"border-radius:10px; padding:6px 12px; font-size:{FONT_LABEL}px;"
         )
         label.setVisible(False)
         self._estimate_note = label
@@ -1355,18 +1067,16 @@ class DailyContactScreen(QWidget):
         layout.setContentsMargins(9, 6, 9, 6)
         layout.setSpacing(5)
         label = QLabel(title)
-        label.setStyleSheet(f"color:{_INK}; font-weight:bold; font-size:12px; border:none; background:transparent;")
+        label.setStyleSheet(f"color:{_INK}; font-weight:bold; font-size:{FONT_LABEL}px; border:none; background:transparent;")
         layout.addWidget(label)
         return frame
 
-    def _btn(self, label: str, color: str, *, compact: bool = False) -> QPushButton:
-        b = QPushButton(label)
-        b.setMinimumHeight(36)
-        b.setStyleSheet(
-            f"background:{color}; color:white; border-radius:12px;"
-            f"padding:0 {'10' if compact else '14'}px; font-size:13px;"
+    def _btn(self, label: str, color: str, *, compact: bool = False, icon: str | None = None) -> QPushButton:
+        return IconButton(
+            label, icon=icon, bg=color, text_color="white",
+            border_radius=12, padding_h=(10 if compact else 14),
+            font_size=13, bold=False, min_height=36,
         )
-        return b
 
     def _build_cards_row(self) -> QGridLayout:
         row = QGridLayout()
@@ -1393,7 +1103,7 @@ class DailyContactScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 background:{_PANEL_BG};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:14px; padding:10px;
@@ -1413,7 +1123,7 @@ class DailyContactScreen(QWidget):
         self._history_table.verticalHeader().setVisible(False)
         self._history_table.verticalHeader().setDefaultSectionSize(32)
         self._history_table.horizontalHeader().setFixedHeight(32)
-        self._history_table.horizontalHeader().setStretchLastSection(False)
+        self._history_table.horizontalHeader().setStretchLastSection(True)
         self._history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         for col, width in enumerate(_HISTORY_COLUMN_WIDTHS):
             self._history_table.setColumnWidth(col, width)
@@ -1422,14 +1132,14 @@ class DailyContactScreen(QWidget):
         self._history_table.setStyleSheet(f"""
             QTableWidget {{
                 border:1px solid {_PANEL_BORDER}; border-radius:12px;
-                background:white; alternate-background-color:#f8fafc;
-                font-size:12px;
+                background:white; alternate-background-color:{COLOR_PANEL_ALT};
+                font-size:{FONT_LABEL}px;
             }}
             QHeaderView::section {{
                 background:#E4E4D7; color:{_INK};
                 padding:4px 8px; border:none;
                 border-bottom:1px solid {_PANEL_BORDER};
-                font-weight:bold; font-size:12px;
+                font-weight:bold; font-size:{FONT_LABEL}px;
             }}
             QTableWidget::item {{ padding:4px 8px; }}
         """)
@@ -1588,7 +1298,7 @@ class DailyContactScreen(QWidget):
         toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
         toast.setStyleSheet(
             "background:#323232; color:white; border-radius:8px;"
-            "padding:10px 20px; font-size:13px;"
+            f"padding:10px 20px; font-size:{FONT_BODY}px;"
         )
         toast.adjustSize()
         x = max(12, (parent.width() - toast.width()) // 2)

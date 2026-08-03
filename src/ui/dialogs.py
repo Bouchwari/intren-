@@ -17,14 +17,16 @@ from PySide6.QtWidgets import (
     QInputDialog, QVBoxLayout, QWidget,
 )
 
+from config.settings import COLOR_ACCENT, COLOR_DANGER, COLOR_PANEL_ALT, COLOR_TEXT_PRIMARY, FONT_BODY
+from ui.widgets.icon_button import IconButton
 
 _INK = "#5A5A40"
 _PAGE = "#f5f5f0"
 _BORDER = "#d6d6c8"
-_TEXT = "#0f172a"
+_TEXT = COLOR_TEXT_PRIMARY
 _MUTED = "#64748b"
-_BLUE = "#32B7E8"
-_RED = "#ef4444"
+_BLUE = COLOR_ACCENT
+_RED = COLOR_DANGER
 _GREEN = "#16a34a"
 
 _ORIGINAL_GET_SAVE_FILE_NAME = QFileDialog.getSaveFileName
@@ -32,27 +34,14 @@ _ORIGINAL_GET_OPEN_FILE_NAME = QFileDialog.getOpenFileName
 
 
 def _button(label: str, *, primary: bool = False, danger: bool = False) -> QPushButton:
-    btn = QPushButton(label)
-    btn.setMinimumHeight(38)
-    bg = _BLUE if primary else (_RED if danger else "#E4E4D7")
+    bg = _BLUE if primary else (_RED if danger else COLOR_PANEL_ALT)
     fg = "#ffffff" if (primary or danger) else _TEXT
-    btn.setStyleSheet(f"""
-        QPushButton {{
-            background: {bg};
-            color: {fg};
-            border: 1px solid {bg};
-            border-radius: 12px;
-            padding: 0 18px;
-            font-size: 13px;
-            font-weight: 800;
-            min-width: 92px;
-        }}
-        QPushButton:hover {{
-            background: {_INK};
-            color: white;
-            border-color: {_INK};
-        }}
-    """)
+    btn = IconButton(
+        label, bg=bg, text_color=fg, border=bg,
+        border_radius=12, padding_h=18, font_size=13, bold=True, min_height=38,
+        hover_bg=_INK,
+    )
+    btn.setMinimumWidth(92)
     return btn
 
 
@@ -78,7 +67,7 @@ class _AppDialog(QDialog):
                 border: 1px solid {_BORDER};
                 border-radius: 12px;
                 padding: 7px 12px;
-                font-size: 13px;
+                font-size: {FONT_BODY}px;
                 selection-background-color: {_INK};
                 selection-color: white;
             }}
@@ -134,7 +123,7 @@ class _MessageDialog(_AppDialog):
         msg = QLabel(text)
         msg.setWordWrap(True)
         msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        msg.setStyleSheet(f"color: {_TEXT}; font-size: 13px; line-height: 1.4;")
+        msg.setStyleSheet(f"color: {_TEXT}; font-size: {FONT_BODY}px; line-height: 1.4;")
         msg.setMinimumWidth(260)
 
         text_col.addWidget(title_lbl)
@@ -187,7 +176,7 @@ class _TextInputDialog(_AppDialog):
 
         prompt = QLabel(label)
         prompt.setWordWrap(True)
-        prompt.setStyleSheet(f"color: {_TEXT}; font-size: 13px;")
+        prompt.setStyleSheet(f"color: {_TEXT}; font-size: {FONT_BODY}px;")
         root.addWidget(prompt)
 
         self._line = QLineEdit()

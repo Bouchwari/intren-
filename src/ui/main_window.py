@@ -7,7 +7,7 @@ import logging
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QSizePolicy,
+    QFrame, QHBoxLayout, QLabel, QMainWindow, QSizePolicy,
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -16,6 +16,7 @@ from config.settings import (
     COLOR_ACCENT, COLOR_SIDEBAR_ACTIVE, COLOR_SIDEBAR_BG,
     COLOR_SIDEBAR_BORDER, COLOR_SIDEBAR_HOVER, COLOR_SURFACE,
     COLOR_TEXT_SIDEBAR, COLOR_TEXT_SIDEBAR_ACTIVE,
+    FONT_CAPTION,
     WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH,
 )
 from ui.daily_absence_screen import DailyAbsenceScreen
@@ -29,69 +30,58 @@ from ui.monthly_report_screen import MonthlyReportScreen
 from ui.order_letter_screen import OrderLetterScreen
 from ui.students_screen import StudentsScreen
 from ui.settings_screen import SettingsScreen
+from ui.widgets.icon_button import IconButton
 
-# Nav items: (Arabic label, screen_index)
+# Nav items: (icon emoji, Arabic label, screen_index)
 # Indices must match the order screens are added to _build_stack()
-_NAV_ITEMS: list[tuple[str, int]] = [
-    ("🏠  الرئيسية",              0),
-    ("👥  لائحة التلاميذ",        1),
-    ("🍽️  البرنامج الغذائي",      2),
-    ("📋  ورقة الاتصال اليومية",  3),
-    ("📉  ورقة الغياب اليومي",    4),
-    ("📄  التقرير اليومي",        5),
-    ("📊  المحضر الشهري",         6),
-    ("✉️  رسالة الطلبية",         7),
-    ("💰  بيان المصاريف",         8),
-    ("📕  دفتر المخالفات",        9),
-    ("⚙️  الإعدادات",            10),
+_NAV_ITEMS: list[tuple[str, str, int]] = [
+    ("🏠", "الرئيسية",              0),
+    ("👥", "لائحة التلاميذ",        1),
+    ("🍽️", "البرنامج الغذائي",      2),
+    ("📋", "ورقة الاتصال اليومية",  3),
+    ("📉", "ورقة الغياب اليومي",    4),
+    ("📄", "التقرير اليومي",        5),
+    ("📊", "المحضر الشهري",         6),
+    ("✉️", "رسالة الطلبية",         7),
+    ("💰", "بيان المصاريف",         8),
+    ("📕", "دفتر المخالفات",        9),
+    ("⚙️", "الإعدادات",            10),
 ]
 
 _SIDEBAR_WIDTH = 235
-_APP_BG = "#f5f5f0"
-_NAV_PANEL_BG = "#E4E4D7"
-_NAV_PANEL_BORDER = "#d6d6c8"
-_NAV_ACTIVE = "#5A5A40"
-_NAV_TEXT = "#475569"
-_MENU_HIDE = "☰ إخفاء الصفحات"
-_MENU_SHOW = "☰ إظهار الصفحات"
+_APP_BG = COLOR_SURFACE
+_NAV_PANEL_BG = COLOR_SIDEBAR_BG
+_NAV_PANEL_BORDER = COLOR_SIDEBAR_BORDER
+_NAV_ACTIVE = COLOR_SIDEBAR_ACTIVE
+_NAV_TEXT = COLOR_TEXT_SIDEBAR
+_MENU_HIDE = "إخفاء الصفحات"
+_MENU_SHOW = "إظهار الصفحات"
+_MENU_ICON = "☰"
 _MEAL_PROGRAM_INDEX = 2
 _LOGGER = logging.getLogger(__name__)
 
 
-class _NavButton(QPushButton):
-    """Sidebar navigation button with active/inactive styling."""
+class _NavButton(IconButton):
+    """Sidebar navigation button with active/inactive styling. Icon+label
+    are laid out manually (see IconButton) so they reliably hug the right
+    edge instead of floating near the left on this wide button."""
 
-    _STYLE = """
-        QPushButton {{
-            background-color: {bg};
-            color: {fg};
-            border: 1px solid {border_color};
-            border-radius: 14px;
-            padding: 11px 14px;
-            font-size: 13px;
-            font-weight: 700;
-            text-align: right;
-        }}
-        QPushButton:hover {{
-            background-color: rgba(255, 255, 255, 0.65);
-            color: #0f172a;
-        }}
-    """
-
-    def __init__(self, label: str) -> None:
-        super().__init__(label)
+    def __init__(self, icon_emoji: str, label: str) -> None:
+        super().__init__(
+            label, icon=icon_emoji, bg="transparent", text_color=_NAV_TEXT,
+            border_radius=14, padding_h=14, font_size=13, bold=True,
+            min_height=44, icon_size=18, hover_bg=COLOR_SIDEBAR_HOVER,
+        )
         self.setCheckable(True)
-        self.setMinimumHeight(44)
         self.set_active(False)
 
     def set_active(self, active: bool) -> None:
-        self.setStyleSheet(self._STYLE.format(
+        self.set_style(
             bg=_NAV_ACTIVE if active else "transparent",
-            fg=COLOR_TEXT_SIDEBAR_ACTIVE if active else _NAV_TEXT,
-            border_color=_NAV_ACTIVE if active else "transparent",
-            COLOR_SIDEBAR_HOVER=COLOR_SIDEBAR_HOVER,
-            COLOR_TEXT_SIDEBAR_ACTIVE=COLOR_TEXT_SIDEBAR_ACTIVE,
-        ))
+            text_color=COLOR_TEXT_SIDEBAR_ACTIVE if active else _NAV_TEXT,
+            border=_NAV_ACTIVE if active else None,
+            hover_bg="transparent" if active else COLOR_SIDEBAR_HOVER,
+        )
 
 
 
@@ -134,12 +124,9 @@ class MainWindow(QMainWindow):
 
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(0, 0, 0, 0)
-        self._menu_toggle = QPushButton(_MENU_HIDE)
-        self._menu_toggle.setMinimumHeight(34)
-        self._menu_toggle.setStyleSheet(
-            f"background-color: {_NAV_ACTIVE}; color: white;"
-            "border: none; border-radius: 12px; padding: 0 14px;"
-            "font-size: 13px; font-weight: 900;"
+        self._menu_toggle = IconButton(
+            _MENU_HIDE, icon=_MENU_ICON, bg=_NAV_ACTIVE, text_color="white",
+            border_radius=12, padding_h=14, font_size=13, bold=True, min_height=34,
         )
         self._menu_toggle.clicked.connect(self._toggle_sidebar)
         top_bar.addWidget(self._menu_toggle)
@@ -161,19 +148,21 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 16, 14, 14)
         layout.setSpacing(8)
 
-        # Title
-        title = QLabel(f"M  {APP_NAME}")
-        title.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # Title — shows the school name once configured, falls back to the
+        # generic app name before setup.
+        self._title_label = QLabel(f"M  {APP_NAME}")
+        self._title_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._title_label.setWordWrap(True)
         f = QFont(); f.setPointSize(13); f.setBold(True)
-        title.setFont(f)
-        title.setStyleSheet(
-            f"color: {_NAV_ACTIVE}; padding: 8px 6px 18px 6px;"
+        self._title_label.setFont(f)
+        self._title_label.setStyleSheet(
+            f"color: {COLOR_TEXT_SIDEBAR_ACTIVE}; padding: 8px 6px 18px 6px;"
         )
-        layout.addWidget(title)
+        layout.addWidget(self._title_label)
 
         # Nav buttons
-        for label, index in _NAV_ITEMS:
-            btn = _NavButton(label)
+        for icon_emoji, label, index in _NAV_ITEMS:
+            btn = _NavButton(icon_emoji, label)
             btn.clicked.connect(lambda _c, i=index: self._navigate(i))
             self._nav_buttons.append(btn)
             layout.addWidget(btn)
@@ -183,7 +172,7 @@ class MainWindow(QMainWindow):
         # Version
         ver = QLabel(f"v{APP_VERSION}")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver.setStyleSheet(f"color: {_NAV_TEXT}; font-size: 11px; padding: 10px;")
+        ver.setStyleSheet(f"color: {_NAV_TEXT}; font-size: {FONT_CAPTION}px; padding: 10px;")
         layout.addWidget(ver)
         return sidebar
 
@@ -234,9 +223,17 @@ class MainWindow(QMainWindow):
             from data.database import get_student_counts
             counts = get_student_counts()
             total = counts.get("total", 0)
-            self._nav_buttons[1].setText(f"👥  لائحة التلاميذ ({total})")
+            self._nav_buttons[1].setText(f"لائحة التلاميذ ({total})")
         except Exception:
             _LOGGER.exception("Failed to refresh sidebar student count")
+
+        try:
+            from data.settings_repo import get_school_settings
+            settings = get_school_settings()
+            school_name = settings.school_name.strip() if settings else ""
+            self._title_label.setText(f"M  {school_name if school_name else APP_NAME}")
+        except Exception:
+            _LOGGER.exception("Failed to refresh sidebar school name")
 
     def _toggle_sidebar(self) -> None:
         """Hide the navigation when the current page needs more working space."""

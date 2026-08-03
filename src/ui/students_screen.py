@@ -16,9 +16,10 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_DANGER,
+    COLOR_ACCENT, COLOR_DANGER, COLOR_PANEL_ALT,
     COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     GRANT_LABELS, SECTION_LABELS,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.excel_handler import (
     infer_level_parts, load_level_catalog, read_students_from_excel,
@@ -29,6 +30,7 @@ from data.database import (
     add_student, add_students_bulk, delete_student,
     get_all_students, get_level_preferences, get_students_filtered, update_student,
 )
+from ui.widgets.icon_button import IconButton
 
 _PAGE_BG = "#f5f5f0"
 _PANEL_BG = "#E4E4D7"
@@ -41,13 +43,20 @@ _TITLE          = "لائحة التلاميذ والمستفيدين"
 _TAB_ALL        = "كل المستفيدين"
 _TAB_STUDENTS   = "التلاميذ"
 _TAB_MONITORS   = "معلمو الداخلية"
-_BTN_ADD        = "➕  إضافة"
-_BTN_EDIT       = "✏️  تعديل"
-_BTN_DELETE     = "🗑️  حذف"
-_BTN_IMPORT     = "📥  استيراد Excel"
-_BTN_EXPORT     = "📤  تصدير Excel"
-_BTN_TEMPLATE   = "📋  نموذج"
-_BTN_SET_LEVEL  = "🎓  مستوى للجميع"
+_BTN_ADD        = "إضافة"
+_BTN_ADD_ICON   = "➕"
+_BTN_EDIT       = "تعديل"
+_BTN_EDIT_ICON  = "✏️"
+_BTN_DELETE     = "حذف"
+_BTN_DELETE_ICON = "🗑️"
+_BTN_IMPORT     = "استيراد Excel"
+_BTN_IMPORT_ICON = "📥"
+_BTN_EXPORT     = "تصدير Excel"
+_BTN_EXPORT_ICON = "📤"
+_BTN_TEMPLATE   = "نموذج"
+_BTN_TEMPLATE_ICON = "📋"
+_BTN_SET_LEVEL  = "مستوى للجميع"
+_BTN_SET_LEVEL_ICON = "🎓"
 _SEARCH_HINT    = "البحث بالاسم، رقم مسار، المستوى أو رقم المنحة..."
 _NO_SEL_MSG     = "الرجاء تحديد صف أولاً."
 _DEL_CONFIRM    = "هل أنت متأكد من الحذف؟ لا يمكن التراجع."
@@ -154,7 +163,7 @@ def _stat_chip(title: str, value: str, color: str = _INK) -> QFrame:
     title_lbl = QLabel(title)
     title_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
     title_lbl.setMaximumHeight(20)
-    title_lbl.setStyleSheet(f"background: transparent; color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: 700;")
+    title_lbl.setStyleSheet(f"background: transparent; color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_CAPTION}px; font-weight: 700;")
     value_lbl = QLabel(value)
     value_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
     value_lbl.setMaximumHeight(34)
@@ -241,7 +250,7 @@ class _AddEditDialog(QDialog):
             #studentDialog QLabel {{
                 background: transparent;
                 color: {COLOR_TEXT_PRIMARY};
-                font-size: 13px;
+                font-size: {FONT_BODY}px;
             }}
             #studentDialog QComboBox {{
                 background: white;
@@ -250,7 +259,7 @@ class _AddEditDialog(QDialog):
                 border-radius: 10px;
                 padding: 4px 10px;
                 min-height: 34px;
-                font-size: 13px;
+                font-size: {FONT_BODY}px;
             }}
             #studentDialog QComboBox::drop-down {{
                 width: 34px;
@@ -280,7 +289,7 @@ class _AddEditDialog(QDialog):
         w.setStyleSheet(
             f"background: white; color: {COLOR_TEXT_PRIMARY};"
             f"border: 1px solid {_PANEL_BORDER}; border-radius: 10px;"
-            "padding: 4px 10px; font-size: 13px;"
+            f"padding: 4px 10px; font-size: {FONT_BODY}px;"
         )
         return w
 
@@ -303,7 +312,7 @@ class _AddEditDialog(QDialog):
         label_widget = QLabel(label)
         label_widget.setAlignment(Qt.AlignmentFlag.AlignRight)
         label_widget.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: 12px; font-weight: 700;"
+            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_LABEL}px; font-weight: 700;"
         )
         layout.addWidget(label_widget)
         layout.addWidget(widget)
@@ -318,12 +327,12 @@ class _AddEditDialog(QDialog):
         f = QFont(); f.setPointSize(13); f.setBold(True)
         heading.setFont(f)
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        heading.setStyleSheet(f"color: {_INK}; font-size: 16px; font-weight: 800;")
+        heading.setStyleSheet(f"color: {_INK}; font-size: {FONT_SECTION}px; font-weight: 800;")
         root.addWidget(heading)
 
         hint = QLabel("املأ الضروري أولاً، ويمكن ترك باقي الحقول فارغة عند الحاجة.")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        hint.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_CAPTION}px;")
         root.addWidget(hint)
 
         self._name_in      = self._field("الاسم الشخصي والعائلي")
@@ -368,7 +377,7 @@ class _AddEditDialog(QDialog):
                 background: transparent;
                 color: {COLOR_TEXT_PRIMARY};
                 spacing: 10px;
-                font-size: 13px;
+                font-size: {FONT_BODY}px;
                 font-weight: 700;
             }}
             QCheckBox#monitorCheck::indicator {{
@@ -416,17 +425,13 @@ class _AddEditDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
-        save_btn   = QPushButton("💾  حفظ")
-        cancel_btn = QPushButton("إلغاء")
-        save_btn.setMinimumHeight(38)
-        cancel_btn.setMinimumHeight(38)
-        save_btn.setStyleSheet(
-            f"background-color: {COLOR_ACCENT}; color: white;"
-            "font-weight: bold; border-radius: 12px; padding: 0 20px;"
+        save_btn = IconButton(
+            "حفظ", icon="💾", bg=COLOR_ACCENT, text_color="white",
+            border_radius=12, padding_h=20, font_size=13, bold=True, min_height=38,
         )
-        cancel_btn.setStyleSheet(
-            f"background-color: #e2e8f0; color: {COLOR_TEXT_PRIMARY};"
-            "border-radius: 12px; padding: 0 20px;"
+        cancel_btn = IconButton(
+            "إلغاء", bg=COLOR_PANEL_ALT, text_color=COLOR_TEXT_PRIMARY,
+            border_radius=12, padding_h=20, font_size=13, bold=False, min_height=38,
         )
         save_btn.clicked.connect(self._on_save)
         cancel_btn.clicked.connect(self.reject)
@@ -581,7 +586,7 @@ class _LevelPickerDialog(QDialog):
             #levelPickerDialog QLabel {{
                 background: transparent;
                 color: {COLOR_TEXT_PRIMARY};
-                font-size: 13px;
+                font-size: {FONT_BODY}px;
             }}
             #levelPickerDialog QComboBox {{
                 background: white;
@@ -590,7 +595,7 @@ class _LevelPickerDialog(QDialog):
                 border-radius: 10px;
                 padding: 4px 10px;
                 min-height: 36px;
-                font-size: 13px;
+                font-size: {FONT_BODY}px;
             }}
             #levelPickerDialog QComboBox::drop-down {{
                 width: 34px;
@@ -656,17 +661,13 @@ class _LevelPickerDialog(QDialog):
         self._refresh_education_types()
 
         row = QHBoxLayout()
-        cancel = QPushButton("إلغاء")
-        apply = QPushButton("تطبيق")
-        for btn in (cancel, apply):
-            btn.setMinimumHeight(40)
-        cancel.setStyleSheet(
-            f"background-color: #e2e8f0; color: {COLOR_TEXT_PRIMARY};"
-            "border-radius: 12px; padding: 0 20px; font-weight: 700;"
+        cancel = IconButton(
+            "إلغاء", bg=COLOR_PANEL_ALT, text_color=COLOR_TEXT_PRIMARY,
+            border_radius=12, padding_h=20, font_size=13, bold=True, min_height=40,
         )
-        apply.setStyleSheet(
-            f"background-color: {COLOR_ACCENT}; color: white;"
-            "font-weight: bold; border-radius: 12px; padding: 0 20px;"
+        apply = IconButton(
+            "تطبيق", bg=COLOR_ACCENT, text_color="white",
+            border_radius=12, padding_h=20, font_size=13, bold=True, min_height=40,
         )
         cancel.clicked.connect(self.reject)
         apply.clicked.connect(self._accept)
@@ -780,7 +781,7 @@ class _TablePanel(QWidget):
         search.setMaximumWidth(420)
         search.setStyleSheet(
             f"border:1px solid {_PANEL_BORDER}; border-radius:14px;"
-            "padding:6px 14px; font-size:13px; background:white;"
+            f"padding:6px 14px; font-size:{FONT_BODY}px; background:white;"
         )
         search.textChanged.connect(self._proxy.setFilterFixedString)
         layout.addWidget(search)
@@ -801,15 +802,15 @@ class _TablePanel(QWidget):
         table.setStyleSheet(f"""
             QTableView {{
                 border: 1px solid {_PANEL_BORDER}; border-radius: 14px;
-                background: white; alternate-background-color: #f8fafc;
+                background: white; alternate-background-color: {COLOR_PANEL_ALT};
                 selection-background-color: {_PANEL_BG};
-                selection-color: {COLOR_TEXT_PRIMARY}; font-size: 13px;
+                selection-color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_BODY}px;
             }}
             QHeaderView::section {{
                 background-color: #f5f5f0; color: {_INK};
                 padding: 9px 12px; border: none;
                 border-bottom: 1px solid {_PANEL_BORDER};
-                font-weight: bold; font-size: 12px;
+                font-weight: bold; font-size: {FONT_LABEL}px;
             }}
             QTableView::item {{ padding: 7px 12px; border-bottom: 1px solid #f1f5f9; }}
         """)
@@ -863,7 +864,7 @@ class StudentsScreen(QWidget):
         title.setStyleSheet(f"background: white; color: {COLOR_TEXT_PRIMARY};")
         subtitle = QLabel("إدارة المستفيدين، الاستيراد من Excel، والتصدير عند الحاجة")
         subtitle.setWordWrap(True)
-        subtitle.setStyleSheet(f"background: white; color: {COLOR_TEXT_SECONDARY}; font-size: 12px;")
+        subtitle.setStyleSheet(f"background: white; color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_LABEL}px;")
         title_col.addWidget(title)
         title_col.addWidget(subtitle)
 
@@ -882,7 +883,7 @@ class StudentsScreen(QWidget):
             QTabWidget::pane {{ border: 1px solid {_PANEL_BORDER}; border-radius: 18px; background: white; }}
             QTabBar::tab {{
                 background: #f5f5f0; color: {COLOR_TEXT_SECONDARY};
-                padding: 10px 22px; font-size: 13px; border-radius: 12px;
+                padding: 10px 22px; font-size: {FONT_BODY}px; border-radius: 12px;
                 margin-left: 2px;
             }}
             QTabBar::tab:selected {{ background: {_INK}; color: white; font-weight: bold; }}
@@ -906,7 +907,7 @@ class StudentsScreen(QWidget):
         elayout = QVBoxLayout(self._empty_widget)
         elayout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl = QLabel("لا يوجد تلاميذ — استورد من Excel أو أضف يدوياً")
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 16px; margin: 40px;")
+        lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_BODY}px; margin: 40px;")
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         elayout.addWidget(lbl)
         root.addWidget(self._empty_widget)
@@ -923,34 +924,33 @@ class StudentsScreen(QWidget):
         row.setSpacing(8)
 
         primary_actions = [
-            (_BTN_ADD,    self._on_add,    False),
-            (_BTN_EDIT,   self._on_edit,   False),
-            (_BTN_DELETE, self._on_delete, True),
+            (_BTN_ADD,    _BTN_ADD_ICON,    self._on_add,    False),
+            (_BTN_EDIT,   _BTN_EDIT_ICON,   self._on_edit,   False),
+            (_BTN_DELETE, _BTN_DELETE_ICON, self._on_delete, True),
         ]
-        for col, (label, slot, danger) in enumerate(primary_actions):
-            btn = self._btn(label, slot, danger=danger)
+        for col, (label, icon, slot, danger) in enumerate(primary_actions):
+            btn = self._btn(label, slot, danger=danger, icon=icon)
             row.addWidget(btn, 0, col)
 
         secondary_actions = [
-            (_BTN_IMPORT,   self._on_import),
-            (_BTN_EXPORT,   self._on_export),
-            (_BTN_TEMPLATE, self._on_template),
-            (_BTN_SET_LEVEL, self._on_set_level_for_current_tab),
+            (_BTN_IMPORT,   _BTN_IMPORT_ICON,   self._on_import),
+            (_BTN_EXPORT,   _BTN_EXPORT_ICON,   self._on_export),
+            (_BTN_TEMPLATE, _BTN_TEMPLATE_ICON, self._on_template),
+            (_BTN_SET_LEVEL, _BTN_SET_LEVEL_ICON, self._on_set_level_for_current_tab),
         ]
-        for col, (label, slot) in enumerate(secondary_actions):
-            row.addWidget(self._btn(label, slot, secondary=True), 1, col)
+        for col, (label, icon, slot) in enumerate(secondary_actions):
+            row.addWidget(self._btn(label, slot, secondary=True, icon=icon), 1, col)
 
         return row
 
-    def _btn(self, label: str, slot: Any, *, danger: bool = False, secondary: bool = False) -> QPushButton:
-        btn = QPushButton(label)
-        btn.setMinimumHeight(38)
+    def _btn(self, label: str, slot: Any, *, danger: bool = False, secondary: bool = False,
+              icon: str | None = None) -> QPushButton:
         color = COLOR_DANGER if danger else (_PANEL_BG if secondary else _INK)
         text_color = _INK if secondary else "white"
         border = _PANEL_BORDER if secondary else color
-        btn.setStyleSheet(
-            f"background:{color}; color:{text_color}; border:1px solid {border};"
-            "border-radius:12px; padding:0 12px; font-size:12px; font-weight:700;"
+        btn = IconButton(
+            label, icon=icon, bg=color, text_color=text_color, border=border,
+            border_radius=12, padding_h=12, font_size=12, bold=True, min_height=38,
         )
         btn.clicked.connect(slot)
         return btn

@@ -12,7 +12,10 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget, QScrollArea, QFrame
 )
 
-from config.settings import COLOR_ACCENT, COLOR_BORDER, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY
+from config.settings import (
+    COLOR_ACCENT, COLOR_BORDER, COLOR_PANEL_ALT, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
+)
 from core.excel_handler import load_level_catalog
 from core.models import SchoolSettings
 from data.database import save_level_preferences, save_school_settings
@@ -41,7 +44,7 @@ def _line(placeholder: str = "") -> QLineEdit:
     w.setStyleSheet(
         f"background: white; color: {COLOR_TEXT_PRIMARY};"
         f"border: 1px solid {COLOR_BORDER}; border-radius: 6px;"
-        "padding: 4px 12px; font-size: 13px;"
+        f"padding: 4px 12px; font-size: {FONT_BODY}px;"
     )
     return w
 
@@ -51,7 +54,7 @@ def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
     box = QGroupBox(title)
     box.setStyleSheet(f"""
         QGroupBox {{
-            font-weight: bold; font-size: 14px;
+            font-weight: bold; font-size: {FONT_SECTION}px;
             color: {COLOR_TEXT_PRIMARY};
             border: 1px solid {COLOR_BORDER};
             border-radius: 8px; margin-top: 14px; padding: 14px;
@@ -60,7 +63,7 @@ def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
         QGroupBox::title {{
             subcontrol-origin: margin; subcontrol-position: top right;
             padding: 0 8px; right: 14px;
-            background: #f8fafc;
+            background: {COLOR_PANEL_ALT};
         }}
         QLabel {{
             color: {COLOR_TEXT_PRIMARY};
@@ -134,7 +137,7 @@ class SetupWizard(QDialog):
         self._title_lbl.setStyleSheet("color: white;")
 
         self._sub_lbl = QLabel(_SUBTITLE_P1)
-        self._sub_lbl.setStyleSheet("color: rgba(255,255,255,0.85); font-size: 12px;")
+        self._sub_lbl.setStyleSheet(f"color: rgba(255,255,255,0.85); font-size: {FONT_LABEL}px;")
 
         layout.addWidget(self._title_lbl)
         layout.addWidget(self._sub_lbl)
@@ -144,11 +147,11 @@ class SetupWizard(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #f8fafc; border: none; }")
+        scroll.setStyleSheet(f"QScrollArea {{ background: {COLOR_SURFACE}; border: none; }}")
 
         page = QWidget()
         page.setObjectName("WizardPage")
-        page.setStyleSheet("#WizardPage { background: #f8fafc; }")
+        page.setStyleSheet(f"#WizardPage {{ background: {COLOR_SURFACE}; }}")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
@@ -194,11 +197,11 @@ class SetupWizard(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #f8fafc; border: none; }")
+        scroll.setStyleSheet(f"QScrollArea {{ background: {COLOR_SURFACE}; border: none; }}")
 
         page = QWidget()
         page.setObjectName("WizardPage")
-        page.setStyleSheet("#WizardPage { background: #f8fafc; }")
+        page.setStyleSheet(f"#WizardPage {{ background: {COLOR_SURFACE}; }}")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
@@ -247,7 +250,7 @@ class SetupWizard(QDialog):
         grp_prices.layout().addRow(price_layout)  # type: ignore[union-attr]
 
         note = QLabel("* يمكن تعديل هذه المعلومات لاحقاً من صفحة الإعدادات")
-        note.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        note.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_CAPTION}px;")
 
         layout.addWidget(grp_contract)
         layout.addWidget(grp_prices)
@@ -270,7 +273,7 @@ class SetupWizard(QDialog):
         grp = QGroupBox(_GRP_LEVELS)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-weight: bold; font-size: 14px;
+                font-weight: bold; font-size: {FONT_SECTION}px;
                 color: {COLOR_TEXT_PRIMARY};
                 border: 1px solid {COLOR_BORDER};
                 border-radius: 8px; margin-top: 14px; padding: 14px;
@@ -279,7 +282,7 @@ class SetupWizard(QDialog):
             QGroupBox::title {{
                 subcontrol-origin: margin; subcontrol-position: top right;
                 padding: 0 8px; right: 14px;
-                background: #f8fafc;
+                background: {COLOR_PANEL_ALT};
             }}
             QLabel {{
                 color: {COLOR_TEXT_SECONDARY};
@@ -304,7 +307,7 @@ class SetupWizard(QDialog):
         type_box = QGroupBox("نوع التعليم")
         for box in (cycle_box, type_box):
             box.setStyleSheet(
-                f"QGroupBox {{ background:#f8fafc; border:1px solid {COLOR_BORDER};"
+                f"QGroupBox {{ background:{COLOR_PANEL_ALT}; border:1px solid {COLOR_BORDER};"
                 "border-radius:8px; margin-top:10px; padding:10px; }}"
                 "QGroupBox::title { padding:0 6px; right:10px; }"
                 "QCheckBox { spacing:10px; padding:5px 2px; }"
@@ -342,8 +345,8 @@ class SetupWizard(QDialog):
         self._back_btn.setMinimumHeight(38)
         self._back_btn.setVisible(False)
         self._back_btn.setStyleSheet(
-            f"background: #e2e8f0; color: {COLOR_TEXT_PRIMARY};"
-            "border-radius: 6px; padding: 0 18px; font-size: 13px;"
+            f"background: {COLOR_PANEL_ALT}; color: {COLOR_TEXT_PRIMARY};"
+            f"border-radius: 6px; padding: 0 18px; font-size: {FONT_BODY}px;"
         )
         self._back_btn.clicked.connect(self._go_back)
 
@@ -351,7 +354,7 @@ class SetupWizard(QDialog):
         self._next_btn.setMinimumHeight(38)
         self._next_btn.setStyleSheet(
             f"background: {COLOR_ACCENT}; color: white;"
-            "border-radius: 6px; padding: 0 18px; font-size: 13px; font-weight: bold;"
+            f"border-radius: 6px; padding: 0 18px; font-size: {FONT_BODY}px; font-weight: bold;"
         )
         self._next_btn.clicked.connect(self._go_next)
 

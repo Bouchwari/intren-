@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QFrame, QGroupBox, QHBoxLayout,
+    QComboBox, QFrame, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
@@ -18,8 +18,11 @@ from PySide6.QtWidgets import (
 from config.settings import (
     COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL,
 )
 from core.models import Student, Violation
+from ui.widgets.date_input import DateInput
+from ui.widgets.icon_button import IconButton
 from data.database import (
     add_violation, delete_violation, get_all_students,
     get_all_violations, search_violations, update_violation,
@@ -53,25 +56,28 @@ _TABLE_HEADERS = [
     "نوع المخالفة", "الوصف", "الإجراء المتخذ", "المُبلِّغ",
 ]
 
-_BTN_SAVE   = "💾  حفظ المخالفة"
-_BTN_NEW    = "➕  جديد"
-_BTN_DELETE = "🗑️  حذف"
-_BTN_SEARCH = "🔍  بحث"
-_BTN_RESET  = "↺  إعادة ضبط"
+_BTN_SAVE   = "حفظ المخالفة"
+_BTN_SAVE_ICON = "💾"
+_BTN_NEW    = "جديد"
+_BTN_NEW_ICON = "➕"
+_BTN_DELETE = "حذف"
+_BTN_DELETE_ICON = "🗑️"
+_BTN_SEARCH = "بحث"
+_BTN_SEARCH_ICON = "🔍"
+_BTN_RESET  = "إعادة ضبط"
+_BTN_RESET_ICON = "↺"
 _SAVED_OK   = "تم حفظ المخالفة بنجاح."
 _DEL_CONFIRM= "هل تريد حذف هذا السجل نهائياً؟"
 _UPDATED_OK = "تم تحديث المخالفة بنجاح."
 
 
-def _btn(label: str, color: str, min_w: int = 0) -> QPushButton:
-    b = QPushButton(label)
-    b.setMinimumHeight(36)
+def _btn(label: str, color: str, min_w: int = 0, *, icon: str | None = None) -> QPushButton:
+    b = IconButton(
+        label, icon=icon, bg=color, text_color="white",
+        border_radius=6, padding_h=14, font_size=13, bold=False, min_height=36,
+    )
     if min_w:
         b.setMinimumWidth(min_w)
-    b.setStyleSheet(
-        f"background:{color}; color:white; border-radius:6px;"
-        "padding:0 14px; font-size:13px;"
-    )
     return b
 
 
@@ -110,7 +116,7 @@ class IncidentLogScreen(QWidget):
         f = QFont(); f.setPointSize(17); f.setBold(True); title.setFont(f)
         title.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY};")
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         root.addWidget(title)
         root.addWidget(sub)
 
@@ -118,7 +124,7 @@ class IncidentLogScreen(QWidget):
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setHandleWidth(8)
         splitter.setStyleSheet(
-            "QSplitter::handle { background:#e2e8f0; border-radius:4px; }"
+            f"QSplitter::handle {{ background:{COLOR_BORDER}; border-radius:4px; }}"
         )
         splitter.addWidget(self._build_form_panel())
         splitter.addWidget(self._build_history_panel())
@@ -132,7 +138,7 @@ class IncidentLogScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 border:2px solid {COLOR_ACCENT}; border-radius:10px;
                 margin-top:10px; padding:12px;
             }}
@@ -149,21 +155,19 @@ class IncidentLogScreen(QWidget):
 
         # Date
         date_col = QVBoxLayout()
-        date_col.addWidget(QLabel("التاريخ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
-        self._date_edit = QDateEdit()
-        self._date_edit.setCalendarPopup(True)
+        date_col.addWidget(QLabel("التاريخ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
+        self._date_edit = DateInput(display_format="yyyy-MM-dd")
         self._date_edit.setDate(QDate.currentDate())
-        self._date_edit.setDisplayFormat("yyyy-MM-dd")
         self._date_edit.setMinimumHeight(34)
         self._date_edit.setMinimumWidth(140)
         self._date_edit.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         date_col.addWidget(self._date_edit)
         r1.addLayout(date_col)
 
         # Student picker
         stu_col = QVBoxLayout()
-        stu_col.addWidget(QLabel("التلميذ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        stu_col.addWidget(QLabel("التلميذ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._student_combo = QComboBox()
         self._student_combo.setEditable(True)
         self._student_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
@@ -171,20 +175,20 @@ class IncidentLogScreen(QWidget):
         self._student_combo.setMinimumWidth(220)
         self._student_combo.setPlaceholderText("اختر تلميذاً أو اكتب الاسم...")
         self._student_combo.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         self._student_combo.currentIndexChanged.connect(self._on_student_selected)
         stu_col.addWidget(self._student_combo)
         r1.addLayout(stu_col, 1)
 
         # Class
         cls_col = QVBoxLayout()
-        cls_col.addWidget(QLabel("القسم:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        cls_col.addWidget(QLabel("القسم:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._class_edit = QLineEdit()
         self._class_edit.setMinimumHeight(34)
         self._class_edit.setMinimumWidth(100)
         self._class_edit.setPlaceholderText("القسم")
         self._class_edit.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         cls_col.addWidget(self._class_edit)
         r1.addLayout(cls_col)
 
@@ -194,36 +198,36 @@ class IncidentLogScreen(QWidget):
         r2 = QHBoxLayout(); r2.setSpacing(10)
 
         vtype_col = QVBoxLayout()
-        vtype_col.addWidget(QLabel("نوع المخالفة:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        vtype_col.addWidget(QLabel("نوع المخالفة:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._vtype_combo = QComboBox()
         self._vtype_combo.setEditable(True)
         self._vtype_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._vtype_combo.setMinimumHeight(34)
         self._vtype_combo.addItems(_VIOLATION_TYPES)
         self._vtype_combo.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         vtype_col.addWidget(self._vtype_combo)
         r2.addLayout(vtype_col, 2)
 
         action_col = QVBoxLayout()
-        action_col.addWidget(QLabel("الإجراء المتخذ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        action_col.addWidget(QLabel("الإجراء المتخذ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._action_combo = QComboBox()
         self._action_combo.setEditable(True)
         self._action_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._action_combo.setMinimumHeight(34)
         self._action_combo.addItems(_ACTION_TYPES)
         self._action_combo.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         action_col.addWidget(self._action_combo)
         r2.addLayout(action_col, 2)
 
         rep_col = QVBoxLayout()
-        rep_col.addWidget(QLabel("المُبلِّغ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        rep_col.addWidget(QLabel("المُبلِّغ:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._reporter_edit = QLineEdit()
         self._reporter_edit.setMinimumHeight(34)
         self._reporter_edit.setPlaceholderText("اسم المُبلِّغ")
         self._reporter_edit.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         rep_col.addWidget(self._reporter_edit)
         r2.addLayout(rep_col, 1)
 
@@ -231,12 +235,12 @@ class IncidentLogScreen(QWidget):
 
         # ── Row 3: description ──
         desc_col = QVBoxLayout()
-        desc_col.addWidget(QLabel("وصف المخالفة:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        desc_col.addWidget(QLabel("وصف المخالفة:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._desc_edit = QTextEdit()
         self._desc_edit.setPlaceholderText("اكتب تفاصيل المخالفة هنا...")
         self._desc_edit.setMaximumHeight(70)
         self._desc_edit.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:6px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:6px; font-size:{FONT_BODY}px;")
         desc_col.addWidget(self._desc_edit)
         outer.addLayout(desc_col)
 
@@ -245,13 +249,13 @@ class IncidentLogScreen(QWidget):
 
         self._mode_badge = QLabel("• وضع الإضافة")
         self._mode_badge.setStyleSheet(
-            f"color:{COLOR_SUCCESS}; font-size:12px; font-weight:bold;")
+            f"color:{COLOR_SUCCESS}; font-size:{FONT_LABEL}px; font-weight:bold;")
         btn_row.addWidget(self._mode_badge)
         btn_row.addStretch()
 
-        new_btn    = _btn(_BTN_NEW,    "#475569")
-        save_btn   = _btn(_BTN_SAVE,   COLOR_SUCCESS, min_w=160)
-        delete_btn = _btn(_BTN_DELETE, COLOR_DANGER)
+        new_btn    = _btn(_BTN_NEW,    COLOR_TEXT_PRIMARY, icon=_BTN_NEW_ICON)
+        save_btn   = _btn(_BTN_SAVE,   COLOR_SUCCESS, min_w=160, icon=_BTN_SAVE_ICON)
+        delete_btn = _btn(_BTN_DELETE, COLOR_DANGER, icon=_BTN_DELETE_ICON)
 
         new_btn.clicked.connect(self._on_new)
         save_btn.clicked.connect(self._on_save)
@@ -271,7 +275,7 @@ class IncidentLogScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_DANGER};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_DANGER};
                 border:1px solid {COLOR_BORDER}; border-radius:10px;
                 margin-top:10px; padding:10px;
             }}
@@ -290,39 +294,35 @@ class IncidentLogScreen(QWidget):
         self._search_name.setPlaceholderText("🔍  بحث بالاسم...")
         self._search_name.setMinimumHeight(34)
         self._search_name.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         self._search_name.textChanged.connect(self._on_search)
 
         self._filter_type = QComboBox()
         self._filter_type.setMinimumHeight(34)
         self._filter_type.setMinimumWidth(180)
         self._filter_type.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         self._filter_type.addItem("كل أنواع المخالفات", "")
         for vt in _VIOLATION_TYPES:
             self._filter_type.addItem(vt, vt)
         self._filter_type.currentIndexChanged.connect(self._on_search)
 
-        self._date_from = QDateEdit()
-        self._date_from.setCalendarPopup(True)
+        self._date_from = DateInput(display_format="yyyy-MM-dd")
         self._date_from.setDate(QDate.currentDate().addMonths(-12))
-        self._date_from.setDisplayFormat("yyyy-MM-dd")
         self._date_from.setMinimumHeight(34)
         self._date_from.setMinimumWidth(130)
         self._date_from.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 6px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 6px; font-size:{FONT_BODY}px;")
 
-        self._date_to = QDateEdit()
-        self._date_to.setCalendarPopup(True)
+        self._date_to = DateInput(display_format="yyyy-MM-dd")
         self._date_to.setDate(QDate.currentDate())
-        self._date_to.setDisplayFormat("yyyy-MM-dd")
         self._date_to.setMinimumHeight(34)
         self._date_to.setMinimumWidth(130)
         self._date_to.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 6px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 6px; font-size:{FONT_BODY}px;")
 
-        search_btn = _btn(_BTN_SEARCH, COLOR_ACCENT)
-        reset_btn  = _btn(_BTN_RESET,  "#475569")
+        search_btn = _btn(_BTN_SEARCH, COLOR_ACCENT, icon=_BTN_SEARCH_ICON)
+        reset_btn  = _btn(_BTN_RESET,  COLOR_TEXT_PRIMARY, icon=_BTN_RESET_ICON)
         search_btn.clicked.connect(self._on_search)
         reset_btn.clicked.connect(self._on_reset_search)
 
@@ -338,7 +338,7 @@ class IncidentLogScreen(QWidget):
 
         # Count label
         self._count_lbl = QLabel("")
-        self._count_lbl.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        self._count_lbl.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         layout.addWidget(self._count_lbl)
 
         # Table
@@ -355,14 +355,14 @@ class IncidentLogScreen(QWidget):
         self._table.setStyleSheet(f"""
             QTableWidget {{
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
-                font-size:12px; background:white;
+                font-size:{FONT_LABEL}px; background:white;
                 alternate-background-color:#fff5f5;
-                gridline-color:#e2e8f0;
+                gridline-color:{COLOR_BORDER};
             }}
             QHeaderView::section {{
                 background:{COLOR_DANGER}; color:white;
                 padding:8px 8px; border:none;
-                font-weight:bold; font-size:11px;
+                font-weight:bold; font-size:{FONT_CAPTION}px;
             }}
             QTableWidget::item {{ padding:5px 8px; }}
             QTableWidget::item:selected {{
@@ -423,7 +423,7 @@ class IncidentLogScreen(QWidget):
         self._reporter_edit.clear()
         self._desc_edit.clear()
         self._mode_badge.setText("• وضع الإضافة")
-        self._mode_badge.setStyleSheet(f"color:{COLOR_SUCCESS}; font-size:12px; font-weight:bold;")
+        self._mode_badge.setStyleSheet(f"color:{COLOR_SUCCESS}; font-size:{FONT_LABEL}px; font-weight:bold;")
 
     def _form_to_violation(self) -> Violation:
         student_data = self._student_combo.currentData()
@@ -540,7 +540,7 @@ class IncidentLogScreen(QWidget):
 
         self._mode_badge.setText(f"• وضع التعديل  —  سجل #{v.id}")
         self._mode_badge.setStyleSheet(
-            f"color:{COLOR_ACCENT}; font-size:12px; font-weight:bold;")
+            f"color:{COLOR_ACCENT}; font-size:{FONT_LABEL}px; font-weight:bold;")
 
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)

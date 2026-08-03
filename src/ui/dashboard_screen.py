@@ -26,10 +26,11 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_LIGHT_BG, COLOR_PRIMARY,
+    COLOR_ACCENT, COLOR_BORDER, COLOR_LIGHT_BG, COLOR_PRIMARY,
     COLOR_PURPLE, COLOR_SUCCESS, COLOR_TEAL,
     COLOR_TEXT_DARK, COLOR_TEXT_MID, COLOR_WARNING,
     COLOR_DANGER,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.stats_service import DashboardData, load_dashboard
 
@@ -68,7 +69,7 @@ class BarChartWidget(QWidget):
         colors  = [QColor(COLOR_ACCENT), QColor(COLOR_SUCCESS), QColor(COLOR_PURPLE)]
 
         # grid lines
-        p.setPen(QPen(QColor("#e2e8f0"), 1))
+        p.setPen(QPen(QColor(COLOR_BORDER), 1))
         for i in range(5):
             y = pad_t + i * chart_h // 4
             p.drawLine(pad_l, y, pad_l + chart_w, y)
@@ -140,7 +141,7 @@ class TrendLineWidget(QWidget):
         max_val = max((d.total for d in trend), default=1) or 1
 
         # grid lines
-        p.setPen(QPen(QColor("#e2e8f0"), 1))
+        p.setPen(QPen(QColor(COLOR_BORDER), 1))
         for i in range(5):
             y = pad_t + i * chart_h // 4
             p.drawLine(pad_l, y, pad_l + chart_w, y)
@@ -210,10 +211,10 @@ class DonutWidget(QWidget):
         hole = QRectF(ox + size * 0.3, oy + size * 0.3, size * 0.4, size * 0.4)
 
         if not has_data:
-            p.setBrush(QBrush(QColor("#e0e5ee")))
+            p.setBrush(QBrush(QColor(COLOR_BORDER)))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawEllipse(rect)
-            p.setBrush(QBrush(QColor("#f4f6f9")))
+            p.setBrush(QBrush(QColor("white")))
             p.drawEllipse(hole)
             p.setPen(QColor(COLOR_TEXT_MID))
             p.setFont(QFont("Segoe UI", 9))
@@ -229,7 +230,7 @@ class DonutWidget(QWidget):
             angle += span
 
         # cut hole
-        p.setBrush(QBrush(QColor("#f4f6f9")))
+        p.setBrush(QBrush(QColor("white")))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(hole)
 
@@ -274,7 +275,7 @@ class StatCard(QFrame):
         text_l.setSpacing(4)
 
         t = QLabel(title)
-        t.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: 12px; font-weight: 700; background: transparent;")
+        t.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: {FONT_LABEL}px; font-weight: 700; background: transparent;")
 
         v = QLabel(value)
         f = QFont(); f.setPointSize(24); f.setBold(True)
@@ -282,7 +283,7 @@ class StatCard(QFrame):
         v.setStyleSheet(f"color: {COLOR_TEXT_DARK}; background: transparent;")
 
         s = QLabel(subtitle)
-        s.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 700; background: transparent;")
+        s.setStyleSheet(f"color: {color}; font-size: {FONT_CAPTION}px; font-weight: 700; background: transparent;")
         s.setWordWrap(True)
 
         text_l.addWidget(t); text_l.addWidget(v); text_l.addWidget(s)
@@ -325,7 +326,7 @@ def _card(title: str, widget: QWidget) -> QFrame:
     layout.setSpacing(10)
 
     t = QLabel(title)
-    t.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {COLOR_TEXT_DARK}; background: transparent;")
+    t.setStyleSheet(f"font-size: {FONT_SECTION}px; font-weight: bold; color: {COLOR_TEXT_DARK}; background: transparent;")
     layout.addWidget(t)
     layout.addWidget(widget)
     return card
@@ -344,7 +345,7 @@ def _build_header(data: DashboardData) -> QWidget:
     greeting.setStyleSheet(f"color: {COLOR_PRIMARY};")
 
     date_lbl = QLabel(data.today_label)
-    date_lbl.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: 13px;")
+    date_lbl.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: {FONT_BODY}px;")
 
     layout.addWidget(greeting)
     layout.addStretch()
@@ -376,7 +377,7 @@ def _build_welcome_panel(data: DashboardData) -> QFrame:
     subtitle = QLabel(f"{school_name}  •  {data.month_label}")
     subtitle.setWordWrap(True)
     subtitle.setStyleSheet(
-        "color: rgba(255, 255, 255, 0.82); font-size: 13px; "
+        f"color: rgba(255, 255, 255, 0.82); font-size: {FONT_BODY}px; "
         "background: transparent;"
     )
     text_col.addWidget(title)
@@ -432,21 +433,21 @@ def _build_kpi_row(data: DashboardData) -> QWidget:
 def _quick_button(label: str, screen_index: int, navigate_to: Callable[[int], None]) -> QPushButton:
     btn = QPushButton(label)
     btn.setMinimumHeight(44)
-    btn.setStyleSheet("""
-        QPushButton {
+    btn.setStyleSheet(f"""
+        QPushButton {{
             background: white;
-            color: #334155;
+            color: {COLOR_TEXT_DARK};
             border: 1px solid #d6d6c8;
             border-radius: 14px;
             padding: 8px 14px;
-            font-size: 12px;
+            font-size: {FONT_LABEL}px;
             font-weight: 700;
             text-align: center;
-        }
-        QPushButton:hover {
+        }}
+        QPushButton:hover {{
             background: #E4E4D7;
-            color: #5A5A40;
-        }
+            color: {COLOR_TEXT_DARK};
+        }}
     """)
     btn.clicked.connect(lambda: navigate_to(screen_index))
     return btn
@@ -469,7 +470,7 @@ def _build_quick_actions(navigate_to: Callable[[int], None]) -> QFrame:
     title = QLabel("وصول سريع")
     title.setStyleSheet(
         "background: transparent; color: #5A5A40; "
-        "font-size: 13px; font-weight: 800;"
+        f"font-size: {FONT_BODY}px; font-weight: 800;"
     )
     layout.addWidget(title)
 
@@ -532,11 +533,11 @@ def _build_meal_pills(data: DashboardData) -> QWidget:
     layout.setContentsMargins(0, 0, 0, 0)
 
     pills = [
-        ("🌅  فطور", data.month.ftour_total, COLOR_ACCENT),
-        ("☀️  غداء", data.month.ghada_total, COLOR_SUCCESS),
-        ("🌙  عشاء",  data.month.asha_total,  COLOR_PURPLE),
+        ("🌅", "فطور", data.month.ftour_total, COLOR_ACCENT),
+        ("☀️", "غداء", data.month.ghada_total, COLOR_SUCCESS),
+        ("🌙", "عشاء", data.month.asha_total,  COLOR_PURPLE),
     ]
-    for label, count, color in pills:
+    for icon, label, count, color in pills:
         pill = QFrame()
         pill.setStyleSheet(f"""
             QFrame {{
@@ -552,9 +553,13 @@ def _build_meal_pills(data: DashboardData) -> QWidget:
 
         pl = QHBoxLayout(pill)
         pl.setContentsMargins(22, 16, 22, 16)
+        pl.setSpacing(8)
+
+        icon_lbl = QLabel(icon)
+        icon_lbl.setStyleSheet("font-size: 16px; background: transparent;")
 
         meal_lbl = QLabel(label)
-        meal_lbl.setStyleSheet(f"color: {color}; font-size: 15px; font-weight: bold; background: transparent;")
+        meal_lbl.setStyleSheet(f"color: {color}; font-size: {FONT_SECTION}px; font-weight: bold; background: transparent;")
 
         count_lbl = QLabel(f"{count:,}")
         f = QFont(); f.setPointSize(22); f.setBold(True)
@@ -562,9 +567,9 @@ def _build_meal_pills(data: DashboardData) -> QWidget:
         count_lbl.setStyleSheet(f"color: {COLOR_TEXT_DARK}; background: transparent;")
 
         unit_lbl = QLabel("وجبة")
-        unit_lbl.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: 12px; background: transparent;")
+        unit_lbl.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: {FONT_LABEL}px; background: transparent;")
 
-        pl.addWidget(meal_lbl); pl.addStretch()
+        pl.addWidget(icon_lbl); pl.addWidget(meal_lbl); pl.addStretch()
         pl.addWidget(count_lbl); pl.addWidget(unit_lbl)
         layout.addWidget(pill, stretch=1)
 
@@ -617,7 +622,7 @@ class DashboardScreen(QWidget):
         inner.addWidget(_build_charts_row_2(data))
 
         pills_title = QLabel(f"إجمالي الوجبات حسب النوع  —  {data.month_label}")
-        pills_title.setStyleSheet(f"font-size: 14px; font-weight: bold; color: {COLOR_TEXT_DARK};")
+        pills_title.setStyleSheet(f"font-size: {FONT_SECTION}px; font-weight: bold; color: {COLOR_TEXT_DARK};")
         inner.addWidget(pills_title)
         inner.addWidget(_build_meal_pills(data))
 

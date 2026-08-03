@@ -11,7 +11,7 @@ from PySide6.QtGui import (
     QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
 )
 from PySide6.QtWidgets import (
-    QBoxLayout, QComboBox, QFrame, QGridLayout, QHBoxLayout,
+    QComboBox, QFrame, QGridLayout, QHBoxLayout,
     QFileDialog, QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
@@ -20,6 +20,7 @@ from config.settings import (
     COLOR_ACCENT, COLOR_DANGER,
     COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL,
 )
 from core.models import MealEntry, MealProgram
 from data.database import (
@@ -28,17 +29,25 @@ from data.database import (
     rename_program, save_program_entries, set_program_ramadan_mode,
 )
 from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
+from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "البرنامج الغذائي الأسبوعي"
 _PDF_TITLE      = "البرنامج الغذائي"
-_BTN_NEW        = "➕  برنامج جديد"
-_BTN_RENAME     = "✏️  إعادة تسمية"
-_BTN_DELETE     = "🗑️  حذف"
-_BTN_SAVE       = "💾  حفظ"
-_BTN_EXPORT_PDF = "📄  تحميل PDF"
-_BTN_RAMADAN    = "☾  تحويل إلى برنامج رمضان"
-_BTN_NORMAL     = "  تحويل إلى برنامج عادي"
+_BTN_NEW        = "برنامج جديد"
+_BTN_NEW_ICON   = "➕"
+_BTN_RENAME     = "إعادة تسمية"
+_BTN_RENAME_ICON = "✏️"
+_BTN_DELETE     = "حذف"
+_BTN_DELETE_ICON = "🗑️"
+_BTN_SAVE       = "حفظ"
+_BTN_SAVE_ICON  = "💾"
+_BTN_EXPORT_PDF = "تحميل PDF"
+_BTN_EXPORT_PDF_ICON = "📄"
+_BTN_RAMADAN    = "تحويل إلى برنامج رمضان"
+_BTN_RAMADAN_ICON = "☾"
+_BTN_NORMAL     = "تحويل إلى برنامج عادي"
+_BTN_NORMAL_ICON = "☀"
 _EMPTY_TITLE    = "ابدأ بإنشاء برنامج غذائي"
 _EMPTY_HINT     = "أنشئ برنامجاً أسبوعياً، ثم اكتب وجبات كل يوم واحفظه للرجوع إليه لاحقاً."
 _PANEL_TITLE    = "إدارة البرنامج"
@@ -49,7 +58,8 @@ _RAMADAN_BADGE  = "برنامج رمضان"
 _SAVE_HINT      = "برنامج رمضان يبقى محفوظاً بعد الحفظ ويمكن الرجوع إليه من القائمة."
 _BOARD_TITLE    = "لوحة الأسبوع"
 _CELL_HINT      = "اكتب مكونات الوجبة..."
-_PANEL_SHOW     = "⚙  إدارة البرنامج"
+_PANEL_SHOW     = "إدارة البرنامج"
+_PANEL_SHOW_ICON = "⚙"
 _PANEL_HIDE     = "إخفاء إدارة البرنامج"
 _ACTIVE_DAYS    = "أيام نشطة"
 _MEALS_PER_DAY  = "وجبات/يوم"
@@ -126,14 +136,13 @@ def _make_btn(
     *,
     text_color: str = "white",
     min_height: int = 40,
+    icon: str | None = None,
 ) -> QPushButton:
-    btn = QPushButton(label)
-    btn.setMinimumHeight(min_height)
-    btn.setStyleSheet(
-        f"background:{color}; color:{text_color}; border:1px solid {color}; border-radius:12px;"
-        "padding:0 14px; font-size:12px; font-weight:800;"
-        "min-width:96px;"
+    btn = IconButton(
+        label, icon=icon, bg=color, text_color=text_color, border=color,
+        border_radius=12, padding_h=14, font_size=12, bold=True, min_height=min_height,
     )
+    btn.setMinimumWidth(96)
     return btn
 
 
@@ -185,7 +194,6 @@ class MealProgramScreen(QWidget):
         root.addWidget(self._build_header())
 
         body = QHBoxLayout()
-        body.setDirection(QBoxLayout.Direction.RightToLeft)
         body.setSpacing(14)
 
         self._scroll = QScrollArea()
@@ -220,13 +228,12 @@ class MealProgramScreen(QWidget):
         title_col.addWidget(title)
 
         quick_actions = QHBoxLayout()
-        quick_actions.setDirection(QBoxLayout.Direction.RightToLeft)
         quick_actions.setSpacing(8)
-        self._pdf_btn = _make_btn(_BTN_EXPORT_PDF, _CLAY, min_height=34)
+        self._pdf_btn = _make_btn(_BTN_EXPORT_PDF, _CLAY, min_height=34, icon=_BTN_EXPORT_PDF_ICON)
         self._pdf_btn.clicked.connect(self._on_export_pdf)
-        quick_new_btn = _make_btn(_BTN_NEW, _SUCCESS, min_height=34)
+        quick_new_btn = _make_btn(_BTN_NEW, _SUCCESS, min_height=34, icon=_BTN_NEW_ICON)
         quick_new_btn.clicked.connect(self._on_new)
-        self._panel_toggle_btn = _make_btn(_PANEL_SHOW, _CONTROL_BG, min_height=34)
+        self._panel_toggle_btn = _make_btn(_PANEL_SHOW, _CONTROL_BG, min_height=34, icon=_PANEL_SHOW_ICON)
         self._panel_toggle_btn.clicked.connect(self._toggle_program_panel)
         quick_actions.addWidget(self._pdf_btn)
         quick_actions.addWidget(quick_new_btn)
@@ -284,7 +291,7 @@ class MealProgramScreen(QWidget):
         self._prog_combo.setStyleSheet(
             "QComboBox {"
             "background:white; color:#111827; border:0; border-radius:14px;"
-            "padding:6px 14px 6px 34px; font-size:13px; font-weight:700;"
+            f"padding:6px 14px 6px 34px; font-size:{FONT_BODY}px; font-weight:700;"
             f"selection-background-color:{_TEAL}; selection-color:white;"
             "}"
             "QComboBox::drop-down {"
@@ -301,9 +308,9 @@ class MealProgramScreen(QWidget):
         self._prog_combo.currentIndexChanged.connect(self._on_program_changed)
         layout.addWidget(self._prog_combo)
 
-        self._new_btn = _make_btn(_BTN_NEW, _SUCCESS, min_height=36)
-        self._rename_btn = _make_btn(_BTN_RENAME, _CONTROL_SOFT, min_height=36)
-        self._delete_btn = _make_btn(_BTN_DELETE, COLOR_DANGER, min_height=36)
+        self._new_btn = _make_btn(_BTN_NEW, _SUCCESS, min_height=36, icon=_BTN_NEW_ICON)
+        self._rename_btn = _make_btn(_BTN_RENAME, _CONTROL_SOFT, min_height=36, icon=_BTN_RENAME_ICON)
+        self._delete_btn = _make_btn(_BTN_DELETE, COLOR_DANGER, min_height=36, icon=_BTN_DELETE_ICON)
         self._new_btn.clicked.connect(self._on_new)
         self._rename_btn.clicked.connect(self._on_rename)
         self._delete_btn.clicked.connect(self._on_delete)
@@ -316,7 +323,7 @@ class MealProgramScreen(QWidget):
         self._mode_badge = self._make_badge(_NORMAL_BADGE, _TEAL, "white")
         layout.addWidget(self._mode_badge)
 
-        self._ramadan_btn = _make_btn(_BTN_RAMADAN, _CLAY, min_height=38)
+        self._ramadan_btn = _make_btn(_BTN_RAMADAN, _CLAY, min_height=38, icon=_BTN_RAMADAN_ICON)
         self._ramadan_btn.clicked.connect(self._toggle_ramadan)
         layout.addWidget(self._ramadan_btn)
 
@@ -324,10 +331,10 @@ class MealProgramScreen(QWidget):
         hint = QLabel(_SAVE_HINT)
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignmentFlag.AlignRight)
-        hint.setStyleSheet("background:transparent; color:#D8E4DE; font-size:11px; line-height:130%;")
+        hint.setStyleSheet(f"background:transparent; color:#D8E4DE; font-size:{FONT_CAPTION}px; line-height:130%;")
         layout.addWidget(hint)
 
-        self._save_btn = _make_btn(_BTN_SAVE, COLOR_ACCENT, min_height=42)
+        self._save_btn = _make_btn(_BTN_SAVE, COLOR_ACCENT, min_height=42, icon=_BTN_SAVE_ICON)
         self._save_btn.clicked.connect(self._on_save)
         layout.addWidget(self._save_btn)
         return panel
@@ -335,7 +342,7 @@ class MealProgramScreen(QWidget):
     def _make_panel_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        label.setStyleSheet("background:transparent; color:#C9D8D1; font-size:12px; font-weight:700;")
+        label.setStyleSheet(f"background:transparent; color:#C9D8D1; font-size:{FONT_LABEL}px; font-weight:700;")
         return label
 
     def _make_badge(self, text: str, background: str, text_color: str) -> QLabel:
@@ -344,7 +351,7 @@ class MealProgramScreen(QWidget):
         label.setMinimumHeight(28)
         label.setStyleSheet(
             f"background:{background}; color:{text_color}; border-radius:14px;"
-            "padding:4px 12px; font-size:12px; font-weight:800;"
+            f"padding:4px 12px; font-size:{FONT_LABEL}px; font-weight:800;"
         )
         return label
 
@@ -365,9 +372,9 @@ class MealProgramScreen(QWidget):
         hint = QLabel(_EMPTY_HINT)
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:13px;")
+        hint.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:{FONT_BODY}px;")
 
-        action = _make_btn(_BTN_NEW, _SUCCESS)
+        action = _make_btn(_BTN_NEW, _SUCCESS, icon=_BTN_NEW_ICON)
         action.setMinimumWidth(180)
         action.clicked.connect(self._on_new)
 
@@ -443,7 +450,7 @@ class MealProgramScreen(QWidget):
 
         text_label = QLabel(label)
         text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text_label.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:11px; font-weight:700;")
+        text_label.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:{FONT_CAPTION}px; font-weight:700;")
         layout.addWidget(value_label)
         layout.addWidget(text_label)
         return card
@@ -473,7 +480,7 @@ class MealProgramScreen(QWidget):
         meal_count.setMinimumHeight(26)
         meal_count.setStyleSheet(
             f"background:{_PANEL_BG}; color:{_MUTED};"
-            "border-radius:12px; padding:3px 8px; font-size:11px; font-weight:700;"
+            f"border-radius:12px; padding:3px 8px; font-size:{FONT_CAPTION}px; font-weight:700;"
         )
         title_row.addWidget(day_label)
         title_row.addStretch()
@@ -499,7 +506,7 @@ class MealProgramScreen(QWidget):
         label = QLabel(meal_name)
         label.setStyleSheet(
             f"background:transparent; color:{accent};"
-            "font-size:12px; font-weight:900;"
+            f"font-size:{FONT_LABEL}px; font-weight:900;"
         )
         title_row.addWidget(label)
         title_row.addStretch()
@@ -512,7 +519,7 @@ class MealProgramScreen(QWidget):
         cell.setTabChangesFocus(True)
         cell.setStyleSheet(
             f"background:{_CELL_BG}; color:{COLOR_TEXT_PRIMARY};"
-            f"border:1px solid {_PANEL_BORDER}; border-radius:12px; padding:7px; font-size:12px;"
+            f"border:1px solid {_PANEL_BORDER}; border-radius:12px; padding:7px; font-size:{FONT_LABEL}px;"
             f"selection-background-color:{accent}; selection-color:white;"
         )
         cell.textChanged.connect(self._mark_dirty)
@@ -574,15 +581,16 @@ class MealProgramScreen(QWidget):
         label = _RAMADAN_BADGE if self._ramadan_mode else _NORMAL_BADGE
         color = _CLAY if self._ramadan_mode else _TEAL
         self._ramadan_btn.setText(_BTN_NORMAL if self._ramadan_mode else _BTN_RAMADAN)
+        self._ramadan_btn.set_icon_emoji(_BTN_NORMAL_ICON if self._ramadan_mode else _BTN_RAMADAN_ICON)
         self._mode_badge.setText(label)
         self._mode_badge.setStyleSheet(
             f"background:{color}; color:white; border-radius:14px;"
-            "padding:4px 12px; font-size:12px; font-weight:800;"
+            f"padding:4px 12px; font-size:{FONT_LABEL}px; font-weight:800;"
         )
         self._hero_status.setText(label)
         self._hero_status.setStyleSheet(
             f"background:{color}; color:white; border-radius:14px;"
-            "padding:4px 12px; font-size:12px; font-weight:800;"
+            f"padding:4px 12px; font-size:{FONT_LABEL}px; font-weight:800;"
         )
 
     def _fill_grid(self, entries: List[MealEntry]) -> None:

@@ -22,6 +22,10 @@ DB_PATH: Path = BASE_DIR / "matama.db"
 # School logo (copied here when the user uploads one via Settings)
 LOGO_PATH: Path = BASE_DIR / "matama_logo.png"
 
+# Bundled fonts — loaded offline via ui.theme.load_fonts(), never rely on a
+# font being installed on Windows.
+FONTS_DIR: Path = BASE_DIR / "assets" / "fonts"
+
 # ── App identity ─────────────────────────────────────────────────────────────
 
 APP_NAME: str = "نظام المطعمة"
@@ -67,20 +71,54 @@ SECTION_LABELS: dict[str, str] = {
 }
 
 # ── Color palette (used in stylesheets across all screens) ────────────────────
+# Olive/paper design system — see
+# .claude/skills/matama/references/ui_design.md for the full rationale.
+# Old names are kept so every existing import keeps working; they now point
+# at the new olive/paper values instead of the original navy/slate ones.
 
-COLOR_SIDEBAR_BG: str      = "#1e293b"
-COLOR_SIDEBAR_HOVER: str   = "#334155"
-COLOR_SIDEBAR_ACTIVE: str  = "#0f172a"
-COLOR_SIDEBAR_BORDER: str  = "#334155"
-COLOR_ACCENT: str          = "#38bdf8"
-COLOR_DANGER: str          = "#ef4444"
-COLOR_SUCCESS: str         = "#22c55e"
-COLOR_SURFACE: str         = "#f8fafc"
-COLOR_BORDER: str          = "#e2e8f0"
-COLOR_TEXT_PRIMARY: str    = "#0f172a"
-COLOR_TEXT_SECONDARY: str  = "#64748b"
-COLOR_TEXT_SIDEBAR: str    = "#94a3b8"
-COLOR_TEXT_SIDEBAR_ACTIVE: str = "#f1f5f9"
+# Base tokens — already consistent across six screens before this migration
+COLOR_PAPER: str      = "#f5f5f0"
+COLOR_PANEL: str      = "#ffffff"
+COLOR_PANEL_ALT: str  = "#eef0e4"
+COLOR_OLIVE: str      = "#5A5A40"
+
+COLOR_SIDEBAR_BG: str      = "#3F4A2F"
+COLOR_SIDEBAR_HOVER: str   = "#4C5A37"
+COLOR_SIDEBAR_ACTIVE: str  = "#566B3A"
+COLOR_SIDEBAR_BORDER: str  = "#4C5A37"
+COLOR_ACCENT: str          = "#7C8F4F"
+COLOR_ACCENT_DEEP: str     = "#5F7239"
+COLOR_DANGER: str          = "#B3452C"
+COLOR_SUCCESS: str         = "#4B7F52"
+COLOR_SURFACE: str         = COLOR_PAPER
+COLOR_BORDER: str          = "#dddccd"
+COLOR_TEXT_PRIMARY: str    = COLOR_OLIVE
+COLOR_TEXT_SECONDARY: str  = "#8B8A6F"
+COLOR_TEXT_SIDEBAR: str    = "#C9C9B0"
+COLOR_TEXT_SIDEBAR_ACTIVE: str = "#E8E6DA"
+
+# ── Type scale ───────────────────────────────────────────────────────────────
+# Two faces: Maghribi is the official/title face (screen titles, printed
+# document headers) — decorative, used sparingly. Cairo is the body face for
+# everything else. Both bundled in assets/fonts/; the true family name is
+# only known after ui.theme.load_fonts() registers them (fonts don't always
+# report the name their filename suggests), so screens read it from
+# ui.theme.body_font_family() / official_font_family(), not from a constant
+# here.
+
+FONT_TITLE: int   = 20
+FONT_SECTION: int = 15
+FONT_BODY: int    = 13
+FONT_LABEL: int   = 12
+FONT_CAPTION: int = 11
+
+# ── Spacing scale ────────────────────────────────────────────────────────────
+
+SPACE_XS: int = 4
+SPACE_SM: int = 8
+SPACE_MD: int = 12
+SPACE_LG: int = 16
+SPACE_XL: int = 24
 
 # ── Extended palette (used by charts dashboard) ───────────────────────────────
 COLOR_PRIMARY:   str = "#1e3a5f"   # dark navy

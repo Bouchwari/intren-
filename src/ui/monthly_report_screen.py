@@ -16,9 +16,11 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
+    COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT,
+    COLOR_SIDEBAR_BG, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    FONT_BODY, FONT_LABEL, FONT_SECTION,
 )
 from core.models import MonthlyMealSummary
 from data.database import (
@@ -26,12 +28,15 @@ from data.database import (
     get_months_with_data, get_school_settings,
     save_monthly_report_notes,
 )
+from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "المحضر الشهري"
 _SUBTITLE       = "ملخص نشاط الإطعام المدرسي الشهري"
-_BTN_GENERATE   = "🔄  توليد المحضر"
-_BTN_SAVE_NOTES = "💾  حفظ الملاحظات"
+_BTN_GENERATE   = "توليد المحضر"
+_BTN_GENERATE_ICON = "🔄"
+_BTN_SAVE_NOTES = "حفظ الملاحظات"
+_BTN_SAVE_NOTES_ICON = "💾"
 _LBL_MONTH      = "الشهر:"
 _LBL_YEAR       = "السنة:"
 _LBL_NOTES      = "ملاحظات المسير"
@@ -94,14 +99,14 @@ def _styled_table(rows: int, cols: int, headers: List[str],
     t.setStyleSheet(f"""
         QTableWidget {{
             border: 1px solid {COLOR_BORDER}; border-radius: 8px;
-            font-size: 13px; background: white;
-            alternate-background-color: #f8fafc;
-            gridline-color: #e2e8f0;
+            font-size: {FONT_BODY}px; background: white;
+            alternate-background-color: {COLOR_PANEL_ALT};
+            gridline-color: {COLOR_BORDER};
         }}
         QHeaderView::section {{
             background: {header_bg}; color: white;
             padding: 8px 10px; border: none;
-            font-weight: bold; font-size: 12px;
+            font-weight: bold; font-size: {FONT_LABEL}px;
         }}
         QTableWidget::item {{ padding: 7px 10px; }}
     """)
@@ -156,7 +161,7 @@ class MonthlyReportScreen(QWidget):
         title.setFont(f)
         title.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY};")
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         col.addWidget(title)
         col.addWidget(sub)
         return col
@@ -167,7 +172,7 @@ class MonthlyReportScreen(QWidget):
 
         # Month selector
         row.addWidget(QLabel(_LBL_MONTH,
-                             styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};"))
+                             styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
         self._month_combo = QComboBox()
         self._month_combo.setMinimumHeight(36)
         self._month_combo.setMinimumWidth(130)
@@ -175,13 +180,13 @@ class MonthlyReportScreen(QWidget):
             self._month_combo.addItem(m)
         self._month_combo.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:4px 8px; font-size:13px;"
+            f"padding:4px 8px; font-size:{FONT_BODY}px;"
         )
         row.addWidget(self._month_combo)
 
         # Year selector (combo of last 5 years)
         row.addWidget(QLabel(_LBL_YEAR,
-                             styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};"))
+                             styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
         self._year_spin_combo = QComboBox()
         self._year_spin_combo.setMinimumHeight(36)
         self._year_spin_combo.setMinimumWidth(90)
@@ -190,7 +195,7 @@ class MonthlyReportScreen(QWidget):
             self._year_spin_combo.addItem(str(y))
         self._year_spin_combo.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:4px 8px; font-size:13px;"
+            f"padding:4px 8px; font-size:{FONT_BODY}px;"
         )
         row.addWidget(self._year_spin_combo)
 
@@ -201,7 +206,7 @@ class MonthlyReportScreen(QWidget):
         self._months_combo.setPlaceholderText("الأشهر التي لها بيانات")
         self._months_combo.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:4px 8px; font-size:13px;"
+            f"padding:4px 8px; font-size:{FONT_BODY}px;"
         )
         self._months_combo.currentTextChanged.connect(self._on_quick_jump)
         self._refresh_months_combo()
@@ -209,11 +214,9 @@ class MonthlyReportScreen(QWidget):
 
         row.addStretch()
 
-        gen_btn = QPushButton(_BTN_GENERATE)
-        gen_btn.setMinimumHeight(38)
-        gen_btn.setStyleSheet(
-            f"background:{COLOR_ACCENT}; color:white; border-radius:7px;"
-            "padding:0 18px; font-size:13px; font-weight:bold;"
+        gen_btn = IconButton(
+            _BTN_GENERATE, icon=_BTN_GENERATE_ICON, bg=COLOR_ACCENT, text_color="white",
+            border_radius=7, padding_h=18, font_size=13, bold=True, min_height=38,
         )
         gen_btn.clicked.connect(self._generate)
         row.addWidget(gen_btn)
@@ -232,19 +235,19 @@ class MonthlyReportScreen(QWidget):
         self._school_lbl = QLabel()
         self._school_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._school_lbl.setStyleSheet(
-            f"font-size:14px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};"
+            f"font-size:{FONT_SECTION}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};"
             f"border-bottom:2px solid {COLOR_ACCENT}; padding-bottom:10px;"
         )
         self._month_lbl = QLabel()
         self._month_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._month_lbl.setStyleSheet(
-            f"font-size:13px; color:{COLOR_TEXT_SECONDARY}; padding-bottom:6px;"
+            f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_SECONDARY}; padding-bottom:6px;"
         )
 
         self._no_data_lbl = QLabel(_NO_DATA)
         self._no_data_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_data_lbl.setStyleSheet(
-            f"color:{COLOR_TEXT_SECONDARY}; font-size:14px; padding:40px;"
+            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px; padding:40px;"
         )
 
         self._report_layout.addWidget(self._school_lbl)
@@ -265,7 +268,7 @@ class MonthlyReportScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
                 margin-top:10px; padding:10px;
             }}
@@ -281,15 +284,13 @@ class MonthlyReportScreen(QWidget):
         self._notes_edit.setMaximumHeight(180)
         self._notes_edit.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:8px; font-size:13px;"
+            f"padding:8px; font-size:{FONT_BODY}px;"
         )
-        save_btn = QPushButton(_BTN_SAVE_NOTES)
-        save_btn.setMinimumHeight(36)
+        save_btn = IconButton(
+            _BTN_SAVE_NOTES, icon=_BTN_SAVE_NOTES_ICON, bg=COLOR_SUCCESS, text_color="white",
+            border_radius=6, padding_h=14, font_size=13, bold=True, min_height=36,
+        )
         save_btn.setMaximumWidth(200)
-        save_btn.setStyleSheet(
-            f"background:{COLOR_SUCCESS}; color:white; border-radius:6px;"
-            "padding:0 14px; font-size:13px; font-weight:bold;"
-        )
         save_btn.clicked.connect(self._on_save_notes)
         v.addWidget(self._notes_edit)
         v.addWidget(save_btn, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -349,13 +350,13 @@ class MonthlyReportScreen(QWidget):
             self._cost_box = self._build_cost_box(self._summaries)
             self._main_title = QLabel(
                 "أ — ملخص الوجبات والتكاليف",
-                styleSheet=f"font-size:13px; font-weight:bold; color:{COLOR_ACCENT};",
+                styleSheet=f"font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_ACCENT};",
             )
             self._report_layout.addWidget(self._main_title)
             self._report_layout.addWidget(self._main_table)
             self._detail_title = QLabel(
                 "ب — التفصيل حسب الفئة",
-                styleSheet="font-size:13px; font-weight:bold; color:#7c3aed;",
+                styleSheet=f"font-size:{FONT_BODY}px; font-weight:bold; color:#7c3aed;",
             )
             self._report_layout.addWidget(self._detail_title)
             self._report_layout.addWidget(self._detail_table)
@@ -393,12 +394,12 @@ class MonthlyReportScreen(QWidget):
 
         # Grand total
         r = len(summaries)
-        t.setItem(r, 0, _titem("الإجمالي", bold=True, bg="#0f172a", fg="white"))
-        t.setItem(r, 1, _titem("", bg="#0f172a"))
-        t.setItem(r, 2, _titem(str(int(total_contact)), bold=True, bg="#0f172a", fg="white"))
-        t.setItem(r, 3, _titem(str(int(total_absence)), bold=True, bg="#0f172a", fg="white"))
-        t.setItem(r, 4, _titem(str(int(total_net)),     bold=True, bg="#0f172a", fg="white"))
-        t.setItem(r, 5, _titem("", bg="#0f172a"))
+        t.setItem(r, 0, _titem("الإجمالي", bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        t.setItem(r, 1, _titem("", bg=COLOR_ACCENT_DEEP))
+        t.setItem(r, 2, _titem(str(int(total_contact)), bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        t.setItem(r, 3, _titem(str(int(total_absence)), bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        t.setItem(r, 4, _titem(str(int(total_net)),     bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        t.setItem(r, 5, _titem("", bg=COLOR_ACCENT_DEEP))
         t.setItem(r, 6, _titem(f"{total_cost:.2f}", bold=True, bg=COLOR_ACCENT, fg="white"))
 
         t.setMaximumHeight(rows * 38 + 42)
@@ -448,7 +449,7 @@ class MonthlyReportScreen(QWidget):
             t.setItem(row, 1, _titem(f"مجموع {meal_lbl}", bold=True, bg="#f0f9ff"))
             t.setItem(row, 2, _titem(str(s.contact_total), bold=True, bg="#f0f9ff"))
             t.setItem(row, 3, _titem(str(s.absence_total), bold=True, bg="#f0f9ff"))
-            t.setItem(row, 4, _titem(str(s.net_total), bold=True, bg="#dbeafe", fg="#1d4ed8"))
+            t.setItem(row, 4, _titem(str(s.net_total), bold=True, bg=COLOR_PANEL_ALT, fg=COLOR_ACCENT_DEEP))
             row += 1
 
         t.setMaximumHeight(rows * 36 + 42)
@@ -462,7 +463,7 @@ class MonthlyReportScreen(QWidget):
         frame = QFrame()
         frame.setStyleSheet(
             f"background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            f"stop:0 {COLOR_ACCENT}, stop:1 #0369a1);"
+            f"stop:0 {COLOR_ACCENT_DEEP}, stop:1 {COLOR_SIDEBAR_BG});"
             "border-radius:10px;"
         )
         row = QHBoxLayout(frame)
@@ -470,7 +471,7 @@ class MonthlyReportScreen(QWidget):
 
         left = QVBoxLayout()
         lbl1 = QLabel("إجمالي الوجبات المقدمة")
-        lbl1.setStyleSheet("color:rgba(255,255,255,0.8); font-size:12px;")
+        lbl1.setStyleSheet(f"color:rgba(255,255,255,0.8); font-size:{FONT_LABEL}px;")
         lbl2 = QLabel(str(total_net))
         f = QFont(); f.setPointSize(22); f.setBold(True)
         lbl2.setFont(f)
@@ -481,7 +482,7 @@ class MonthlyReportScreen(QWidget):
         right = QVBoxLayout()
         right.setAlignment(Qt.AlignmentFlag.AlignRight)
         lbl3 = QLabel("التكلفة الإجمالية للشهر")
-        lbl3.setStyleSheet("color:rgba(255,255,255,0.8); font-size:12px;")
+        lbl3.setStyleSheet(f"color:rgba(255,255,255,0.8); font-size:{FONT_LABEL}px;")
         lbl3.setAlignment(Qt.AlignmentFlag.AlignLeft)
         lbl4 = QLabel(f"{total_cost:,.2f} د.م")
         g = QFont(); g.setPointSize(22); g.setBold(True)

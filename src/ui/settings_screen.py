@@ -18,6 +18,7 @@ from config.settings import (
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     DB_PATH, LOGO_PATH,
     EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF, EXPORT_FORMAT_LABELS,
+    FONT_BODY, FONT_LABEL,
 )
 from core.excel_handler import load_level_catalog
 from core.models import SchoolSettings
@@ -25,6 +26,7 @@ from data.database import (
     get_document_export_format, get_level_preferences, get_school_settings,
     save_document_export_format, save_level_preferences, save_school_settings,
 )
+from ui.widgets.icon_button import IconButton
 
 _PAGE_BG = "#f5f5f0"
 _PANEL_BG = "#ffffff"
@@ -41,9 +43,12 @@ _GRP_LEVELS     = "المستويات المستعملة"
 _GRP_LOGO       = "شعار المؤسسة"
 _GRP_EXPORT     = "تصدير الوثائق"
 _GRP_BACKUP     = "النسخ الاحتياطي"
-_BTN_SAVE       = "💾  حفظ التغييرات"
-_BTN_LOGO       = "📁  اختيار صورة الشعار"
-_BTN_BACKUP     = "💾  إنشاء نسخة احتياطية"
+_BTN_SAVE       = "حفظ التغييرات"
+_BTN_SAVE_ICON  = "💾"
+_BTN_LOGO       = "اختيار صورة الشعار"
+_BTN_LOGO_ICON  = "📁"
+_BTN_BACKUP     = "إنشاء نسخة احتياطية"
+_BTN_BACKUP_ICON = "💾"
 _MSG_SAVED      = "تم حفظ الإعدادات بنجاح."
 _MSG_REQUIRED   = "الحقول التالية مطلوبة:\n• اسم المؤسسة\n• السنة الدراسية\n• اسم المدير"
 _MSG_LOGO_OK    = "تم تحديث الشعار بنجاح."
@@ -58,7 +63,7 @@ def _field(text: str = "", placeholder: str = "") -> QLineEdit:
     w.setMaximumWidth(860)
     w.setStyleSheet(
         f"background:white; color:{COLOR_TEXT_PRIMARY}; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-        "padding:4px 10px; font-size:13px;"
+        f"padding:4px 10px; font-size:{FONT_BODY}px;"
     )
     return w
 
@@ -70,7 +75,7 @@ def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
     box.setStyleSheet(f"""
         QGroupBox {{
             background: {_PANEL_BG};
-            font-weight: bold; font-size: 13px; color: {_INK};
+            font-weight: bold; font-size: {FONT_BODY}px; color: {_INK};
             border: 1px solid {_PANEL_BORDER}; border-radius: 16px;
             margin-top: 14px; padding: 12px;
         }}
@@ -87,14 +92,11 @@ def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
     return box, form
 
 
-def _section_btn(label: str, color: str) -> QPushButton:
-    btn = QPushButton(label)
-    btn.setMinimumHeight(38)
-    btn.setStyleSheet(
-        f"background:{color}; color:white; border-radius:12px;"
-        "padding:0 18px; font-size:13px; font-weight:bold;"
+def _section_btn(label: str, color: str, *, icon: str | None = None) -> QPushButton:
+    return IconButton(
+        label, icon=icon, bg=color, text_color="white",
+        border_radius=12, padding_h=18, font_size=13, bold=True, min_height=38,
     )
-    return btn
 
 
 def _unique(values: list[str]) -> list[str]:
@@ -136,7 +138,7 @@ class SettingsScreen(QWidget):
         title.setFont(f)
         title.setStyleSheet(f"color: {_INK};")
 
-        self._save_btn = _section_btn(_BTN_SAVE, COLOR_ACCENT)
+        self._save_btn = _section_btn(_BTN_SAVE, COLOR_ACCENT, icon=_BTN_SAVE_ICON)
         self._save_btn.clicked.connect(self._on_save)
 
         topbar_layout.addWidget(title)
@@ -249,7 +251,7 @@ class SettingsScreen(QWidget):
         grp.setStyleSheet(f"""
             QGroupBox {{
                 background:{_PANEL_BG};
-                font-weight:bold; font-size:13px; color:{_INK};
+                font-weight:bold; font-size:{FONT_BODY}px; color:{_INK};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:14px; padding:14px;
             }}
@@ -260,7 +262,7 @@ class SettingsScreen(QWidget):
             QCheckBox {{
                 background:transparent;
                 color:{COLOR_TEXT_PRIMARY};
-                font-size:13px;
+                font-size:{FONT_BODY}px;
                 padding:4px 2px;
                 spacing:10px;
             }}
@@ -273,7 +275,7 @@ class SettingsScreen(QWidget):
             "سيتم إخفاء الباقي من لائحة التلاميذ لتصبح الاختيارات قصيرة وسريعة."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px; font-weight:400;")
+        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px; font-weight:400;")
         layout.addWidget(note)
 
         catalog = load_level_catalog()
@@ -326,7 +328,7 @@ class SettingsScreen(QWidget):
         grp.setStyleSheet(f"""
             QGroupBox {{
                 background:{_PANEL_BG};
-                font-weight:bold; font-size:13px; color:{_INK};
+                font-weight:bold; font-size:{FONT_BODY}px; color:{_INK};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:14px; padding:14px;
             }}
@@ -349,10 +351,10 @@ class SettingsScreen(QWidget):
 
         right_col = QVBoxLayout()
         note = QLabel("يستخدم الشعار في رأس المستندات الرسمية المصدّرة.")
-        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         note.setWordWrap(True)
 
-        logo_btn = _section_btn(_BTN_LOGO, _INK)
+        logo_btn = _section_btn(_BTN_LOGO, _INK, icon=_BTN_LOGO_ICON)
         logo_btn.clicked.connect(self._on_choose_logo)
 
         right_col.addWidget(note)
@@ -370,7 +372,7 @@ class SettingsScreen(QWidget):
         grp.setStyleSheet(f"""
             QGroupBox {{
                 background:{_PANEL_BG};
-                font-weight:bold; font-size:13px; color:{_INK};
+                font-weight:bold; font-size:{FONT_BODY}px; color:{_INK};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:14px; padding:14px;
             }}
@@ -385,13 +387,13 @@ class SettingsScreen(QWidget):
             "اختر هل يسألك التطبيق PDF أو Word في كل مرة، أو يستعمل صيغة ثابتة دائماً."
         )
         note.setWordWrap(True)
-        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px; font-weight:400;")
+        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px; font-weight:400;")
 
         self._export_format_combo = QComboBox()
         self._export_format_combo.setMinimumHeight(36)
         self._export_format_combo.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-            "padding:4px 10px; font-size:13px;"
+            f"padding:4px 10px; font-size:{FONT_BODY}px;"
         )
         for value in (EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX):
             self._export_format_combo.addItem(EXPORT_FORMAT_LABELS[value], value)
@@ -408,7 +410,7 @@ class SettingsScreen(QWidget):
         grp.setStyleSheet(f"""
             QGroupBox {{
                 background:{_PANEL_BG};
-                font-weight:bold; font-size:13px; color:{_INK};
+                font-weight:bold; font-size:{FONT_BODY}px; color:{_INK};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:14px; padding:14px;
             }}
@@ -422,10 +424,10 @@ class SettingsScreen(QWidget):
             f"يمكنك حفظ نسخة من قاعدة البيانات ({DB_PATH.name}) في أي مكان تختاره.\n"
             "احتفظ بهذه النسخة في مكان آمن لاستعادة البيانات عند الحاجة."
         )
-        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         note.setWordWrap(True)
 
-        backup_btn = _section_btn(_BTN_BACKUP, COLOR_SUCCESS)
+        backup_btn = _section_btn(_BTN_BACKUP, COLOR_SUCCESS, icon=_BTN_BACKUP_ICON)
         backup_btn.clicked.connect(self._on_backup)
 
         layout.addWidget(note)

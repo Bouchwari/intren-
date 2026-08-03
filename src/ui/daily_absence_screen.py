@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QDateEdit, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+    QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton,
     QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
@@ -18,18 +18,25 @@ from config.settings import (
     COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.models import DailyAbsence
 from data.database import get_day_absences, get_recent_absences, save_daily_absence
+from ui.widgets.date_input import DateInput
+from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "ورقة الغياب اليومي"
 _SUBTITLE       = "عدد الغائبين عن خدمة الإطعام المدرسي"
-_BTN_PREV       = "→  اليوم السابق"
-_BTN_NEXT       = "اليوم التالي  ←"
+_BTN_PREV       = "اليوم السابق"
+_BTN_PREV_ICON  = "→"
+_BTN_NEXT       = "اليوم التالي"
+_BTN_NEXT_ICON  = "←"
 _BTN_TODAY      = "اليوم"
-_BTN_LOAD       = "📂  تحميل"
-_BTN_SAVE       = "💾  حفظ اليوم"
+_BTN_LOAD       = "تحميل"
+_BTN_LOAD_ICON  = "📂"
+_BTN_SAVE       = "حفظ اليوم"
+_BTN_SAVE_ICON  = "💾"
 _LBL_DATE       = "التاريخ:"
 _LBL_COLLEGIAL  = "إعدادي"
 _LBL_QUALIFYING = "تأهيلي"
@@ -68,7 +75,7 @@ def _spin() -> QSpinBox:
     s.setAlignment(Qt.AlignmentFlag.AlignCenter)
     s.setStyleSheet(
         f"border:1px solid {COLOR_BORDER}; border-radius:5px;"
-        "padding:2px 6px; font-size:13px;"
+        f"padding:2px 6px; font-size:{FONT_BODY}px;"
     )
     return s
 
@@ -86,7 +93,7 @@ class _AbsenceCard(QGroupBox):
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setStyleSheet(f"""
             QGroupBox {{
-                font-size: 15px; font-weight: bold;
+                font-size: {FONT_SECTION}px; font-weight: bold;
                 color: {color};
                 background: {_PANEL_BG};
                 border: 1px solid {color};
@@ -111,7 +118,7 @@ class _AbsenceCard(QGroupBox):
             h = QLabel(lbl)
             h.setAlignment(Qt.AlignmentFlag.AlignCenter)
             h.setStyleSheet(
-                f"color:{COLOR_TEXT_SECONDARY}; font-size:11px; font-weight:bold;"
+                f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px; font-weight:bold;"
             )
             hdr.addWidget(h, 0, col)
         layout.addLayout(hdr)
@@ -134,7 +141,7 @@ class _AbsenceCard(QGroupBox):
 
         for lbl in (self._ct_lbl, self._qt_lbl):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(f"color:{self._color}; font-weight:bold; font-size:14px;")
+            lbl.setStyleSheet(f"color:{self._color}; font-weight:bold; font-size:{FONT_SECTION}px;")
 
         # إعدادي row
         grid.addWidget(QLabel(_LBL_COLLEGIAL), 0, 0)
@@ -159,9 +166,9 @@ class _AbsenceCard(QGroupBox):
         gt_row = QHBoxLayout()
         gt_row.addStretch()
         gt_title = QLabel(f"{_LBL_GRAND_TOT}:")
-        gt_title.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:13px;")
+        gt_title.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px;")
         self._gt_lbl.setStyleSheet(
-            f"color:white; background:{self._color}; font-weight:bold; font-size:15px;"
+            f"color:white; background:{self._color}; font-weight:bold; font-size:{FONT_SECTION}px;"
             "border-radius:6px; padding:4px 12px;"
         )
         gt_row.addWidget(gt_title)
@@ -257,7 +264,7 @@ class DailyAbsenceScreen(QWidget):
         title.setStyleSheet(f"color:{_INK};")
 
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         col.addWidget(title)
         col.addWidget(sub)
         return col
@@ -267,45 +274,40 @@ class DailyAbsenceScreen(QWidget):
         row.setSpacing(8)
 
         row.addWidget(QLabel(_LBL_DATE,
-                             styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};"))
+                             styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
 
-        self._date_edit = QDateEdit()
-        self._date_edit.setCalendarPopup(True)
+        self._date_edit = DateInput(display_format="yyyy-MM-dd")
         self._date_edit.setDate(QDate.currentDate())
-        self._date_edit.setDisplayFormat("yyyy-MM-dd")
         self._date_edit.setMinimumHeight(36)
         self._date_edit.setMinimumWidth(128)
         self._date_edit.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-            "padding:4px 10px; font-size:13px;"
+            f"padding:4px 10px; font-size:{FONT_BODY}px;"
         )
         row.addWidget(self._date_edit)
 
-        for label, slot, color in [
-            (_BTN_TODAY, self._load_today,    _INK),
-            (_BTN_PREV,  self._go_prev,       _INK),
-            (_BTN_NEXT,  self._go_next,       _INK),
-            (_BTN_LOAD,  self._load_selected, "#0891b2"),
+        for label, icon, slot, color in [
+            (_BTN_TODAY, None,           self._load_today,    _INK),
+            (_BTN_PREV,  _BTN_PREV_ICON, self._go_prev,       _INK),
+            (_BTN_NEXT,  _BTN_NEXT_ICON, self._go_next,       _INK),
+            (_BTN_LOAD,  _BTN_LOAD_ICON, self._load_selected, "#0891b2"),
         ]:
-            btn = self._btn(label, color)
+            btn = self._btn(label, color, icon=icon)
             btn.clicked.connect(slot)
             row.addWidget(btn)
 
         row.addStretch()
 
-        save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS)
+        save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS, icon=_BTN_SAVE_ICON)
         save_btn.clicked.connect(self._on_save)
         row.addWidget(save_btn)
         return row
 
-    def _btn(self, label: str, color: str) -> QPushButton:
-        b = QPushButton(label)
-        b.setMinimumHeight(36)
-        b.setStyleSheet(
-            f"background:{color}; color:white; border-radius:12px;"
-            "padding:0 12px; font-size:13px;"
+    def _btn(self, label: str, color: str, *, icon: str | None = None) -> QPushButton:
+        return IconButton(
+            label, icon=icon, bg=color, text_color="white",
+            border_radius=12, padding_h=12, font_size=13, bold=False, min_height=36,
         )
-        return b
 
     def _build_cards_row(self) -> QGridLayout:
         row = QGridLayout()
@@ -323,7 +325,7 @@ class DailyAbsenceScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_DANGER};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_DANGER};
                 background:{_PANEL_BG};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:14px; padding:10px;
@@ -341,7 +343,7 @@ class DailyAbsenceScreen(QWidget):
         self._history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._history_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._history_table.verticalHeader().setVisible(False)
-        self._history_table.horizontalHeader().setStretchLastSection(False)
+        self._history_table.horizontalHeader().setStretchLastSection(True)
         self._history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         for col, width in enumerate(_HISTORY_COLUMN_WIDTHS):
             self._history_table.setColumnWidth(col, width)
@@ -351,13 +353,13 @@ class DailyAbsenceScreen(QWidget):
             QTableWidget {{
                 border:1px solid {_PANEL_BORDER}; border-radius:12px;
                 background:white; alternate-background-color:#fff5f5;
-                font-size:12px;
+                font-size:{FONT_LABEL}px;
             }}
             QHeaderView::section {{
                 background:#E4E4D7; color:{_INK};
                 padding:7px 10px; border:none;
                 border-bottom:1px solid {_PANEL_BORDER};
-                font-weight:bold; font-size:11px;
+                font-weight:bold; font-size:{FONT_CAPTION}px;
             }}
             QTableWidget::item {{ padding:5px 10px; }}
         """)

@@ -13,16 +13,17 @@ from PySide6.QtGui import (
     QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QFileDialog, QFrame, QGridLayout, QGroupBox,
+    QComboBox, QFileDialog, QFrame, QGridLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QMessageBox,
     QPushButton, QScrollArea, QSizePolicy, QSpacerItem, QSpinBox,
     QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
+    COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.models import DailyContact, DailyAbsence, DailyReport
 from data.database import (
@@ -32,22 +33,29 @@ from data.database import (
 )
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
+from ui.widgets.date_input import DateInput
+from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE          = "التقرير اليومي"
 _SUBTITLE       = "التقرير اليومي للمصالح المادية والمالية"
-_BTN_PREV       = "→  اليوم السابق"
-_BTN_NEXT       = "اليوم التالي  ←"
+_BTN_PREV       = "اليوم السابق"
+_BTN_PREV_ICON  = "→"
+_BTN_NEXT       = "اليوم التالي"
+_BTN_NEXT_ICON  = "←"
 _BTN_TODAY      = "اليوم"
-_BTN_GENERATE   = "🔄  توليد التقرير"
+_BTN_GENERATE      = "توليد التقرير"
+_BTN_GENERATE_ICON = "🔄"
 _BTN_SAVE_NOTES = "💾  حفظ الملاحظات"
 _LBL_DATE       = "التاريخ:"
 _LBL_NOTES      = "ملاحظات المسير"
 _NOTES_HINT     = "أدخل ملاحظاتك هنا..."
 _NO_DATA        = "لا توجد بيانات لهذا اليوم.\nأدخل بيانات ورقة الاتصال أو الغياب أولاً."
 _SAVED_OK       = "تم حفظ التقرير بنجاح."
-_BTN_SAVE_REPORT = "💾  حفظ التقرير"
-_BTN_EXPORT     = "📄  تصدير PDF"
+_BTN_SAVE_REPORT      = "حفظ التقرير"
+_BTN_SAVE_REPORT_ICON = "💾"
+_BTN_EXPORT      = "تصدير PDF"
+_BTN_EXPORT_ICON = "📄"
 _PDF_DIALOG_TITLE = "تصدير التقرير اليومي"
 _PDF_DEFAULT_NAME = "التقرير_اليومي"
 _PDF_FILTER     = "PDF (*.pdf)"
@@ -521,7 +529,7 @@ class DailyReportScreen(QWidget):
         title.setFont(f)
         title.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY};")
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         col.addWidget(title)
         col.addWidget(sub)
         return col
@@ -531,17 +539,15 @@ class DailyReportScreen(QWidget):
         row.setSpacing(8)
 
         row.addWidget(QLabel(_LBL_DATE,
-                             styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};"))
+                             styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
 
-        self._date_edit = QDateEdit()
-        self._date_edit.setCalendarPopup(True)
+        self._date_edit = DateInput(display_format="yyyy-MM-dd")
         self._date_edit.setDate(QDate.currentDate())
-        self._date_edit.setDisplayFormat("yyyy-MM-dd")
         self._date_edit.setMinimumHeight(36)
         self._date_edit.setMinimumWidth(150)
         self._date_edit.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:4px 10px; font-size:13px;"
+            f"padding:4px 10px; font-size:{FONT_BODY}px;"
         )
 
         # Quick jump to dates that have data
@@ -550,19 +556,19 @@ class DailyReportScreen(QWidget):
         self._quick_combo.setMinimumWidth(180)
         self._quick_combo.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:4px 8px; font-size:13px;"
+            f"padding:4px 8px; font-size:{FONT_BODY}px;"
         )
         self._quick_combo.setPlaceholderText("الأيام التي لها بيانات")
         self._quick_combo.currentTextChanged.connect(self._on_quick_jump)
 
         row.addWidget(self._date_edit)
 
-        for label, slot, color in [
-            (_BTN_TODAY, self._load_today, "#475569"),
-            (_BTN_PREV,  self._go_prev,   "#475569"),
-            (_BTN_NEXT,  self._go_next,   "#475569"),
+        for label, icon, slot, color in [
+            (_BTN_TODAY, None,           self._load_today, COLOR_TEXT_PRIMARY),
+            (_BTN_PREV,  _BTN_PREV_ICON, self._go_prev,    COLOR_TEXT_PRIMARY),
+            (_BTN_NEXT,  _BTN_NEXT_ICON, self._go_next,    COLOR_TEXT_PRIMARY),
         ]:
-            b = self._btn(label, color)
+            b = self._btn(label, color, icon=icon)
             b.clicked.connect(slot)
             row.addWidget(b)
 
@@ -570,20 +576,17 @@ class DailyReportScreen(QWidget):
         row.addWidget(self._quick_combo)
         row.addStretch()
 
-        gen_btn = self._btn(_BTN_GENERATE, COLOR_ACCENT)
+        gen_btn = self._btn(_BTN_GENERATE, COLOR_ACCENT, icon=_BTN_GENERATE_ICON)
         gen_btn.clicked.connect(self._generate)
         row.addWidget(gen_btn)
 
         return row
 
-    def _btn(self, label: str, color: str) -> QPushButton:
-        b = QPushButton(label)
-        b.setMinimumHeight(36)
-        b.setStyleSheet(
-            f"background:{color}; color:white; border-radius:6px;"
-            "padding:0 12px; font-size:13px;"
+    def _btn(self, label: str, color: str, *, icon: str | None = None) -> QPushButton:
+        return IconButton(
+            label, icon=icon, bg=color, text_color="white",
+            border_radius=6, padding_h=12, font_size=13, bold=False, min_height=36,
         )
-        return b
 
     def _build_report_card(self) -> QFrame:
         """The main report card — school header + two summary tables."""
@@ -600,7 +603,7 @@ class DailyReportScreen(QWidget):
         self._school_header = QLabel()
         self._school_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._school_header.setStyleSheet(
-            f"font-size:14px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};"
+            f"font-size:{FONT_SECTION}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};"
             f"border-bottom:2px solid {COLOR_ACCENT}; padding-bottom:10px;"
         )
         self._report_card_layout.addWidget(self._school_header)
@@ -608,7 +611,7 @@ class DailyReportScreen(QWidget):
         self._date_header = QLabel()
         self._date_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._date_header.setStyleSheet(
-            f"font-size:13px; color:{COLOR_TEXT_SECONDARY}; padding-bottom:6px;"
+            f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_SECONDARY}; padding-bottom:6px;"
         )
         self._report_card_layout.addWidget(self._date_header)
 
@@ -616,7 +619,7 @@ class DailyReportScreen(QWidget):
         self._no_data_lbl = QLabel(_NO_DATA)
         self._no_data_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_data_lbl.setStyleSheet(
-            f"color:{COLOR_TEXT_SECONDARY}; font-size:14px; padding:40px;"
+            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px; padding:40px;"
         )
         self._report_card_layout.addWidget(self._no_data_lbl)
 
@@ -635,7 +638,7 @@ class DailyReportScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
                 margin-top:10px; padding:10px;
             }}
@@ -653,7 +656,7 @@ class DailyReportScreen(QWidget):
         combo.setMinimumHeight(32)
         combo.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:2px 8px; font-size:12px;"
+            f"padding:2px 8px; font-size:{FONT_LABEL}px;"
         )
         combo.addItem(_NOT_RATED, -1)
         for index, label in enumerate(scale):
@@ -663,7 +666,7 @@ class DailyReportScreen(QWidget):
     def _rating_row(self, layout: QVBoxLayout, label: str, combo: QComboBox) -> None:
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:12px;")
+        lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_LABEL}px;")
         row.addWidget(lbl, 1)
         row.addWidget(combo)
         layout.addLayout(row)
@@ -702,13 +705,13 @@ class DailyReportScreen(QWidget):
         self._beneficiary_spins: Dict[str, Tuple[QSpinBox, QSpinBox]] = {}
         header = QHBoxLayout()
         header.addWidget(QLabel(""), 1)
-        header.addWidget(QLabel(_LBL_EXPECTED, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:11px;"))
-        header.addWidget(QLabel(_LBL_PRESENT, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:11px;"))
+        header.addWidget(QLabel(_LBL_EXPECTED, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;"))
+        header.addWidget(QLabel(_LBL_PRESENT, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;"))
         ben_layout.addLayout(header)
         for meal_key, meal_label in _MEAL_ORDER:
             row = QHBoxLayout()
             lbl = QLabel(meal_label)
-            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:12px;")
+            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_LABEL}px;")
             expected = QSpinBox()
             present = QSpinBox()
             for spin in (expected, present):
@@ -750,7 +753,7 @@ class DailyReportScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
                 margin-top:10px; padding:10px;
             }}
@@ -767,15 +770,15 @@ class DailyReportScreen(QWidget):
         self._notes_edit.setMaximumHeight(200)
         self._notes_edit.setStyleSheet(
             f"border:1px solid {COLOR_BORDER}; border-radius:6px;"
-            "padding:8px; font-size:13px;"
+            f"padding:8px; font-size:{FONT_BODY}px;"
         )
         layout.addWidget(self._notes_edit)
 
         btn_row = QHBoxLayout()
-        save_btn = self._btn(_BTN_SAVE_REPORT, COLOR_SUCCESS)
+        save_btn = self._btn(_BTN_SAVE_REPORT, COLOR_SUCCESS, icon=_BTN_SAVE_REPORT_ICON)
         save_btn.clicked.connect(self._on_save_report)
         save_btn.setMaximumWidth(200)
-        export_btn = self._btn(_BTN_EXPORT, "#475569")
+        export_btn = self._btn(_BTN_EXPORT, COLOR_TEXT_PRIMARY, icon=_BTN_EXPORT_ICON)
         export_btn.clicked.connect(self._on_export)
         export_btn.setMaximumWidth(160)
         btn_row.addWidget(save_btn)
@@ -803,12 +806,12 @@ class DailyReportScreen(QWidget):
         table.setStyleSheet(f"""
             QTableWidget {{
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
-                font-size:13px; background:white;
-                gridline-color: #e2e8f0;
+                font-size:{FONT_BODY}px; background:white;
+                gridline-color: {COLOR_BORDER};
             }}
             QHeaderView::section {{
                 background:{COLOR_ACCENT}; color:white;
-                padding:8px 10px; border:none; font-weight:bold; font-size:12px;
+                padding:8px 10px; border:none; font-weight:bold; font-size:{FONT_LABEL}px;
             }}
             QTableWidget::item {{ padding:6px 10px; }}
         """)
@@ -867,7 +870,7 @@ class DailyReportScreen(QWidget):
             table.setItem(row, 2, _cell(str(cg + qg), bold=True, bg="#f0f9ff"))
             table.setItem(row, 3, _cell(str(cp + qp), bold=True, bg="#f0f9ff"))
             table.setItem(row, 4, _cell(str(cc + qc), bold=True, bg="#f0f9ff"))
-            table.setItem(row, 5, _cell(str(meal_tot), bold=True, bg="#dbeafe", fg="#1d4ed8"))
+            table.setItem(row, 5, _cell(str(meal_tot), bold=True, bg=COLOR_PANEL_ALT, fg=COLOR_ACCENT_DEEP))
             row += 1
 
             grand_granted += cg + qg
@@ -876,11 +879,11 @@ class DailyReportScreen(QWidget):
             grand_total   += meal_tot
 
         # Grand total row
-        table.setItem(row, 0, _cell(_GRAND_TOTAL, bold=True, bg="#0f172a", fg="white"))
-        table.setItem(row, 1, _cell("", bg="#0f172a"))
-        table.setItem(row, 2, _cell(str(grand_granted), bold=True, bg="#0f172a", fg="white"))
-        table.setItem(row, 3, _cell(str(grand_paying),  bold=True, bg="#0f172a", fg="white"))
-        table.setItem(row, 4, _cell(str(grand_compl),   bold=True, bg="#0f172a", fg="white"))
+        table.setItem(row, 0, _cell(_GRAND_TOTAL, bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        table.setItem(row, 1, _cell("", bg=COLOR_ACCENT_DEEP))
+        table.setItem(row, 2, _cell(str(grand_granted), bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        table.setItem(row, 3, _cell(str(grand_paying),  bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        table.setItem(row, 4, _cell(str(grand_compl),   bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
         table.setItem(row, 5, _cell(str(grand_total),   bold=True, bg=COLOR_ACCENT, fg="white"))
 
         table.setMaximumHeight(num_rows * 36 + 40)

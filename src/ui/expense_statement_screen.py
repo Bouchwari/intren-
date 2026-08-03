@@ -19,19 +19,24 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
+    COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT,
+    COLOR_SIDEBAR_BG, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL,
 )
 from data.database import (
     get_expense_data, get_months_with_data, get_school_settings,
 )
+from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE       = "بيان المصاريف"
 _SUBTITLE    = "البيان التفصيلي لمصاريف الإطعام المدرسي الشهري"
-_BTN_GEN     = "🔄  توليد البيان"
-_BTN_EXCEL   = "📊  تصدير إلى Excel"
+_BTN_GEN     = "توليد البيان"
+_BTN_GEN_ICON = "🔄"
+_BTN_EXCEL   = "تصدير إلى Excel"
+_BTN_EXCEL_ICON = "📊"
 _LBL_MONTH   = "الشهر:"
 _LBL_YEAR    = "السنة:"
 _NO_DATA     = "لا توجد بيانات لهذا الشهر.\nأدخل بيانات ورقة الاتصال أولاً."
@@ -130,14 +135,14 @@ class ExpenseStatementScreen(QWidget):
         f = QFont(); f.setPointSize(17); f.setBold(True); title.setFont(f)
         title.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY};")
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         col.addWidget(title); col.addWidget(sub)
         return col
 
     def _build_selector_bar(self) -> QHBoxLayout:
         row = QHBoxLayout(); row.setSpacing(8)
 
-        def lbl(t): return QLabel(t, styleSheet=f"font-size:13px; color:{COLOR_TEXT_PRIMARY};")
+        def lbl(t): return QLabel(t, styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};")
 
         row.addWidget(lbl(_LBL_MONTH))
         self._month_combo = QComboBox()
@@ -145,7 +150,7 @@ class ExpenseStatementScreen(QWidget):
         for m in _ARABIC_MONTHS:
             self._month_combo.addItem(m)
         self._month_combo.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         row.addWidget(self._month_combo)
 
         row.addWidget(lbl(_LBL_YEAR))
@@ -155,7 +160,7 @@ class ExpenseStatementScreen(QWidget):
         for y in range(cur_year + 1, cur_year - 5, -1):
             self._year_combo.addItem(str(y))
         self._year_combo.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         row.addWidget(self._year_combo)
 
         # Quick jump
@@ -163,25 +168,23 @@ class ExpenseStatementScreen(QWidget):
         self._quick.setMinimumHeight(36); self._quick.setMinimumWidth(160)
         self._quick.setPlaceholderText("الأشهر التي لها بيانات")
         self._quick.setStyleSheet(
-            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:13px;")
+            f"border:1px solid {COLOR_BORDER}; border-radius:6px; padding:4px 8px; font-size:{FONT_BODY}px;")
         self._quick.currentTextChanged.connect(self._on_quick_jump)
         self._refresh_quick()
         row.addWidget(self._quick)
         row.addStretch()
 
-        gen_btn = QPushButton(_BTN_GEN)
-        gen_btn.setMinimumHeight(38)
-        gen_btn.setStyleSheet(
-            f"background:{COLOR_ACCENT}; color:white; border-radius:7px;"
-            "padding:0 18px; font-size:13px; font-weight:bold;")
+        gen_btn = IconButton(
+            _BTN_GEN, icon=_BTN_GEN_ICON, bg=COLOR_ACCENT, text_color="white",
+            border_radius=7, padding_h=18, font_size=13, bold=True, min_height=38,
+        )
         gen_btn.clicked.connect(self._generate)
         row.addWidget(gen_btn)
 
-        xls_btn = QPushButton(_BTN_EXCEL)
-        xls_btn.setMinimumHeight(38)
-        xls_btn.setStyleSheet(
-            f"background:#16a34a; color:white; border-radius:7px;"
-            "padding:0 14px; font-size:13px; font-weight:bold;")
+        xls_btn = IconButton(
+            _BTN_EXCEL, icon=_BTN_EXCEL_ICON, bg="#16a34a", text_color="white",
+            border_radius=7, padding_h=14, font_size=13, bold=True, min_height=38,
+        )
         xls_btn.clicked.connect(self._export_excel)
         row.addWidget(xls_btn)
 
@@ -207,7 +210,7 @@ class ExpenseStatementScreen(QWidget):
             v = QVBoxLayout(card); v.setSpacing(4); v.setContentsMargins(14, 12, 14, 12)
             lbl = QLabel(label)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:11px; font-weight:bold;")
+            lbl.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px; font-weight:bold;")
             val = QLabel("—")
             val.setAlignment(Qt.AlignmentFlag.AlignCenter)
             f = QFont(); f.setPointSize(18); f.setBold(True); val.setFont(f)
@@ -222,7 +225,7 @@ class ExpenseStatementScreen(QWidget):
         grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
                 margin-top:10px; padding:10px;
             }}
@@ -237,7 +240,7 @@ class ExpenseStatementScreen(QWidget):
         self._no_data_lbl = QLabel(_NO_DATA)
         self._no_data_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._no_data_lbl.setStyleSheet(
-            f"color:{COLOR_TEXT_SECONDARY}; font-size:14px; padding:40px;")
+            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px; padding:40px;")
         layout.addWidget(self._no_data_lbl)
 
         # Expense table
@@ -254,14 +257,14 @@ class ExpenseStatementScreen(QWidget):
         self._table.setStyleSheet(f"""
             QTableWidget {{
                 border:1px solid {COLOR_BORDER}; border-radius:8px;
-                font-size:12px; background:white;
-                alternate-background-color:#f8fafc;
-                gridline-color:#e2e8f0;
+                font-size:{FONT_LABEL}px; background:white;
+                alternate-background-color:{COLOR_PANEL_ALT};
+                gridline-color:{COLOR_BORDER};
             }}
             QHeaderView::section {{
                 background:{COLOR_ACCENT}; color:white;
                 padding:8px 8px; border:none;
-                font-weight:bold; font-size:11px;
+                font-weight:bold; font-size:{FONT_CAPTION}px;
             }}
             QTableWidget::item {{ padding:6px 8px; }}
         """)
@@ -274,7 +277,7 @@ class ExpenseStatementScreen(QWidget):
         self._banner.setVisible(False)
         self._banner.setStyleSheet(
             f"background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-            f"stop:0 #0f172a,stop:1 #1e3a5f); border-radius:10px;")
+            f"stop:0 {COLOR_ACCENT_DEEP},stop:1 {COLOR_SIDEBAR_BG}); border-radius:10px;")
         row = QHBoxLayout(self._banner)
         row.setContentsMargins(24, 14, 24, 14)
 
@@ -285,13 +288,13 @@ class ExpenseStatementScreen(QWidget):
 
         left = QVBoxLayout()
         lbl1 = QLabel("إجمالي الوجبات المُحتسبة")
-        lbl1.setStyleSheet("color:rgba(255,255,255,0.7); font-size:12px;")
+        lbl1.setStyleSheet(f"color:rgba(255,255,255,0.7); font-size:{FONT_LABEL}px;")
         self._banner_meals.setStyleSheet("color:white;")
         left.addWidget(lbl1); left.addWidget(self._banner_meals)
 
         right = QVBoxLayout(); right.setAlignment(Qt.AlignmentFlag.AlignLeft)
         lbl2 = QLabel("إجمالي المبلغ المالي للشهر")
-        lbl2.setStyleSheet("color:rgba(255,255,255,0.7); font-size:12px;")
+        lbl2.setStyleSheet(f"color:rgba(255,255,255,0.7); font-size:{FONT_LABEL}px;")
         self._banner_cost.setStyleSheet("color:#fde68a;")   # amber
         right.addWidget(lbl2); right.addWidget(self._banner_cost)
 
@@ -374,7 +377,7 @@ class ExpenseStatementScreen(QWidget):
 
         # Grand total row
         r = rows - 1
-        bg, fg = "#0f172a", "white"
+        bg, fg = COLOR_ACCENT_DEEP, "white"
         self._table.setItem(r, 0,  _titem("الإجمالي", bold=True, bg=bg, fg=fg))
         self._table.setItem(r, 1,  _titem(str(tot_cg), bold=True, bg=bg, fg=fg))
         self._table.setItem(r, 2,  _titem(str(tot_cp), bold=True, bg=bg, fg=fg))

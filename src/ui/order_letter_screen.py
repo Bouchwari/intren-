@@ -14,17 +14,18 @@ from PySide6.QtGui import (
     QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QFileDialog, QFrame, QGroupBox, QHBoxLayout,
+    QComboBox, QFileDialog, QFrame, QGroupBox, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QScrollArea,
     QSizePolicy, QSpinBox, QSplitter, QTextBrowser,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
-    COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+    COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
+    COLOR_SURFACE, COLOR_PANEL_ALT, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
     EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
+    FONT_BODY, FONT_LABEL, FONT_SECTION,
 )
 from core.models import OrderItem, OrderLetter
 from data.database import (
@@ -36,16 +37,24 @@ from ui.daily_contact_screen import (
     _WORD_NS,
 )
 from ui.document_header import ask_export_format, draw_official_pdf_footer, draw_official_pdf_header
+from ui.widgets.date_input import DateInput
+from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE         = "رسالة الطلبية"
 _SUBTITLE      = "طلبية المواد الغذائية الموجهة للمورد"
-_BTN_AUTOFILL  = "⚡  تعبئة تلقائية من لائحة التلاميذ"
-_BTN_PREVIEW   = "👁  معاينة الرسالة"
-_BTN_SAVE      = "💾  حفظ الرسالة"
-_BTN_NEW       = "➕  رسالة جديدة"
-_BTN_DELETE    = "🗑️  حذف"
-_BTN_EXPORT    = "📄  تصدير"
+_BTN_AUTOFILL  = "تعبئة تلقائية من لائحة التلاميذ"
+_BTN_AUTOFILL_ICON = "⚡"
+_BTN_PREVIEW   = "معاينة الرسالة"
+_BTN_PREVIEW_ICON = "👁"
+_BTN_SAVE      = "حفظ الرسالة"
+_BTN_SAVE_ICON = "💾"
+_BTN_NEW       = "رسالة جديدة"
+_BTN_NEW_ICON  = "➕"
+_BTN_DELETE    = "حذف"
+_BTN_DELETE_ICON = "🗑️"
+_BTN_EXPORT    = "تصدير"
+_BTN_EXPORT_ICON = "📄"
 _PDF_DIALOG_TITLE = "تصدير رسالة الطلبية"
 _PDF_DEFAULT_NAME = "رسالة_الطلبية"
 _PDF_FILTER = "PDF (*.pdf)"
@@ -88,19 +97,16 @@ def _spin(val: int = 0) -> QSpinBox:
     s.setAlignment(Qt.AlignmentFlag.AlignCenter)
     s.setStyleSheet(
         f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-        "padding:2px 6px; font-size:13px;"
+        f"padding:2px 6px; font-size:{FONT_BODY}px;"
     )
     return s
 
 
-def _btn(label: str, color: str) -> QPushButton:
-    b = QPushButton(label)
-    b.setMinimumHeight(36)
-    b.setStyleSheet(
-        f"background:{color}; color:white; border-radius:12px;"
-        "padding:0 14px; font-size:13px;"
+def _btn(label: str, color: str, *, icon: str | None = None) -> QPushButton:
+    return IconButton(
+        label, icon=icon, bg=color, text_color="white",
+        border_radius=12, padding_h=14, font_size=13, bold=False, min_height=36,
     )
-    return b
 
 
 # ── Meal quantity card ────────────────────────────────────────────────────────
@@ -114,7 +120,7 @@ class _MealQtyCard(QGroupBox):
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setStyleSheet(f"""
             QGroupBox {{
-                font-size:14px; font-weight:bold; color:{color};
+                font-size:{FONT_SECTION}px; font-weight:bold; color:{color};
                 background:{_PANEL_BG};
                 border:1px solid {color}; border-radius:16px;
                 margin-top:16px; padding:10px;
@@ -133,7 +139,7 @@ class _MealQtyCard(QGroupBox):
         def row(label: str, spin: QSpinBox) -> QHBoxLayout:
             h = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:13px;")
+            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_BODY}px;")
             h.addWidget(lbl)
             h.addStretch()
             h.addWidget(spin)
@@ -160,7 +166,7 @@ class _MealQtyCard(QGroupBox):
         layout.addWidget(sep)
 
         tot_row = QHBoxLayout()
-        tot_row.addWidget(QLabel("المجموع:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+        tot_row.addWidget(QLabel("المجموع:", styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         tot_row.addStretch()
         tot_row.addWidget(self._total_lbl)
         layout.addLayout(tot_row)
@@ -241,28 +247,28 @@ def _generate_letter_html(
 <html dir="rtl" lang="ar">
 <head><meta charset="utf-8">
 <style>
-  body {{ font-family: 'Arial', sans-serif; font-size: 13px;
-          margin: 24px; color: #1e293b; direction: rtl; }}
+  body {{ font-family: 'Arial', sans-serif; font-size: {FONT_BODY}px;
+          margin: 24px; color: {COLOR_TEXT_PRIMARY}; direction: rtl; }}
   .header-box {{ border: 2px solid {COLOR_ACCENT}; border-radius: 10px;
                   padding: 14px 20px; margin-bottom: 20px;
-                  background: linear-gradient(135deg,#eff6ff,#dbeafe); }}
-  .header-box h2 {{ margin:0; color:{COLOR_ACCENT}; font-size:15px; }}
-  .header-box p  {{ margin:4px 0; color:{COLOR_TEXT_SECONDARY}; font-size:12px; }}
-  .meta  {{ font-size:12px; color:{COLOR_TEXT_SECONDARY}; margin-bottom:6px; }}
+                  background: {COLOR_PANEL_ALT}; }}
+  .header-box h2 {{ margin:0; color:{COLOR_ACCENT}; font-size:{FONT_SECTION}px; }}
+  .header-box p  {{ margin:4px 0; color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px; }}
+  .meta  {{ font-size:{FONT_LABEL}px; color:{COLOR_TEXT_SECONDARY}; margin-bottom:6px; }}
   .subject {{ background:{COLOR_ACCENT}22; border-right:4px solid {COLOR_ACCENT};
               padding:10px 14px; border-radius:0 6px 6px 0; margin:14px 0;
               font-weight:bold; }}
   table {{ width:100%; border-collapse:collapse; margin:14px 0; }}
   th {{ background:{COLOR_ACCENT}; color:white; padding:9px 14px;
-        text-align:center; font-size:13px; }}
-  tr:nth-child(even) {{ background:#f8fafc; }}
-  .total-row {{ background:#0f172a; color:white; font-weight:bold; }}
+        text-align:center; font-size:{FONT_BODY}px; }}
+  tr:nth-child(even) {{ background:{COLOR_PANEL_ALT}; }}
+  .total-row {{ background:{COLOR_ACCENT_DEEP}; color:white; font-weight:bold; }}
   .total-row td {{ padding:9px 14px; text-align:center; }}
   .signature {{ margin-top:30px; display:flex;
                 justify-content:space-between; }}
   .sig-block {{ text-align:center; min-width:180px; }}
-  .sig-line {{ border-top:1px solid #94a3b8; margin-top:40px;
-               padding-top:6px; font-size:12px; }}
+  .sig-line {{ border-top:1px solid {COLOR_BORDER}; margin-top:40px;
+               padding-top:6px; font-size:{FONT_LABEL}px; }}
   .greet {{ margin:14px 0; line-height:1.9; }}
 </style>
 </head>
@@ -494,7 +500,7 @@ def _write_order_letter_pdf(
         total_rect = QRectF(right - sum(col_widths), row_y, sum(col_widths), row_h)
         _draw_letter_pdf_cell(
             painter, total_rect,
-            background="#0f172a", border="#0f172a",
+            background=COLOR_ACCENT_DEEP, border=COLOR_ACCENT_DEEP,
             text=f"الإجمالي العام: {grand_total}", text_color="white", size=12, bold=True,
         )
         y += table_h + 16
@@ -639,7 +645,7 @@ class OrderLetterScreen(QWidget):
         title.setFont(f)
         title.setStyleSheet(f"color:{_INK};")
         sub = QLabel(_SUBTITLE)
-        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;")
+        sub.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         root.addWidget(title)
         root.addWidget(sub)
 
@@ -662,11 +668,11 @@ class OrderLetterScreen(QWidget):
         row = QHBoxLayout()
         row.setSpacing(8)
 
-        new_btn    = _btn(_BTN_NEW,     "#16a34a")
-        save_btn   = _btn(_BTN_SAVE,    COLOR_ACCENT)
-        delete_btn = _btn(_BTN_DELETE,  COLOR_DANGER)
-        preview_btn= _btn(_BTN_PREVIEW, _INK)
-        export_btn = _btn(_BTN_EXPORT,  _INK)
+        new_btn    = _btn(_BTN_NEW,     "#16a34a", icon=_BTN_NEW_ICON)
+        save_btn   = _btn(_BTN_SAVE,    COLOR_ACCENT, icon=_BTN_SAVE_ICON)
+        delete_btn = _btn(_BTN_DELETE,  COLOR_DANGER, icon=_BTN_DELETE_ICON)
+        preview_btn= _btn(_BTN_PREVIEW, _INK, icon=_BTN_PREVIEW_ICON)
+        export_btn = _btn(_BTN_EXPORT,  _INK, icon=_BTN_EXPORT_ICON)
 
         new_btn.clicked.connect(self._on_new)
         save_btn.clicked.connect(self._on_save)
@@ -684,14 +690,14 @@ class OrderLetterScreen(QWidget):
 
         # History selector
         row.addWidget(QLabel(_LBL_HIST,
-                             styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:12px;"))
+                             styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;"))
         self._history_combo = QComboBox()
         self._history_combo.setMinimumHeight(36)
         self._history_combo.setMinimumWidth(190)
         self._history_combo.setPlaceholderText("الرسائل المحفوظة")
         self._history_combo.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-            "padding:4px 8px; font-size:13px;"
+            f"padding:4px 8px; font-size:{FONT_BODY}px;"
         )
         self._history_combo.currentIndexChanged.connect(self._on_load_history)
         row.addWidget(self._history_combo)
@@ -715,7 +721,7 @@ class OrderLetterScreen(QWidget):
         date_grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         date_grp.setStyleSheet(f"""
             QGroupBox {{
-                font-size:13px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
+                font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 background:{_PANEL_BG};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
                 margin-top:10px; padding:10px;
@@ -727,25 +733,23 @@ class OrderLetterScreen(QWidget):
         """)
         date_form = QVBoxLayout(date_grp)
 
-        def _date_row(label: str, edit: QDateEdit) -> QHBoxLayout:
+        def _date_row(label: str, edit: DateInput) -> QHBoxLayout:
             h = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:13px;")
+            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_BODY}px;")
             h.addWidget(lbl)
             h.addStretch()
             h.addWidget(edit)
             return h
 
-        def _date_edit() -> QDateEdit:
-            d = QDateEdit()
-            d.setCalendarPopup(True)
+        def _date_edit() -> DateInput:
+            d = DateInput(display_format="yyyy-MM-dd")
             d.setDate(QDate.currentDate())
-            d.setDisplayFormat("yyyy-MM-dd")
             d.setMinimumHeight(34)
             d.setMinimumWidth(128)
             d.setStyleSheet(
                 f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
-                "padding:4px 8px; font-size:13px;"
+                f"padding:4px 8px; font-size:{FONT_BODY}px;"
             )
             d.dateChanged.connect(self._update_preview)
             return d
@@ -760,7 +764,7 @@ class OrderLetterScreen(QWidget):
         date_form.addLayout(_date_row(_LBL_FROM, self._period_start))
         date_form.addLayout(_date_row(_LBL_TO,   self._period_end))
 
-        autofill_btn = _btn(_BTN_AUTOFILL, "#0891b2")
+        autofill_btn = _btn(_BTN_AUTOFILL, "#0891b2", icon=_BTN_AUTOFILL_ICON)
         autofill_btn.clicked.connect(self._auto_fill)
         date_form.addWidget(autofill_btn)
 
@@ -778,7 +782,7 @@ class OrderLetterScreen(QWidget):
 
         # Notes
         notes_lbl = QLabel(_LBL_NOTES)
-        notes_lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:13px; font-weight:bold;")
+        notes_lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_BODY}px; font-weight:bold;")
         layout.addWidget(notes_lbl)
 
         self._notes_edit = QTextEdit()
@@ -786,7 +790,7 @@ class OrderLetterScreen(QWidget):
         self._notes_edit.setMaximumHeight(86)
         self._notes_edit.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:12px;"
-            "padding:6px; font-size:13px;"
+            f"padding:6px; font-size:{FONT_BODY}px;"
         )
         self._notes_edit.textChanged.connect(self._update_preview)
         layout.addWidget(self._notes_edit)
@@ -807,7 +811,7 @@ class OrderLetterScreen(QWidget):
         hdr = QLabel("معاينة الرسالة")
         hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hdr.setStyleSheet(
-            f"background:{_INK}; color:white; font-size:13px;"
+            f"background:{_INK}; color:white; font-size:{FONT_BODY}px;"
             "font-weight:bold; padding:10px; border-radius:16px 16px 0 0;"
         )
         layout.addWidget(hdr)
@@ -815,7 +819,7 @@ class OrderLetterScreen(QWidget):
         self._preview = QTextBrowser()
         self._preview.setOpenExternalLinks(False)
         self._preview.setStyleSheet(
-            "border:none; background:white; font-size:13px; padding:8px;"
+            f"border:none; background:white; font-size:{FONT_BODY}px; padding:8px;"
         )
         layout.addWidget(self._preview)
         return panel
