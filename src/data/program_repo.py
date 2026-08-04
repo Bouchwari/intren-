@@ -6,10 +6,11 @@ from data.database import _connection
 
 
 def get_all_programs() -> List[MealProgram]:
-    """Return all meal programs ordered by creation date."""
+    """Return all meal programs, oldest first (matches the "برنامج 1/2/3"
+    naming and the dropdown's existing order)."""
     with _connection() as conn:
         rows = conn.execute(
-            "SELECT id, name, school_year, is_ramadan FROM meal_programs ORDER BY id"
+            "SELECT id, name, school_year, is_ramadan, created_at FROM meal_programs ORDER BY id"
         ).fetchall()
     return [
         MealProgram(
@@ -17,6 +18,7 @@ def get_all_programs() -> List[MealProgram]:
             name=r["name"],
             school_year=r["school_year"] or "",
             is_ramadan=bool(r["is_ramadan"]),
+            created_at=r["created_at"] or "",
         )
         for r in rows
     ]

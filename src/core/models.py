@@ -68,6 +68,7 @@ class MealProgram:
     name: str                   # e.g. "البرنامج الأسبوعي 1"
     school_year: str = ""
     is_ramadan: bool = False    # True → show Ramadan meals
+    created_at: str = ""        # YYYY-MM-DD, set by the DB on insert
     id: Optional[int] = None
 
 

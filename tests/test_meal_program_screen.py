@@ -28,6 +28,7 @@ class MealProgramScreenTests(unittest.TestCase):
             "save_program_entries": meal_program_screen.save_program_entries,
             "file_save": meal_program_screen.QFileDialog.getSaveFileName,
             "message_info": meal_program_screen.QMessageBox.information,
+            "message_warning": meal_program_screen.QMessageBox.warning,
             "message_critical": meal_program_screen.QMessageBox.critical,
         }
 
@@ -38,6 +39,7 @@ class MealProgramScreenTests(unittest.TestCase):
         meal_program_screen.save_program_entries = self._originals["save_program_entries"]
         meal_program_screen.QFileDialog.getSaveFileName = self._originals["file_save"]
         meal_program_screen.QMessageBox.information = self._originals["message_info"]
+        meal_program_screen.QMessageBox.warning = self._originals["message_warning"]
         meal_program_screen.QMessageBox.critical = self._originals["message_critical"]
 
     def test_empty_state_is_available_when_there_are_no_programs(self) -> None:
@@ -118,6 +120,72 @@ class MealProgramScreenTests(unittest.TestCase):
 
         self.assertTrue(any("Milk and bread" in cells for _, cells in rows))
         self.assertEqual(written_paths, [Path("menu.pdf")])
+        screen.close()
+
+    def test_history_list_shows_every_program_with_its_date(self) -> None:
+        meal_program_screen.get_all_programs = lambda: [
+            MealProgram(id=1, name="برنامج قديم", is_ramadan=False, created_at="2026-01-05"),
+            MealProgram(id=2, name="برنامج رمضان", is_ramadan=True, created_at="2026-02-10"),
+        ]
+        meal_program_screen.get_program_entries = lambda _program_id: []
+
+        screen = meal_program_screen.MealProgramScreen()
+
+        self.assertEqual(screen._history_list.count(), 2)
+        self.assertIn("2026-01-05", screen._history_list.item(0).text())
+        self.assertIn("2026-02-10", screen._history_list.item(1).text())
+        screen.close()
+
+    def test_copy_program_fills_grid_from_selected_history_entry(self) -> None:
+        meal_program_screen.get_all_programs = lambda: [
+            MealProgram(id=10, name="الحالي", is_ramadan=False, created_at="2026-03-01"),
+            MealProgram(id=11, name="قديم", is_ramadan=False, created_at="2026-01-01"),
+        ]
+
+        def entries_for(program_id):
+            if program_id == 11:
+                return [meal_program_screen.MealEntry(
+                    program_id=11, day_of_week=0,
+                    meal_type=meal_program_screen.MEAL_FTOUR, menu_text="حليب وخبز",
+                )]
+            return []
+
+        meal_program_screen.get_program_entries = entries_for
+        meal_program_screen.QMessageBox.information = lambda *a, **k: None
+
+        screen = meal_program_screen.MealProgramScreen()
+        self.assertEqual(screen._current_program.id, 10)
+
+        # Row 1 in the history list is "قديم" (id=11) since programs load
+        # in the order get_all_programs returned them.
+        screen._history_list.setCurrentRow(1)
+        screen._on_copy_program_clicked()
+
+        self.assertEqual(
+            screen._cells[(0, meal_program_screen.MEAL_FTOUR)].toPlainText(), "حليب وخبز"
+        )
+        self.assertTrue(screen._is_dirty)
+        screen.close()
+
+    def test_copy_program_blocks_ramadan_mode_mismatch(self) -> None:
+        meal_program_screen.get_all_programs = lambda: [
+            MealProgram(id=20, name="عادي", is_ramadan=False, created_at="2026-03-01"),
+            MealProgram(id=21, name="رمضان", is_ramadan=True, created_at="2026-02-01"),
+        ]
+        meal_program_screen.get_program_entries = lambda _program_id: [
+            meal_program_screen.MealEntry(
+                program_id=21, day_of_week=0, meal_type="ftour_ramadan", menu_text="تمر وحليب",
+            )
+        ]
+        warnings: list[str] = []
+        meal_program_screen.QMessageBox.warning = lambda self, title, text: warnings.append(text)
+
+        screen = meal_program_screen.MealProgramScreen()
+        screen._history_list.setCurrentRow(1)  # the Ramadan program
+        screen._on_copy_program_clicked()
+
+        self.assertEqual(len(warnings), 1)
+        self.assertFalse(screen._is_dirty)
         screen.close()
 
 

@@ -196,7 +196,13 @@
       "Bash(kill 12788)",
       "Bash(cd /home/abbdo/Downloads/intren--main *)",
       "Bash(pdftoppm -png -r 100 -f 1 -l 1 \"التقرير_اليومي_2026-08-01.pdf\" /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/report_check)",
-      "Bash(pdftoppm -png -r 110 -f 1 -l 1 \"قائمة_البرنامج_الغذائي_البرنامج الأسبوعي 1.pdf\" /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/menu_check)"
+      "Bash(pdftoppm -png -r 110 -f 1 -l 1 \"قائمة_البرنامج_الغذائي_البرنامج الأسبوعي 1.pdf\" /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/menu_check)",
+      "Bash(.venv/bin/python -m py_compile src/ui/meal_program_screen.py src/core/models.py src/data/program_repo.py)",
+      "Bash(pkill -f \"tempfile.TemporaryDirectory\")",
+      "Bash(pkill -f \"test.db\")",
+      "Bash(timeout 30 env QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/python -c ' *)",
+      "Bash(awk '/def _build_control_panel/,/return panel/' src/ui/meal_program_screen.py)",
+      "Bash(kill 19165)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"

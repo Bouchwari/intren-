@@ -13,7 +13,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QGridLayout, QHBoxLayout,
-    QFileDialog, QInputDialog, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
+    QFileDialog, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QPlainTextEdit,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
@@ -76,6 +77,14 @@ _PDF_DIALOG_TITLE = "تحميل القائمة بصيغة PDF"
 _PDF_SAVED_OK     = "تم تحميل القائمة بصيغة PDF بنجاح."
 _PDF_DEFAULT_NAME = "قائمة_البرنامج_الغذائي"
 _EMPTY_MENU_CELL  = "—"
+_HISTORY_LABEL    = "سجل البرامج الأسبوعية"
+_BTN_COPY_PROGRAM = "نسخ إلى البرنامج الحالي"
+_BTN_COPY_PROGRAM_ICON = "📋"
+_MSG_COPY_TITLE     = "نسخ البرنامج"
+_MSG_COPY_NONE      = "اختر برنامجاً من السجل أولاً."
+_MSG_COPY_SAME      = "هذا هو البرنامج المفتوح حالياً."
+_MSG_COPY_MISMATCH  = "لا يمكن النسخ بين برنامج عادي وبرنامج رمضان — بدّل نوع البرنامج الحالي أولاً."
+_MSG_COPY_OK        = "تم نسخ البرنامج — لا تنس الضغط على حفظ."
 
 # Day ids stay unchanged because saved meal entries use these numeric values.
 _PAGE_BG = "#F6F4EF"
@@ -337,7 +346,24 @@ class MealProgramScreen(QWidget):
         panel = _card("mealControlPanel", background="white", border=_PANEL_BORDER, radius=26)
         panel.setFixedWidth(306)
         panel.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        layout = QVBoxLayout(panel)
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # The panel outgrew a short window (history list + all the other
+        # controls need ~670px, but a 700px-tall window only leaves ~440px
+        # here) — scroll the content instead of letting every widget get
+        # silently squeezed, same pattern as the grid's own self._scroll.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background:transparent;")
+        outer.addWidget(scroll)
+
+        content = QWidget()
+        content.setStyleSheet("background:transparent;")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(8)
 
@@ -385,6 +411,28 @@ class MealProgramScreen(QWidget):
         layout.addWidget(self._delete_btn)
 
         layout.addSpacing(4)
+        layout.addWidget(self._make_panel_label(_HISTORY_LABEL))
+        self._history_list = QListWidget()
+        self._history_list.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self._history_list.setMinimumHeight(70)
+        self._history_list.setMaximumHeight(120)
+        self._history_list.setStyleSheet(f"""
+            QListWidget {{
+                background:white; border:1px solid #E4E1D8; border-radius:14px;
+                padding:4px; font-size:{FONT_LABEL}px; color:{COLOR_TEXT_PRIMARY};
+            }}
+            QListWidget::item {{ padding:6px 8px; border-radius:8px; }}
+            QListWidget::item:selected {{ background:{_GREEN_LIGHT}; color:{_INK}; }}
+        """)
+        layout.addWidget(self._history_list)
+
+        self._copy_program_btn = _make_btn(
+            _BTN_COPY_PROGRAM, _NAVY, min_height=36, icon=_BTN_COPY_PROGRAM_ICON
+        )
+        self._copy_program_btn.clicked.connect(self._on_copy_program_clicked)
+        layout.addWidget(self._copy_program_btn)
+
+        layout.addSpacing(4)
         layout.addWidget(self._make_panel_label(_MODE_TITLE))
         self._mode_badge = self._make_badge(_NORMAL_BADGE, _TEAL, "white")
         layout.addWidget(self._mode_badge)
@@ -403,6 +451,8 @@ class MealProgramScreen(QWidget):
         self._save_btn = _make_btn(_BTN_SAVE, COLOR_ACCENT, min_height=42, icon=_BTN_SAVE_ICON)
         self._save_btn.clicked.connect(self._on_save)
         layout.addWidget(self._save_btn)
+
+        scroll.setWidget(content)
         return panel
 
     def _make_panel_label(self, text: str) -> QLabel:
@@ -656,6 +706,7 @@ class MealProgramScreen(QWidget):
             label = f"{'☾ ' if p.is_ramadan else ''}{p.name}"
             self._prog_combo.addItem(label, p)
         self._prog_combo.blockSignals(False)
+        self._load_history(programs)
 
         has_programs = len(programs) > 0
         self._empty_widget.setVisible(not has_programs)
@@ -671,6 +722,36 @@ class MealProgramScreen(QWidget):
             self._on_program_changed(0)
         else:
             self._current_index = -1
+
+    def _load_history(self, programs: List[MealProgram]) -> None:
+        """Every saved program, so past weeks stay one click away — this
+        list is also the source picker for "copy to current program"."""
+        self._history_list.clear()
+        for p in programs:
+            icon = "☾ " if p.is_ramadan else ""
+            # ‎ (LTR mark) stops Qt's bidi algorithm from reordering the
+            # hyphen-separated date segments inside this RTL list (it was
+            # showing 2026-07-30 as "30-07-2026" without this).
+            when = f"  —  ‎{p.created_at}" if p.created_at else ""
+            item = QListWidgetItem(f"{icon}{p.name}{when}")
+            item.setData(Qt.ItemDataRole.UserRole, p)
+            self._history_list.addItem(item)
+
+    def _on_copy_program_clicked(self) -> None:
+        item = self._history_list.currentItem()
+        if item is None:
+            QMessageBox.information(self, _MSG_COPY_TITLE, _MSG_COPY_NONE)
+            return
+        source: MealProgram = item.data(Qt.ItemDataRole.UserRole)
+        if self._current_program and source.id == self._current_program.id:
+            QMessageBox.information(self, _MSG_COPY_TITLE, _MSG_COPY_SAME)
+            return
+        if source.is_ramadan != self._ramadan_mode:
+            QMessageBox.warning(self, _MSG_COPY_TITLE, _MSG_COPY_MISMATCH)
+            return
+        self._fill_grid(get_program_entries(source.id))  # type: ignore[arg-type]
+        self._is_dirty = True
+        QMessageBox.information(self, "تم", _MSG_COPY_OK)
 
     def _on_program_changed(self, index: int) -> None:
         """Switch grid to the selected program."""
