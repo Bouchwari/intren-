@@ -28,6 +28,7 @@ from data.database import (
     get_months_with_data, get_school_settings,
     save_monthly_report_notes,
 )
+from ui.widgets.empty_state import EmptyState
 from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
@@ -244,11 +245,7 @@ class MonthlyReportScreen(QWidget):
             f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_SECONDARY}; padding-bottom:6px;"
         )
 
-        self._no_data_lbl = QLabel(_NO_DATA)
-        self._no_data_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._no_data_lbl.setStyleSheet(
-            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px; padding:40px;"
-        )
+        self._no_data_lbl = EmptyState(_NO_DATA, icon="📊")
 
         self._report_layout.addWidget(self._school_lbl)
         self._report_layout.addWidget(self._month_lbl)

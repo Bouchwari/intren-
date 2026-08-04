@@ -30,6 +30,7 @@ from data.database import (
     add_student, add_students_bulk, delete_student,
     get_all_students, get_level_preferences, get_students_filtered, update_student,
 )
+from ui.widgets.empty_state import EmptyState
 from ui.widgets.icon_button import IconButton
 
 _PAGE_BG = "#f5f5f0"
@@ -903,14 +904,8 @@ class StudentsScreen(QWidget):
         root.addWidget(self._tabs, 1)
 
         # Empty state
-        self._empty_widget = QWidget()
-        elayout = QVBoxLayout(self._empty_widget)
-        elayout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl = QLabel("لا يوجد تلاميذ — استورد من Excel أو أضف يدوياً")
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_BODY}px; margin: 40px;")
-        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        elayout.addWidget(lbl)
-        root.addWidget(self._empty_widget)
+        self._empty_widget = EmptyState("لا يوجد تلاميذ — استورد من Excel أو أضف يدوياً", icon="👥")
+        root.addWidget(self._empty_widget, 1)
         self._empty_widget.hide()
 
         self._stat_cards: list[QFrame] = []

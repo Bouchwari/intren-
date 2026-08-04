@@ -35,6 +35,15 @@ from config.settings import (
 from core.stats_service import DashboardData, load_dashboard
 
 
+def _tint(hex_color: str, alpha: float) -> str:
+    """hex_color at the given opacity (0-1), as an unambiguous rgba() string.
+    Qt's QColor/QSS parse an 8-digit hex as #AARRGGBB (alpha first), not the
+    web convention of #RRGGBBAA (alpha last) — appending alpha digits onto a
+    hex string silently produces a completely different, wrong color."""
+    c = QColor(hex_color)
+    return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
+
+
 # ── Custom chart widgets ──────────────────────────────────────────────────────
 
 class BarChartWidget(QWidget):
@@ -43,7 +52,7 @@ class BarChartWidget(QWidget):
     def __init__(self, data: DashboardData, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._data = data
-        self.setMinimumHeight(240)
+        self.setMinimumHeight(180)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def paintEvent(self, _event):
@@ -75,6 +84,11 @@ class BarChartWidget(QWidget):
             p.drawLine(pad_l, y, pad_l + chart_w, y)
 
         # bars
+        label_font = QFont("Segoe UI", 8)
+        label_metrics = QFontMetrics(label_font)
+        sample_w = label_metrics.horizontalAdvance("00/00")
+        label_stride = max(1, math.ceil((sample_w + 6) / group_w))
+
         for gi, day in enumerate(days):
             vals = [day.ftour, day.ghada, day.asha]
             for bi, (val, col) in enumerate(zip(vals, colors)):
@@ -85,12 +99,16 @@ class BarChartWidget(QWidget):
                 p.setBrush(QBrush(col))
                 p.drawRoundedRect(bx, by, int(bar_w), bh, 3, 3)
 
-            # x label (DD/MM)
+            # x label (DD/MM) — thinned out when the chart is too narrow to
+            # fit one per day without overlapping.
+            if gi % label_stride != 0:
+                continue
             parts = day.log_date.split("-")
             lbl = f"{parts[2]}/{parts[1]}"
-            fx = int(pad_l + gi * group_w + group_w / 2 - 16)
+            lbl_w = label_metrics.horizontalAdvance(lbl)
+            fx = int(pad_l + gi * group_w + group_w / 2 - lbl_w / 2)
             p.setPen(QColor(COLOR_TEXT_MID))
-            p.setFont(QFont("Segoe UI", 8))
+            p.setFont(label_font)
             p.drawText(fx, pad_t + chart_h + 18, lbl)
 
         # y labels
@@ -120,7 +138,7 @@ class TrendLineWidget(QWidget):
     def __init__(self, data: DashboardData, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._data = data
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(150)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def paintEvent(self, _event):
@@ -193,7 +211,7 @@ class DonutWidget(QWidget):
     def __init__(self, slices: list[tuple[str, int, str]], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._slices = slices
-        self.setMinimumSize(180, 180)
+        self.setMinimumSize(130, 130)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def paintEvent(self, _event):
@@ -255,30 +273,30 @@ class StatCard(QFrame):
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("statCard")
-        self.setFixedHeight(116)
+        self.setFixedHeight(86)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(f"""
             #statCard {{
                 background-color: white;
                 border: 1px solid #e3e0d2;
-                border-radius: 20px;
+                border-radius: 16px;
             }}
         """)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(14)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
 
         text_w = QWidget()
         text_w.setStyleSheet("background: transparent; border: none;")
         text_l = QVBoxLayout(text_w)
         text_l.setContentsMargins(0, 0, 0, 0)
-        text_l.setSpacing(4)
+        text_l.setSpacing(2)
 
         t = QLabel(title)
-        t.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: {FONT_LABEL}px; font-weight: 700; background: transparent;")
+        t.setStyleSheet(f"color: {COLOR_TEXT_MID}; font-size: {FONT_CAPTION}px; font-weight: 700; background: transparent;")
 
         v = QLabel(value)
-        f = QFont(); f.setPointSize(24); f.setBold(True)
+        f = QFont(); f.setPointSize(17); f.setBold(True)
         v.setFont(f)
         v.setStyleSheet(f"color: {COLOR_TEXT_DARK}; background: transparent;")
 
@@ -289,11 +307,11 @@ class StatCard(QFrame):
         text_l.addWidget(t); text_l.addWidget(v); text_l.addWidget(s)
 
         icon_lbl = QLabel(icon)
-        icon_lbl.setFixedSize(50, 50)
+        icon_lbl.setFixedSize(38, 38)
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_lbl.setStyleSheet(
-            f"background-color: {color}20; color: {color}; border: none;"
-            "border-radius: 25px; font-size: 24px;"
+            f"background-color: {_tint(color, 0.13)}; color: {color}; border: none;"
+            "border-radius: 19px; font-size: 17px;"
         )
 
         layout.addWidget(text_w, stretch=1)
@@ -313,20 +331,20 @@ def _card(title: str, widget: QWidget) -> QFrame:
         #dashboardCard {
             background: white;
             border: 1px solid #e3e0d2;
-            border-radius: 20px;
+            border-radius: 14px;
         }
     """)
     shadow = QGraphicsDropShadowEffect(card)
-    shadow.setBlurRadius(18); shadow.setOffset(0, 4)
+    shadow.setBlurRadius(14); shadow.setOffset(0, 3)
     shadow.setColor(QColor(0, 0, 0, 18))
     card.setGraphicsEffect(shadow)
 
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(18, 14, 18, 14)
-    layout.setSpacing(10)
+    layout.setContentsMargins(14, 10, 14, 10)
+    layout.setSpacing(6)
 
     t = QLabel(title)
-    t.setStyleSheet(f"font-size: {FONT_SECTION}px; font-weight: bold; color: {COLOR_TEXT_DARK}; background: transparent;")
+    t.setStyleSheet(f"font-size: {FONT_LABEL}px; font-weight: bold; color: {COLOR_TEXT_DARK}; background: transparent;")
     layout.addWidget(t)
     layout.addWidget(widget)
     return card
@@ -359,17 +377,18 @@ def _build_welcome_panel(data: DashboardData) -> QFrame:
     panel.setStyleSheet("""
         #welcomePanel {
             background-color: #5A5A40;
-            border-radius: 24px;
+            border-radius: 18px;
             border: none;
         }
     """)
     layout = QHBoxLayout(panel)
-    layout.setContentsMargins(26, 22, 26, 22)
-    layout.setSpacing(18)
+    layout.setContentsMargins(20, 14, 20, 14)
+    layout.setSpacing(14)
 
     text_col = QVBoxLayout()
-    title = QLabel("البوابة الإلكترونية للمطعمة")
-    f = QFont(); f.setPointSize(22); f.setBold(True)
+    text_col.setSpacing(2)
+    title = QLabel("تدبير المطعمة المدرسية")
+    f = QFont(); f.setPointSize(16); f.setBold(True)
     title.setFont(f)
     title.setStyleSheet("color: white; background: transparent;")
 
@@ -377,7 +396,7 @@ def _build_welcome_panel(data: DashboardData) -> QFrame:
     subtitle = QLabel(f"{school_name}  •  {data.month_label}")
     subtitle.setWordWrap(True)
     subtitle.setStyleSheet(
-        f"color: rgba(255, 255, 255, 0.82); font-size: {FONT_BODY}px; "
+        f"color: rgba(255, 255, 255, 0.82); font-size: {FONT_CAPTION}px; "
         "background: transparent;"
     )
     text_col.addWidget(title)
@@ -385,14 +404,14 @@ def _build_welcome_panel(data: DashboardData) -> QFrame:
 
     date_badge = QLabel(data.today_label)
     date_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    date_badge.setMinimumWidth(210)
+    date_badge.setMinimumWidth(180)
     date_badge.setStyleSheet("""
         QLabel {
             color: white;
             background-color: rgba(255, 255, 255, 0.12);
             border: 1px solid rgba(255, 255, 255, 0.22);
-            border-radius: 14px;
-            padding: 12px 16px;
+            border-radius: 12px;
+            padding: 8px 14px;
             font-weight: 700;
         }
     """)
@@ -405,7 +424,7 @@ def _build_welcome_panel(data: DashboardData) -> QFrame:
 def _build_kpi_row(data: DashboardData) -> QWidget:
     row = QWidget()
     layout = QGridLayout(row)
-    layout.setSpacing(14)
+    layout.setSpacing(10)
     layout.setContentsMargins(0, 0, 0, 0)
 
     if data.last_log_date:
@@ -424,23 +443,27 @@ def _build_kpi_row(data: DashboardData) -> QWidget:
                  "وجبة في اليوم (هذا الشهر)", COLOR_SUCCESS),
         StatCard("📅", "آخر تسجيل", last_log,
                  "تاريخ آخر إدخال في النظام", COLOR_WARNING),
+        StatCard("✅", "نسبة الحضور", f"{data.month.attendance_rate:,.0f}%",
+                 "من إجمالي الحضور والغياب (هذا الشهر)", COLOR_TEAL),
+        StatCard("⚠️", "المخالفات", f"{data.month.violations_count:,}",
+                 "مسجَّلة هذا الشهر في دفتر المخالفات", COLOR_DANGER),
     ]
     for i, card in enumerate(cards):
-        layout.addWidget(card, i // 2, i % 2)
+        layout.addWidget(card, i // 3, i % 3)
     return row
 
 
 def _quick_button(label: str, screen_index: int, navigate_to: Callable[[int], None]) -> QPushButton:
     btn = QPushButton(label)
-    btn.setMinimumHeight(44)
+    btn.setMinimumHeight(34)
     btn.setStyleSheet(f"""
         QPushButton {{
             background: white;
             color: {COLOR_TEXT_DARK};
             border: 1px solid #d6d6c8;
-            border-radius: 14px;
-            padding: 8px 14px;
-            font-size: {FONT_LABEL}px;
+            border-radius: 10px;
+            padding: 6px 12px;
+            font-size: {FONT_CAPTION}px;
             font-weight: 700;
             text-align: center;
         }}
@@ -460,31 +483,28 @@ def _build_quick_actions(navigate_to: Callable[[int], None]) -> QFrame:
         #quickActionsPanel {
             background: #E4E4D7;
             border: 1px solid #d6d6c8;
-            border-radius: 20px;
+            border-radius: 14px;
         }
     """)
-    layout = QVBoxLayout(panel)
-    layout.setContentsMargins(18, 16, 18, 18)
+    layout = QHBoxLayout(panel)
+    layout.setContentsMargins(14, 10, 14, 10)
     layout.setSpacing(10)
 
     title = QLabel("وصول سريع")
     title.setStyleSheet(
         "background: transparent; color: #5A5A40; "
-        f"font-size: {FONT_BODY}px; font-weight: 800;"
+        f"font-size: {FONT_CAPTION}px; font-weight: 800;"
     )
     layout.addWidget(title)
 
-    grid = QGridLayout()
-    grid.setSpacing(10)
     actions = [
         ("لائحة التلاميذ", 1),
         ("تسجيل الحضور", 3),
         ("التقرير اليومي", 5),
         ("المحضر الشهري", 6),
     ]
-    for i, (label, index) in enumerate(actions):
-        grid.addWidget(_quick_button(label, index, navigate_to), i // 2, i % 2)
-    layout.addLayout(grid)
+    for label, index in actions:
+        layout.addWidget(_quick_button(label, index, navigate_to), 1)
     return panel
 
 
@@ -503,8 +523,14 @@ def _build_charts_row_1(data: DashboardData) -> QWidget:
                            ("مطعم",   data.students.cantine_count,   COLOR_ACCENT),
                            ("أساتذة", data.students.teachers_count,  COLOR_TEAL),
                        ]))
-    layout.addWidget(bar_card,   stretch=65)
-    layout.addWidget(donut_card, stretch=35)
+    cycle_slices = [
+        (label, count, _CYCLE_PALETTE[i % len(_CYCLE_PALETTE)])
+        for i, (label, count) in enumerate(data.cycle_breakdown)
+    ]
+    cycle_card = _card("توزيع حسب السلك", DonutWidget(cycle_slices))
+    layout.addWidget(bar_card,   stretch=1)
+    layout.addWidget(donut_card, stretch=1)
+    layout.addWidget(cycle_card, stretch=1)
     return row
 
 
@@ -521,9 +547,18 @@ def _build_charts_row_2(data: DashboardData) -> QWidget:
                            ("منحة كاملة", data.students.full_grant_count, COLOR_SUCCESS),
                            ("نصف منحة",   data.students.half_grant_count, COLOR_WARNING),
                        ]))
-    layout.addWidget(line_card,  stretch=65)
-    layout.addWidget(grant_card, stretch=35)
+    gender_card = _card("توزيع حسب الجنس",
+                       DonutWidget([
+                           ("ذكور",  data.students.male_count,   COLOR_TEAL),
+                           ("إناث",  data.students.female_count, COLOR_PURPLE),
+                       ]))
+    layout.addWidget(line_card,   stretch=1)
+    layout.addWidget(grant_card,  stretch=1)
+    layout.addWidget(gender_card, stretch=1)
     return row
+
+
+_CYCLE_PALETTE = [COLOR_ACCENT, COLOR_TEAL, COLOR_WARNING, COLOR_PURPLE, COLOR_PRIMARY, COLOR_DANGER]
 
 
 def _build_meal_pills(data: DashboardData) -> QWidget:
@@ -541,8 +576,8 @@ def _build_meal_pills(data: DashboardData) -> QWidget:
         pill = QFrame()
         pill.setStyleSheet(f"""
             QFrame {{
-                background-color: {color}15;
-                border: 1px solid {color}55;
+                background-color: {_tint(color, 0.08)};
+                border: 1px solid {_tint(color, 0.33)};
                 border-radius: 12px;
             }}
         """)
@@ -552,17 +587,17 @@ def _build_meal_pills(data: DashboardData) -> QWidget:
         pill.setGraphicsEffect(shadow)
 
         pl = QHBoxLayout(pill)
-        pl.setContentsMargins(22, 16, 22, 16)
+        pl.setContentsMargins(16, 10, 16, 10)
         pl.setSpacing(8)
 
         icon_lbl = QLabel(icon)
-        icon_lbl.setStyleSheet("font-size: 16px; background: transparent;")
+        icon_lbl.setStyleSheet("font-size: 15px; background: transparent;")
 
         meal_lbl = QLabel(label)
-        meal_lbl.setStyleSheet(f"color: {color}; font-size: {FONT_SECTION}px; font-weight: bold; background: transparent;")
+        meal_lbl.setStyleSheet(f"color: {color}; font-size: {FONT_LABEL}px; font-weight: bold; background: transparent;")
 
         count_lbl = QLabel(f"{count:,}")
-        f = QFont(); f.setPointSize(22); f.setBold(True)
+        f = QFont(); f.setPointSize(16); f.setBold(True)
         count_lbl.setFont(f)
         count_lbl.setStyleSheet(f"color: {COLOR_TEXT_DARK}; background: transparent;")
 
@@ -612,8 +647,8 @@ class DashboardScreen(QWidget):
         container = QWidget()
         container.setStyleSheet(f"background-color: {COLOR_LIGHT_BG};")
         inner = QVBoxLayout(container)
-        inner.setContentsMargins(24, 20, 24, 28)
-        inner.setSpacing(18)
+        inner.setContentsMargins(18, 14, 18, 18)
+        inner.setSpacing(12)
 
         inner.addWidget(_build_welcome_panel(data))
         inner.addWidget(_build_kpi_row(data))
@@ -622,7 +657,7 @@ class DashboardScreen(QWidget):
         inner.addWidget(_build_charts_row_2(data))
 
         pills_title = QLabel(f"إجمالي الوجبات حسب النوع  —  {data.month_label}")
-        pills_title.setStyleSheet(f"font-size: {FONT_SECTION}px; font-weight: bold; color: {COLOR_TEXT_DARK};")
+        pills_title.setStyleSheet(f"font-size: {FONT_LABEL}px; font-weight: bold; color: {COLOR_TEXT_DARK};")
         inner.addWidget(pills_title)
         inner.addWidget(_build_meal_pills(data))
 

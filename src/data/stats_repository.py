@@ -34,6 +34,8 @@ class StudentStats:
     full_grant_count: int = 0
     half_grant_count: int = 0
     teachers_count:   int = 0   # monitors
+    male_count:       int = 0
+    female_count:     int = 0
 
 
 @dataclass
@@ -58,12 +60,15 @@ class WeeklyMealDay:
 
 @dataclass
 class MonthSummary:
-    total_meals:  int   = 0
-    days_logged:  int   = 0
-    avg_daily:    float = 0.0
-    ftour_total:  int   = 0
-    ghada_total:  int   = 0
-    asha_total:   int   = 0
+    total_meals:      int   = 0
+    days_logged:      int   = 0
+    avg_daily:        float = 0.0
+    ftour_total:      int   = 0
+    ghada_total:      int   = 0
+    asha_total:       int   = 0
+    absence_total:    int   = 0
+    violations_count: int   = 0
+    attendance_rate:  float = 0.0   # % present out of (present + absent)
 
 
 # ── SQL fragment: total beneficiaries per row in daily_contact ────────────────
@@ -88,7 +93,9 @@ def fetch_student_stats() -> StudentStats:
                 SUM(CASE WHEN section    = 'cantine'  THEN 1 ELSE 0 END) AS cantine_count,
                 SUM(CASE WHEN grant_type = 'full'     THEN 1 ELSE 0 END) AS full_grant_count,
                 SUM(CASE WHEN grant_type = 'half'     THEN 1 ELSE 0 END) AS half_grant_count,
-                SUM(CASE WHEN is_monitor = 1          THEN 1 ELSE 0 END) AS teachers_count
+                SUM(CASE WHEN is_monitor = 1          THEN 1 ELSE 0 END) AS teachers_count,
+                SUM(CASE WHEN gender     = 'male'     THEN 1 ELSE 0 END) AS male_count,
+                SUM(CASE WHEN gender     = 'female'   THEN 1 ELSE 0 END) AS female_count
             FROM students
         """).fetchone()
     return StudentStats(
@@ -99,6 +106,8 @@ def fetch_student_stats() -> StudentStats:
         full_grant_count = s["full_grant_count"] or 0,
         half_grant_count = s["half_grant_count"] or 0,
         teachers_count   = s["teachers_count"]   or 0,
+        male_count       = s["male_count"]       or 0,
+        female_count     = s["female_count"]     or 0,
     )
 
 
@@ -116,16 +125,47 @@ def fetch_month_summary(year: int, month: int) -> MonthSummary:
             WHERE strftime('%Y-%m', date) = ?
         """, (month_str,)).fetchone()
 
-    total = row["total_meals"] or 0
-    days  = row["days_logged"]  or 0
+        absence_row = con.execute(f"""
+            SELECT SUM({_SUM_CONTACT}) AS absence_total
+            FROM daily_absence
+            WHERE strftime('%Y-%m', date) = ?
+        """, (month_str,)).fetchone()
+
+        violations_row = con.execute("""
+            SELECT COUNT(*) AS violations_count
+            FROM violations
+            WHERE strftime('%Y-%m', date) = ?
+        """, (month_str,)).fetchone()
+
+    total   = row["total_meals"] or 0
+    days    = row["days_logged"]  or 0
+    absence = absence_row["absence_total"] or 0
+    present_plus_absent = total + absence
     return MonthSummary(
-        total_meals  = total,
-        days_logged  = days,
-        avg_daily    = round(total / days, 1) if days > 0 else 0.0,
-        ftour_total  = row["ftour_total"] or 0,
-        ghada_total  = row["ghada_total"] or 0,
-        asha_total   = row["asha_total"]  or 0,
+        total_meals      = total,
+        days_logged      = days,
+        avg_daily        = round(total / days, 1) if days > 0 else 0.0,
+        ftour_total      = row["ftour_total"] or 0,
+        ghada_total      = row["ghada_total"] or 0,
+        asha_total       = row["asha_total"]  or 0,
+        absence_total    = absence,
+        violations_count = violations_row["violations_count"] or 0,
+        attendance_rate  = round(total / present_plus_absent * 100, 1) if present_plus_absent > 0 else 0.0,
     )
+
+
+def fetch_cycle_breakdown() -> list[tuple[str, int]]:
+    """Student count grouped by cycle (السلك), whatever labels the level
+    catalog defines — not a fixed enum, so we group on the raw text."""
+    with _conn() as con:
+        rows = con.execute("""
+            SELECT cycle, COUNT(*) AS count
+            FROM students
+            WHERE cycle != '' AND is_monitor = 0
+            GROUP BY cycle
+            ORDER BY count DESC
+        """).fetchall()
+    return [(r["cycle"], r["count"]) for r in rows]
 
 
 def fetch_last_7_days() -> list:

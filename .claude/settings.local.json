@@ -147,7 +147,10 @@
       "Bash(.venv/bin/python --version)",
       "Bash(python3 /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/font_scale_fix.py /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/test_daily_absence2.py)",
       "Bash(.venv/bin/python -m py_compile /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/test_daily_absence2.py)",
-      "Bash(python3 /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/font_scale_fix.py src/ui/daily_absence_screen.py src/ui/daily_contact_screen.py src/ui/daily_report_screen.py src/ui/dashboard_screen.py src/ui/dialogs.py src/ui/expense_statement_screen.py src/ui/incident_log_screen.py src/ui/main_window.py src/ui/meal_program_screen.py src/ui/monthly_report_screen.py src/ui/order_letter_screen.py src/ui/settings_screen.py src/ui/setup_wizard.py src/ui/students_screen.py)"
+      "Bash(python3 /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/font_scale_fix.py src/ui/daily_absence_screen.py src/ui/daily_contact_screen.py src/ui/daily_report_screen.py src/ui/dashboard_screen.py src/ui/dialogs.py src/ui/expense_statement_screen.py src/ui/incident_log_screen.py src/ui/main_window.py src/ui/meal_program_screen.py src/ui/monthly_report_screen.py src/ui/order_letter_screen.py src/ui/settings_screen.py src/ui/setup_wizard.py src/ui/students_screen.py)",
+      "Bash(.venv/bin/python -m py_compile src/ui/theme.py src/ui/widgets/empty_state.py src/ui/students_screen.py src/ui/monthly_report_screen.py src/ui/expense_statement_screen.py src/ui/daily_report_screen.py)",
+      "Bash(.venv/bin/python -m py_compile src/data/stats_repository.py src/ui/dashboard_screen.py)",
+      "Bash(.venv/bin/python -m py_compile src/data/stats_repository.py src/core/stats_service.py src/ui/dashboard_screen.py)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"

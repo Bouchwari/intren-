@@ -28,6 +28,7 @@ from config.settings import (
 from data.database import (
     get_expense_data, get_months_with_data, get_school_settings,
 )
+from ui.widgets.empty_state import EmptyState
 from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
@@ -236,11 +237,8 @@ class ExpenseStatementScreen(QWidget):
         """)
         layout = QVBoxLayout(grp)
 
-        # No-data label
-        self._no_data_lbl = QLabel(_NO_DATA)
-        self._no_data_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._no_data_lbl.setStyleSheet(
-            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px; padding:40px;")
+        # No-data state
+        self._no_data_lbl = EmptyState(_NO_DATA, icon="💰")
         layout.addWidget(self._no_data_lbl)
 
         # Expense table

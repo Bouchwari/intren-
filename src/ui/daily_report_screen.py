@@ -34,6 +34,7 @@ from data.database import (
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
 from ui.widgets.date_input import DateInput
+from ui.widgets.empty_state import EmptyState
 from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
@@ -616,11 +617,7 @@ class DailyReportScreen(QWidget):
         self._report_card_layout.addWidget(self._date_header)
 
         # Placeholder until first generate
-        self._no_data_lbl = QLabel(_NO_DATA)
-        self._no_data_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._no_data_lbl.setStyleSheet(
-            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_BODY}px; padding:40px;"
-        )
+        self._no_data_lbl = EmptyState(_NO_DATA, icon="📄")
         self._report_card_layout.addWidget(self._no_data_lbl)
 
         # Tables (created dynamically in _generate)

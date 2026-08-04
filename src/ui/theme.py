@@ -159,6 +159,46 @@ def build_stylesheet() -> str:
             spacing: {SPACE_SM + 2}px;
             min-height: 24px;
         }}
+        QCheckBox::indicator {{
+            width: 18px;
+            height: 18px;
+            border: 1px solid {COLOR_BORDER};
+            border-radius: 5px;
+            background: {COLOR_PANEL};
+        }}
+        QCheckBox::indicator:hover {{
+            border: 1px solid {COLOR_ACCENT};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {COLOR_ACCENT};
+            border: 1px solid {COLOR_ACCENT};
+        }}
+
+        QTabWidget::pane {{
+            border: 1px solid {COLOR_BORDER};
+            border-radius: 12px;
+            background: {COLOR_PANEL};
+            top: -1px;
+        }}
+        QTabBar::tab {{
+            background: {COLOR_PANEL_ALT};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER};
+            border-bottom: none;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            padding: {SPACE_SM}px {SPACE_MD + SPACE_SM}px;
+            margin-left: 3px;
+            font-weight: bold;
+        }}
+        QTabBar::tab:selected {{
+            background: {COLOR_PANEL};
+            color: {COLOR_ACCENT_DEEP};
+            border-color: {COLOR_BORDER};
+        }}
+        QTabBar::tab:!selected:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+        }}
 
         QCalendarWidget {{
             background: {COLOR_PANEL};

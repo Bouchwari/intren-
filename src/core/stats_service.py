@@ -14,6 +14,7 @@ from data.stats_repository import (
     MonthSummary,
     StudentStats,
     WeeklyMealDay,
+    fetch_cycle_breakdown,
     fetch_last_30_days,
     fetch_last_7_days,
     fetch_last_log_date,
@@ -24,14 +25,15 @@ from data.stats_repository import (
 
 @dataclass
 class DashboardData:
-    students:      StudentStats
-    month:         MonthSummary
-    weekly:        list
-    trend:         list
-    last_log_date: str | None
-    month_label:   str
-    today_label:   str
-    school_name:   str
+    students:        StudentStats
+    month:           MonthSummary
+    weekly:          list
+    trend:           list
+    last_log_date:   str | None
+    month_label:     str
+    today_label:     str
+    school_name:     str
+    cycle_breakdown: list
 
 
 def load_dashboard() -> DashboardData:
@@ -49,12 +51,13 @@ def load_dashboard() -> DashboardData:
     )
 
     return DashboardData(
-        students      = fetch_student_stats(),
-        month         = fetch_month_summary(today.year, today.month),
-        weekly        = fetch_last_7_days(),
-        trend         = fetch_last_30_days(),
-        last_log_date = fetch_last_log_date(),
-        month_label   = month_label,
-        today_label   = today_label,
-        school_name   = school_name,
+        students        = fetch_student_stats(),
+        month           = fetch_month_summary(today.year, today.month),
+        weekly          = fetch_last_7_days(),
+        trend           = fetch_last_30_days(),
+        last_log_date   = fetch_last_log_date(),
+        month_label     = month_label,
+        today_label     = today_label,
+        school_name     = school_name,
+        cycle_breakdown = fetch_cycle_breakdown(),
     )
