@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT, COLOR_SUCCESS,
+    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL, COLOR_PANEL_ALT,
+    COLOR_PAPER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
     EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
@@ -32,7 +33,11 @@ from config.settings import (
 from core.attendance_estimate import EstimateResult, estimate_attendance
 from core.contact_counts import count_students, empty_counts
 from core.models import DailyContact
-from ui.document_header import ask_export_format, draw_official_pdf_footer, draw_official_pdf_header
+from ui.document_header import (
+    ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
+    register_docx_namespaces,
+)
+from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 from data.database import (
@@ -40,6 +45,7 @@ from data.database import (
     get_all_students,
     get_daily_contact_document_number_draft,
     get_document_export_format,
+    get_last_contacts_before,
     get_next_daily_contact_document_number,
     get_recent_contacts,
     get_recent_daily_contact_documents,
@@ -56,6 +62,10 @@ _BTN_PREV       = "اليوم السابق"
 _BTN_NEXT       = "اليوم التالي"
 _BTN_TODAY      = "اليوم"
 _BTN_LOAD       = "تحميل اليوم"
+_BTN_COPY_PREV  = "نسخ من اليوم السابق"
+_BTN_COPY_PREV_ICON = "📋"
+_TOAST_COPY_OK  = "تم نسخ بيانات {date} — يمكنك تعديلها قبل الحفظ"
+_TOAST_COPY_NONE = "لا توجد بيانات سابقة لنسخها"
 _BTN_SAVE       = "حفظ وتسجيل"
 _BTN_SAVE_ICON  = "💾"
 _LBL_DATE       = "التاريخ:"
@@ -96,16 +106,17 @@ _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_ASHA,  MEAL_LABELS[MEAL_ASHA]),
 ]
 
-# Card accent colors per meal
+# Card accent colors per meal — same amber/teal/navy convention as the meal
+# program table (ui_design.md's per-meal accents), not this page's own guess.
 _MEAL_COLORS = {
-    MEAL_FTOUR: "#f59e0b",   # amber
+    MEAL_FTOUR: "#EF9F27",   # amber
     MEAL_GHADA: COLOR_ACCENT,
-    MEAL_ASHA:  "#7c3aed",   # purple
+    MEAL_ASHA:  "#534AB7",   # navy
 }
-_PAGE_BG = "#f5f5f0"
-_PANEL_BG = "#ffffff"
-_PANEL_BORDER = "#dddccd"
-_INK = "#5A5A40"
+_PAGE_BG = COLOR_PAPER
+_PANEL_BG = COLOR_PANEL
+_PANEL_BORDER = COLOR_BORDER
+_INK = COLOR_TEXT_PRIMARY
 _HISTORY_COLUMN_WIDTHS = [100, 100, 92, 86, 86, 86, 92, 128]
 _HISTORY_DATE_COLUMN = 1
 _ACTION_LABELS = {
@@ -232,11 +243,13 @@ def _write_daily_contact_docx(
     academy: str = "",
     province: str = "",
     school_name: str = "",
+    school_year: str = "",
 ) -> None:
     template_path = _find_contact_template()
     if template_path is None:
         raise FileNotFoundError(_DOCX_TEMPLATE_MISSING)
 
+    register_docx_namespaces()
     path.parent.mkdir(parents=True, exist_ok=True)
     contact_by_meal = {contact.meal_type: contact for contact in contacts}
     display_date = _format_doc_date(date_str)
@@ -252,6 +265,7 @@ def _write_daily_contact_docx(
                     contact_by_meal,
                     document_number=document_number,
                     place=place,
+                    school_year=school_year,
                 )
                 data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
             elif item.filename.startswith("word/header") and item.filename.endswith(".xml"):
@@ -297,15 +311,19 @@ def _fill_contact_document_xml(
     *,
     document_number: str,
     place: str,
+    school_year: str = "",
 ) -> None:
     number_text = document_number.strip() or "...."
     place_text = place.strip() or "..............."
+    year_text = school_year.strip() or "—"
     for paragraph in root.findall(".//w:p", _WORD_NS):
         text = "".join(node.text or "" for node in paragraph.findall(".//w:t", _WORD_NS)).strip()
         if text.startswith("ورقة الاتصال اليومية"):
             _set_docx_text(paragraph, f"ورقة الاتصال اليومية  رقم: {number_text} ليوم : {display_date}")
         elif text.startswith("حرر ب"):
             _set_docx_text(paragraph, f"حرر ب{place_text} بتاريخ {display_date}")
+        elif text.startswith("الموسم الدراسي"):
+            _set_docx_text(paragraph, f"الموسم الدراسي {year_text}")
 
     tables = root.findall(".//w:tbl", _WORD_NS)
     if not tables:
@@ -350,7 +368,11 @@ def _draw_contact_pdf_text(
     bold: bool = False,
     align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter,
 ) -> None:
-    font = QFont("Segoe UI")
+    # "Segoe UI" is Windows-only — on a system without it, Qt substitutes a
+    # fallback that has dropped diacritics like hamza (إ -> ا) in testing.
+    # body_font_family() is the app's own bundled Cairo font, verified to
+    # render Arabic correctly everywhere else in the app.
+    font = QFont(body_font_family())
     font.setPointSize(size)
     font.setBold(bold)
     painter.setFont(font)
@@ -453,7 +475,10 @@ def _write_daily_contact_pdf(
         header_rows_h = 62.0
         n_data_rows = len(rows_data) + 1  # + total row
         table_h = page_h - table_y - footer_h - margin
-        row_h = (table_h - header_rows_h) / n_data_rows
+        # Cap row height instead of always stretching to fill the page —
+        # with only 5 rows on a portrait A4 page, stretching to the footer
+        # made each row balloon to ~140pt for a single centered number.
+        row_h = min(46.0, (table_h - header_rows_h) / n_data_rows)
         label_w = 130.0
         meal_w = (table_w - label_w) / len(_MEAL_ORDER)
         sub_w = meal_w / 2
@@ -536,14 +561,16 @@ def _write_daily_contact_pdf(
             current_right = rect.left()
 
         footer_y = page_h - margin - footer_h + 6
-        # WARDEN + HEADMASTER — the signers documents.md lists for contact_sheet.
+        # HEADMASTER + STEWARD + WARDEN — matches the real accepted template
+        # (templets/ورقة الاتصال  اليومية.docx has all 3 signature lines;
+        # documents.md's "WARDEN, HEADMASTER" was missing STEWARD).
         draw_official_pdf_footer(
             painter,
             page_width=page_w,
             margin=margin,
             top=footer_y,
             settings=settings,
-            roles=["الحارس العام للداخلية", "مدير المؤسسة"],
+            roles=["رئيس المؤسسة", "مسير المصالح المادية والمالية", "الحارس العام للداخلية"],
         )
     finally:
         painter.end()
@@ -990,8 +1017,11 @@ class DailyContactScreen(QWidget):
         automation_row.setSpacing(8)
         load_btn = self._btn(_BTN_LOAD, COLOR_ACCENT, compact=True)
         load_btn.setMinimumWidth(112)
+        copy_prev_btn = self._btn(_BTN_COPY_PREV, _INK, compact=True, icon=_BTN_COPY_PREV_ICON)
+        copy_prev_btn.setMinimumWidth(150)
         self._mode_toggle = _ModeToggle()
         automation_row.addWidget(load_btn)
+        automation_row.addWidget(copy_prev_btn)
         automation_row.addWidget(self._mode_toggle)
 
         nav_row = QHBoxLayout()
@@ -1010,6 +1040,7 @@ class DailyContactScreen(QWidget):
         prev_btn.clicked.connect(self._go_prev)
         next_btn.clicked.connect(self._go_next)
         load_btn.clicked.connect(self._on_load_today_clicked)
+        copy_prev_btn.clicked.connect(self._on_copy_previous_clicked)
         self._mode_toggle.modeChanged.connect(self._on_mode_changed)
 
         nav_row.addWidget(prev_btn)
@@ -1018,9 +1049,12 @@ class DailyContactScreen(QWidget):
         navigation.layout().addLayout(automation_row)
         navigation.layout().addLayout(nav_row)
 
-        row.addWidget(actions, 0, Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(document, 1, Qt.AlignmentFlag.AlignVCenter)
+        # RTL reading order: pick the day first (rightmost), then its
+        # document info, then act on it (leftmost) — the natural right-to-
+        # left task flow, not just mirrored left-to-right box placement.
         row.addWidget(navigation, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(document, 1, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(actions, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addStretch(1)
 
         self._sync_document_number(force=True)
@@ -1083,7 +1117,13 @@ class DailyContactScreen(QWidget):
         row.setSpacing(12)
         row.setHorizontalSpacing(12)
         row.setVerticalSpacing(12)
-        row.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
+        # Plain AlignRight gets reinterpreted as leading/trailing under RTL
+        # layoutDirection and lands physically LEFT — AlignAbsolute forces
+        # true visual right (same fix ui_design.md documents for QPainter
+        # text, it turns out it also applies to layout alignment flags).
+        row.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignTop
+        )
         for index, (meal_key, meal_label) in enumerate(_MEAL_ORDER):
             card = _MealCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
             self._cards[meal_key] = card
@@ -1136,7 +1176,7 @@ class DailyContactScreen(QWidget):
                 font-size:{FONT_LABEL}px;
             }}
             QHeaderView::section {{
-                background:#E4E4D7; color:{_INK};
+                background:{COLOR_PANEL_ALT}; color:{_INK};
                 padding:4px 8px; border:none;
                 border-bottom:1px solid {_PANEL_BORDER};
                 font-weight:bold; font-size:{FONT_LABEL}px;
@@ -1226,6 +1266,24 @@ class DailyContactScreen(QWidget):
         if not self._auto_mode:
             return
         self._generate_today_counts()
+
+    def _on_copy_previous_clicked(self) -> None:
+        """Copy the most recent earlier day's saved counts into the form —
+        most days barely change from one to the next, so this is usually
+        faster than either typing or the auto-estimate."""
+        previous = get_last_contacts_before(self._selected_date_str())
+        if not previous:
+            self._show_toast(_TOAST_COPY_NONE)
+            return
+
+        if self._auto_mode:
+            self._mode_toggle.set_auto(False)
+
+        contacts = {c.meal_type: c for c in previous}
+        for meal_key, card in self._cards.items():
+            card.load(contacts.get(meal_key))
+        self._set_estimate_note(None)
+        self._show_toast(_TOAST_COPY_OK.format(date=_format_doc_date(previous[0].date)))
 
     def _generate_today_counts(self) -> None:
         students = get_all_students()
@@ -1428,6 +1486,7 @@ class DailyContactScreen(QWidget):
                     academy=settings.aref if settings else "",
                     province=settings.direction_provinciale if settings else "",
                     school_name=settings.school_name if settings else "",
+                    school_year=settings.school_year if settings else "",
                 )
             for contact in contacts:
                 save_daily_contact(contact)

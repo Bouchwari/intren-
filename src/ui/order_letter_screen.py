@@ -36,7 +36,10 @@ from ui.daily_contact_screen import (
     _normalize_template_name, _set_cell_text, _set_docx_text, _template_dirs,
     _WORD_NS,
 )
-from ui.document_header import ask_export_format, draw_official_pdf_footer, draw_official_pdf_header
+from ui.document_header import (
+    ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
+    register_docx_namespaces,
+)
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -593,6 +596,7 @@ def _write_order_letter_docx(
     if template_path is None:
         raise FileNotFoundError("تعذر العثور على نموذج رسالة الطلبية.")
 
+    register_docx_namespaces()
     path.parent.mkdir(parents=True, exist_ok=True)
     s = settings
     school_year = (s.school_year if s else "") or "—"

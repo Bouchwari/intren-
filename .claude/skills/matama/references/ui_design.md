@@ -1,45 +1,62 @@
 # UI design tokens — نظام المطعمة
 
-Written from what was already consistent across six screens
-(`daily_contact_screen.py`, `daily_absence_screen.py`, `order_letter_screen.py`,
-`students_screen.py`, `settings_screen.py`, `dialogs.py`), plus new tokens to
-fill the gaps. Approved by the user before Stage 2 implementation started.
+Stage 3 palette (2026-08-04): teal/cream, replacing the Stage 2 olive/paper
+system. First built as one-off local constants in `dashboard_screen.py` and
+`meal_program_screen.py` during that page's redesign, then centralized here
+into `config/settings.py` so the rest of the app picks it up automatically.
 
 Single visual world — the app runs in one paper theme, not a switchable dark
 mode. No dark variant is planned.
 
 ## 1. Color
 
-### Base — already in use, unchanged
+### Base
 
 | Token | Hex | Use |
 |---|---|---|
-| `COLOR_PAPER` | `#f5f5f0` | Page background, every screen |
+| `COLOR_PAPER` | `#F6F4EF` | Page background, every screen |
 | `COLOR_PANEL` | `#ffffff` | Card / form background |
-| `COLOR_BORDER` | `#dddccd` | Card & divider borders |
-| `COLOR_OLIVE` (ink / primary text) | `#5A5A40` | Headings, primary text |
+| `COLOR_BORDER` | `#E4E1D8` | Card & divider borders |
+| `COLOR_OLIVE` (ink / primary text) | `#085041` | Headings, primary text |
 
-### New — fills gaps the base tokens didn't cover
+### Supporting tokens
 
 | Token | Hex | Use |
 |---|---|---|
-| `COLOR_PANEL_ALT` | `#eef0e4` | Subtle section split inside a card |
-| `COLOR_TEXT_SECONDARY` | `#8B8A6F` | Hints, captions, muted labels |
-| `COLOR_ACCENT` | `#7C8F4F` | Primary buttons, active nav, table headers — replaces old sky-blue `#38bdf8` |
-| `COLOR_ACCENT_DEEP` | `#5F7239` | Hover / pressed state for accent |
+| `COLOR_PANEL_ALT` | `#E1F5EE` | Subtle section split inside a card |
+| `COLOR_TEXT_SECONDARY` | `#6B7280` | Hints, captions, muted labels |
+| `COLOR_ACCENT` | `#1D9E75` | Primary buttons, active nav, table headers |
+| `COLOR_ACCENT_DEEP` | `#177E5E` | Hover / pressed state for accent |
 | `COLOR_DANGER` | `#B3452C` | Delete / destructive — warm terracotta, not a cold red |
-| `COLOR_SUCCESS` | `#4B7F52` | Saved / confirmed states |
-| `COLOR_SIDEBAR_BG` | `#3F4A2F` | Sidebar background — replaces navy `#1e293b` |
+| `COLOR_SUCCESS` | `#16a34a` | Saved / confirmed states |
+| `COLOR_SIDEBAR_BG` | `#3F4A2F` | Sidebar background — unchanged, not part of this migration |
 | `COLOR_SIDEBAR_ACTIVE` | `#566B3A` | Active sidebar item |
 | `COLOR_SIDEBAR_HOVER` | `#4C5A37` | Sidebar item hover |
 | `COLOR_TEXT_SIDEBAR` | `#C9C9B0` | Sidebar label (inactive) |
 | `COLOR_TEXT_SIDEBAR_ACTIVE` | `#E8E6DA` | Sidebar label (active) |
 
-The old navy/slate names in `config/settings.py` (`COLOR_SIDEBAR_BG`,
+Per-meal accent colors (used on the meal program table and the dashboard's
+meal-breakdown chart/pills — reuse anywhere a screen breaks numbers down by
+فطور/غداء/عشاء): amber `#EF9F27` (فطور), teal `#1D9E75` (غداء), navy `#534AB7`
+(عشاء). Not yet promoted to `config/settings.py` tokens — still local
+constants per file (`_MEAL_ACCENTS` in `meal_program_screen.py`,
+`_MEAL_COLOR_*` in `dashboard_screen.py`). Don't reuse `COLOR_ACCENT`/
+`COLOR_SUCCESS`/`COLOR_PURPLE` for this — `COLOR_ACCENT` and `COLOR_SUCCESS`
+are both green in this palette, so فطور/غداء become indistinguishable (hit
+this exact bug in the Stage 3 migration, fixed in `dashboard_screen.py`).
+
+**Known follow-up, not yet done:** `dashboard_screen.py`'s own header panel
+(`_build_header`/`_build_welcome_panel`) still hardcodes the old olive/khaki
+colors directly — it didn't move when `config/settings.py`'s tokens changed,
+because it never referenced them. Same treatment daily_contact_screen.py just
+got (swap local hardcoded hex for the shared tokens) still needs to happen
+here; tracked as part of the larger dashboard redesign, not done yet.
+
+The old olive/paper names in `config/settings.py` (`COLOR_SIDEBAR_BG`,
 `COLOR_ACCENT`, `COLOR_DANGER`, `COLOR_SUCCESS`, `COLOR_SURFACE`,
 `COLOR_BORDER`, `COLOR_TEXT_PRIMARY`, `COLOR_TEXT_SECONDARY`, etc.) keep their
 names — every screen that imports them keeps working — but now point at these
-new values instead of the old navy/slate ones.
+new teal/cream values instead.
 
 The "Extended palette (used by charts dashboard)" block in
 `config/settings.py` (`COLOR_PRIMARY`, `COLOR_PURPLE`, `COLOR_TEAL`,

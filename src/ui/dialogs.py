@@ -232,6 +232,31 @@ def _message(
     return dlg.choice
 
 
+def ask_choice(
+    parent: QWidget | None,
+    title: str,
+    text: str,
+    options: list[tuple[str, str]],
+) -> str | None:
+    """App-native question dialog with custom button labels — e.g. "PDF" /
+    "Word" — for choices QMessageBox's fixed Yes/No/Ok wording can't
+    express. Pass the cancel option last; returns its value's counterpart
+    (or None) when cancelled, otherwise the chosen option's value.
+
+    A raw QMessageBox has produced invisible buttons in this app before
+    (see the module docstring) — this reuses the same proven dialog chrome
+    as every other popup instead of building a new unstyled QMessageBox."""
+    cancel_value = options[-1][1]
+    specs = [
+        (label, value, "secondary" if value == cancel_value else "primary")
+        for label, value in options
+    ]
+    dlg = _MessageDialog(parent, title, text, "question", specs)
+    dlg.exec()
+    choice = dlg.choice
+    return choice if isinstance(choice, str) and choice != cancel_value else None
+
+
 def install_dialog_overrides() -> None:
     """Patch Qt static dialogs so existing screens use the app-native dialogs."""
 

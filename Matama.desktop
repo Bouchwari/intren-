@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=نظام المطعمة
+Name[en]=Matama
+Comment=تدبير المطعمة المدرسية
+Exec=/home/abbdo/Downloads/intren--main/dist/Matama/Matama
+Path=/home/abbdo/Downloads/intren--main/dist/Matama
+Icon=utilities-terminal
+Terminal=false
+Categories=Office;

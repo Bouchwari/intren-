@@ -1,5 +1,6 @@
 """Shared official document header drawing helpers for exported UI documents."""
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -7,12 +8,68 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import (
     QColor, QFont, QFontDatabase, QImage, QPainter, QPen, QTextOption,
 )
-from PySide6.QtWidgets import QMessageBox, QWidget
+from PySide6.QtWidgets import QWidget
 
 from config.settings import (
     BASE_DIR, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
 )
 from core.models import SchoolSettings
+from ui.dialogs import ask_choice
+from ui.theme import body_font_family
+
+# Word documents declare many namespace prefixes (w, mc, wp, wps, v, o, ...)
+# on the root element. ElementTree's tostring() does NOT preserve these — by
+# default it invents its own generic ns0/ns1/ns2/... prefixes for everything,
+# which breaks Word's mc:AlternateContent handling (used for floating text
+# boxes' VML-vs-DrawingML fallback): the text becomes invisible even though
+# it's still present in the XML. Registering the real prefixes up front makes
+# tostring() reuse them instead, matching what Word actually expects.
+_DOCX_NAMESPACES = {
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "aink": "http://schemas.microsoft.com/office/drawing/2016/ink",
+    "am3d": "http://schemas.microsoft.com/office/drawing/2017/model3d",
+    "cx": "http://schemas.microsoft.com/office/drawing/2014/chartex",
+    "cx1": "http://schemas.microsoft.com/office/drawing/2015/9/8/chartex",
+    "cx2": "http://schemas.microsoft.com/office/drawing/2015/10/21/chartex",
+    "cx3": "http://schemas.microsoft.com/office/drawing/2016/5/9/chartex",
+    "cx4": "http://schemas.microsoft.com/office/drawing/2016/5/10/chartex",
+    "cx5": "http://schemas.microsoft.com/office/drawing/2016/5/11/chartex",
+    "cx6": "http://schemas.microsoft.com/office/drawing/2016/5/12/chartex",
+    "cx7": "http://schemas.microsoft.com/office/drawing/2016/5/13/chartex",
+    "cx8": "http://schemas.microsoft.com/office/drawing/2016/5/14/chartex",
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
+    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+    "o": "urn:schemas-microsoft-com:office:office",
+    "oel": "http://schemas.microsoft.com/office/2019/extlst",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+    "v": "urn:schemas-microsoft-com:vml",
+    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+    "w10": "urn:schemas-microsoft-com:office:word",
+    "w14": "http://schemas.microsoft.com/office/word/2010/wordml",
+    "w15": "http://schemas.microsoft.com/office/word/2012/wordml",
+    "w16": "http://schemas.microsoft.com/office/word/2018/wordml",
+    "w16cex": "http://schemas.microsoft.com/office/word/2018/wordml/cex",
+    "w16cid": "http://schemas.microsoft.com/office/word/2016/wordml/cid",
+    "w16du": "http://schemas.microsoft.com/office/word/2023/wordml/word16du",
+    "w16sdtdh": "http://schemas.microsoft.com/office/word/2020/wordml/sdtdatahash",
+    "w16sdtfl": "http://schemas.microsoft.com/office/word/2024/wordml/sdtformatlock",
+    "w16se": "http://schemas.microsoft.com/office/word/2015/wordml/symex",
+    "wne": "http://schemas.microsoft.com/office/word/2006/wordml",
+    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+    "wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
+    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
+    "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+    "wpi": "http://schemas.microsoft.com/office/word/2010/wordprocessingInk",
+    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+}
+
+
+def register_docx_namespaces() -> None:
+    """Call before any ET.fromstring()/tostring() round-trip on a .docx
+    part. Safe to call repeatedly — ET.register_namespace() just updates a
+    process-global prefix table."""
+    for prefix, uri in _DOCX_NAMESPACES.items():
+        ET.register_namespace(prefix, uri)
 
 
 _HEADER_TEMPLATE_NAME = "البرنامج الغذائي لشهر رمضان المبارك.docx"
@@ -95,8 +152,13 @@ def _text(
     color: str = "#111827",
     bold: bool = False,
     align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignRight,
+    font_family: str | None = None,
 ) -> None:
-    font = QFont(official_font_family())
+    # The official Maghribi face is decorative and only holds up at large
+    # display sizes (see ui_design.md) — small text in that font renders as
+    # near-illegible mojibake, so every caller except the big title must
+    # pass the regular body font explicitly.
+    font = QFont(font_family or body_font_family())
     font.setPointSize(size)
     font.setBold(bold)
     painter.setFont(font)
@@ -111,6 +173,18 @@ def _text(
 
 def _setting(value: str, fallback: str = "—") -> str:
     return value.strip() if value and value.strip() else fallback
+
+
+def _labeled_line(label: str, value: str) -> str:
+    """"{label} {value}", but skip the label if the settings value already
+    opens with its first word — some users type the whole official phrase
+    into the settings field themselves (wording can vary slightly from our
+    hardcoded label, e.g. "للتربية والتكوين" vs "للتربية و التعليم"), which
+    would otherwise print the label twice."""
+    first_word = label.split()[0]
+    if value.startswith(first_word):
+        return value
+    return f"{label} {value}"
 
 
 def draw_official_pdf_header(
@@ -139,9 +213,9 @@ def draw_official_pdf_header(
     school = _setting(settings.school_name if settings else "")
 
     identity_lines = [
-        f"الأكاديمية الجهوية للتربية والتكوين {academy}",
-        f"المديرية الإقليمية {province}",
-        f"المؤسسة {school}",
+        _labeled_line("الأكاديمية الجهوية للتربية والتكوين", academy),
+        _labeled_line("المديرية الإقليمية", province),
+        school,
     ]
     for line in identity_lines:
         _text(
@@ -164,6 +238,7 @@ def draw_official_pdf_header(
         color="#085041",
         bold=True,
         align=Qt.AlignmentFlag.AlignCenter,
+        font_family=official_font_family(),
     )
     y += 48
 
@@ -209,18 +284,15 @@ def draw_official_pdf_footer(
 def ask_export_format(parent: QWidget) -> str | None:
     """Shared PDF-or-Word chooser, shown when the export-format preference
     (see settings_repo.get_document_export_format) is set to 'ask'. Returns
-    EXPORT_FORMAT_PDF/DOCX, or None if the user cancelled."""
-    box = QMessageBox(parent)
-    box.setWindowTitle("اختر صيغة التصدير")
-    box.setText("هل تريد تصدير الوثيقة بصيغة PDF أم Word؟")
-    pdf_btn = box.addButton("PDF", QMessageBox.ButtonRole.AcceptRole)
-    docx_btn = box.addButton("Word", QMessageBox.ButtonRole.AcceptRole)
-    box.addButton("إلغاء", QMessageBox.ButtonRole.RejectRole)
-    box.exec()
+    EXPORT_FORMAT_PDF/DOCX, or None if the user cancelled.
 
-    clicked = box.clickedButton()
-    if clicked is pdf_btn:
-        return EXPORT_FORMAT_PDF
-    if clicked is docx_btn:
-        return EXPORT_FORMAT_DOCX
-    return None
+    Uses the app's own dialog chrome (ui.dialogs.ask_choice) instead of a
+    raw QMessageBox — this was the one dialog in the app still built that
+    way, and raw QMessageBox has a documented history here of rendering
+    buttons with invisible text (see dialogs.py's module docstring)."""
+    return ask_choice(
+        parent,
+        "اختر صيغة التصدير",
+        "هل تريد تصدير الوثيقة بصيغة PDF أم Word؟",
+        [("PDF", EXPORT_FORMAT_PDF), ("Word", EXPORT_FORMAT_DOCX), ("إلغاء", "cancel")],
+    )

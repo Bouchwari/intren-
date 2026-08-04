@@ -283,6 +283,7 @@ from data.daily_repo import (  # noqa: E402
     get_contact,
     save_daily_contact,
     get_recent_contacts,
+    get_last_contacts_before,
     get_next_daily_contact_document_number,
     get_daily_contact_document_number_draft,
     save_daily_contact_document_number_draft,

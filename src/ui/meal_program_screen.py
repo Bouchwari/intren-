@@ -3,6 +3,7 @@ src/ui/meal_program_screen.py
 Weekly meal program editor — 7 days × meal rows grid.
 Supports multiple named programs and Ramadan mode.
 """
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -77,7 +78,7 @@ _PDF_DEFAULT_NAME = "قائمة_البرنامج_الغذائي"
 _EMPTY_MENU_CELL  = "—"
 
 # Day ids stay unchanged because saved meal entries use these numeric values.
-_PAGE_BG = "#F8F9FA"
+_PAGE_BG = "#F6F4EF"
 _PANEL_BG = "#E1F5EE"
 _PANEL_BORDER = "#9FE1CB"
 _INK = "#085041"
@@ -89,7 +90,6 @@ _AMBER = "#EF9F27"
 _SUCCESS = "#16a34a"
 _CELL_BG = "#FFFFFF"
 _CONTROL_BG = "#2D2D3A"
-_CONTROL_SOFT = "#3F3F50"
 _BOARD_BG = "#FFFFFF"
 _PURPLE_LIGHT = "#EEEDFE"
 _AMBER_LIGHT = "#FAEEDA"
@@ -126,8 +126,74 @@ _MEAL_ACCENTS: Dict[str, str] = {
     "shour": _TEAL,
 }
 
+# Soft per-meal tints for the input cells themselves — lighter than the
+# header accents above so typed menu text stays easy to read.
+_MEAL_INPUT_BG: Dict[str, str] = {
+    MEAL_FTOUR: "#FEF9F0",
+    MEAL_GHADA: "#F1FAF6",
+    MEAL_ASHA: "#F3F2FC",
+    "ftour_ramadan": "#F3F2FC",
+    "shour": "#F1FAF6",
+}
+_MEAL_INPUT_BORDER: Dict[str, str] = {
+    MEAL_FTOUR: "#F3D9A6",
+    MEAL_GHADA: "#BCE7D5",
+    MEAL_ASHA: "#CFCBF0",
+    "ftour_ramadan": "#CFCBF0",
+    "shour": "#BCE7D5",
+}
+_MEAL_INPUT_TEXT: Dict[str, str] = {
+    MEAL_FTOUR: "#5C4A28",
+    MEAL_GHADA: "#0F4A38",
+    MEAL_ASHA: "#332C6E",
+    "ftour_ramadan": "#332C6E",
+    "shour": "#0F4A38",
+}
+
+# Which geometric glyph (see MealIconDot) marks each meal's header column —
+# plain shapes instead of emoji, which don't render consistently everywhere.
+_MEAL_ICON_KINDS: Dict[str, str] = {
+    MEAL_FTOUR: "ring",
+    MEAL_GHADA: "disc",
+    MEAL_ASHA: "crescent",
+    "ftour_ramadan": "crescent",
+    "shour": "ring",
+}
+
 # Type alias for the grid cell dict
 _CellKey = Tuple[int, str]   # (day_of_week, meal_type)
+
+
+class _MealIconDot(QWidget):
+    """Small painted glyph for a meal column header: a ring for sunrise, a
+    filled disc for midday, a crescent for evening — plain geometric shapes
+    instead of emoji, which render inconsistently across Windows fonts."""
+
+    def __init__(self, kind: str, header_color: str) -> None:
+        super().__init__()
+        self._kind = kind
+        self._header_color = QColor(header_color)
+        self.setFixedSize(20, 20)
+        self.setStyleSheet("background:transparent;")
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        if self._kind == "ring":
+            painter.setPen(QPen(QColor("white"), 2.5))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(rect)
+        elif self._kind == "disc":
+            painter.setBrush(QColor("white"))
+            painter.drawEllipse(rect)
+        elif self._kind == "crescent":
+            painter.setBrush(QColor("white"))
+            painter.drawEllipse(rect)
+            painter.setBrush(self._header_color)
+            painter.drawEllipse(rect.translated(6, -4))
+        painter.end()
 
 
 def _make_btn(
@@ -268,7 +334,7 @@ class MealProgramScreen(QWidget):
         self._set_program_panel_visible(False)
 
     def _build_control_panel(self) -> QWidget:
-        panel = _card("mealControlPanel", background=_CONTROL_BG, border=_CONTROL_BG, radius=26)
+        panel = _card("mealControlPanel", background="white", border=_PANEL_BORDER, radius=26)
         panel.setFixedWidth(306)
         panel.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         layout = QVBoxLayout(panel)
@@ -281,7 +347,7 @@ class MealProgramScreen(QWidget):
         f.setBold(True)
         title.setFont(f)
         title.setAlignment(Qt.AlignmentFlag.AlignRight)
-        title.setStyleSheet("background:transparent; color:white;")
+        title.setStyleSheet(f"background:transparent; color:{_INK};")
         layout.addWidget(title)
 
         layout.addWidget(self._make_panel_label(_PROGRAM_LABEL))
@@ -290,7 +356,7 @@ class MealProgramScreen(QWidget):
         self._prog_combo.setMinimumHeight(38)
         self._prog_combo.setStyleSheet(
             "QComboBox {"
-            "background:white; color:#111827; border:0; border-radius:14px;"
+            "background:white; color:#111827; border:1px solid #E4E1D8; border-radius:14px;"
             f"padding:6px 14px 6px 34px; font-size:{FONT_BODY}px; font-weight:700;"
             f"selection-background-color:{_TEAL}; selection-color:white;"
             "}"
@@ -309,7 +375,7 @@ class MealProgramScreen(QWidget):
         layout.addWidget(self._prog_combo)
 
         self._new_btn = _make_btn(_BTN_NEW, _SUCCESS, min_height=36, icon=_BTN_NEW_ICON)
-        self._rename_btn = _make_btn(_BTN_RENAME, _CONTROL_SOFT, min_height=36, icon=_BTN_RENAME_ICON)
+        self._rename_btn = _make_btn(_BTN_RENAME, _NAVY, min_height=36, icon=_BTN_RENAME_ICON)
         self._delete_btn = _make_btn(_BTN_DELETE, COLOR_DANGER, min_height=36, icon=_BTN_DELETE_ICON)
         self._new_btn.clicked.connect(self._on_new)
         self._rename_btn.clicked.connect(self._on_rename)
@@ -331,7 +397,7 @@ class MealProgramScreen(QWidget):
         hint = QLabel(_SAVE_HINT)
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignmentFlag.AlignRight)
-        hint.setStyleSheet(f"background:transparent; color:#D8E4DE; font-size:{FONT_CAPTION}px; line-height:130%;")
+        hint.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:{FONT_CAPTION}px; line-height:130%;")
         layout.addWidget(hint)
 
         self._save_btn = _make_btn(_BTN_SAVE, COLOR_ACCENT, min_height=42, icon=_BTN_SAVE_ICON)
@@ -342,7 +408,7 @@ class MealProgramScreen(QWidget):
     def _make_panel_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        label.setStyleSheet(f"background:transparent; color:#C9D8D1; font-size:{FONT_LABEL}px; font-weight:700;")
+        label.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:{FONT_LABEL}px; font-weight:700;")
         return label
 
     def _make_badge(self, text: str, background: str, text_color: str) -> QLabel:
@@ -387,7 +453,8 @@ class MealProgramScreen(QWidget):
         return card
 
     def _build_grid(self) -> QWidget:
-        """Build the whole week as a 4+3 board with no horizontal dragging."""
+        """Build the whole week as one table — day rows x meal columns —
+        matching the exported PDF layout 1:1 instead of 7 separate cards."""
         meals = _RAMADAN_MEALS if self._ramadan_mode else _REGULAR_MEALS
 
         container = QWidget()
@@ -397,136 +464,186 @@ class MealProgramScreen(QWidget):
         layout.setSpacing(12)
         container.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
 
-        layout.addWidget(self._build_stats_row(len(meals)))
-
-        board = QWidget()
-        board.setStyleSheet("background:transparent;")
-        board.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        board_grid = QGridLayout(board)
-        board_grid.setContentsMargins(0, 0, 0, 0)
-        board_grid.setHorizontalSpacing(10)
-        board_grid.setVerticalSpacing(10)
-        self._cells = {}
-        for index, (day_idx, day_name) in enumerate(_DAYS):
-            day_card = self._build_day_card(day_idx, day_name, meals)
-            board_grid.addWidget(day_card, index // 4, index % 4)
-
-        for col in range(4):
-            board_grid.setColumnStretch(col, 1)
-        layout.addWidget(board)
+        layout.addWidget(self._build_stats_row(meals))
+        layout.addWidget(self._build_table(meals))
         self._update_stats()
         return container
 
-    def _build_stats_row(self, meals_per_day: int) -> QWidget:
+    def _build_table(self, meals: List[Tuple[str, str]]) -> QWidget:
+        table_card = _card("mealTable", background=_BOARD_BG, radius=20)
+        table_card.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        outer = QVBoxLayout(table_card)
+        outer.setContentsMargins(14, 14, 14, 14)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(1)
+        grid.setVerticalSpacing(1)
+
+        # Corner + meal headers (row 0) — under RTL, column 0 renders
+        # visually rightmost and the last meal column renders leftmost, so
+        # the "outer top corner" rounding is swapped to match.
+        grid.addWidget(
+            self._table_header_cell("اليوم", corner="right"), 0, 0
+        )
+        last_col = len(meals)
+        for col, (meal_key, meal_name) in enumerate(meals, start=1):
+            grid.addWidget(
+                self._table_header_cell(
+                    meal_name,
+                    color=_MEAL_ACCENTS.get(meal_key, _INK),
+                    icon_kind=_MEAL_ICON_KINDS.get(meal_key),
+                    corner="left" if col == last_col else None,
+                ),
+                0,
+                col,
+            )
+
+        today_idx = (date.today().weekday() + 2) % 7
+        self._cells = {}
+        for offset, (day_idx, day_name) in enumerate(_DAYS):
+            row = offset + 1
+            is_today = day_idx == today_idx
+            grid.addWidget(self._table_day_cell(day_name, is_today), row, 0)
+            for col, (meal_key, _) in enumerate(meals, start=1):
+                cell = self._table_input_cell(meal_key)
+                self._cells[(day_idx, meal_key)] = cell
+                grid.addWidget(cell, row, col)
+
+        grid.setColumnStretch(0, 0)
+        for col in range(1, len(meals) + 1):
+            grid.setColumnStretch(col, 1)
+        for row in range(len(_DAYS) + 1):
+            grid.setRowStretch(row, 0 if row == 0 else 1)
+
+        outer.addLayout(grid)
+        return table_card
+
+    def _table_header_cell(
+        self,
+        text: str,
+        *,
+        color: str = _INK,
+        icon_kind: str | None = None,
+        corner: str | None = None,
+    ) -> QWidget:
+        cell = QWidget()
+        cell.setMinimumHeight(48)
+        radius_css = ""
+        if corner == "right":
+            radius_css = "border-top-right-radius:16px;"
+        elif corner == "left":
+            radius_css = "border-top-left-radius:16px;"
+        cell.setStyleSheet(f"background:{color}; {radius_css}")
+
+        row = QHBoxLayout(cell)
+        row.setContentsMargins(10, 8, 10, 8)
+        row.setSpacing(9)
+        row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        if icon_kind:
+            row.addWidget(_MealIconDot(icon_kind, color))
+
+        label = QLabel(text)
+        label.setStyleSheet(
+            f"background:transparent; color:white; font-size:{FONT_LABEL}px; font-weight:800;"
+        )
+        row.addWidget(label)
+        return cell
+
+    def _table_day_cell(self, day_name: str, is_today: bool) -> QWidget:
+        cell = QWidget()
+        cell.setMinimumWidth(104)
+        cell.setMinimumHeight(56)
+        bg = "#EAF6F1" if is_today else "white"
+        cell.setStyleSheet(f"background:{bg};")
+
+        col = QVBoxLayout(cell)
+        col.setContentsMargins(6, 10, 6, 10)
+        col.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        name = QLabel(day_name)
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_color = _INK if is_today else "#2E3532"
+        name.setStyleSheet(
+            f"background:transparent; color:{name_color}; font-size:{FONT_LABEL}px; font-weight:800;"
+        )
+        col.addWidget(name)
+
+        return cell
+
+    def _table_input_cell(self, meal_key: str) -> QPlainTextEdit:
+        bg = _MEAL_INPUT_BG.get(meal_key, "white")
+        border = _MEAL_INPUT_BORDER.get(meal_key, _PANEL_BORDER)
+        text_color = _MEAL_INPUT_TEXT.get(meal_key, COLOR_TEXT_PRIMARY)
+        accent = _MEAL_ACCENTS.get(meal_key, _TEAL)
+        cell = QPlainTextEdit()
+        cell.setPlaceholderText(_CELL_HINT)
+        cell.setMinimumHeight(56)
+        cell.setMaximumHeight(72)
+        cell.setTabChangesFocus(True)
+        cell.setStyleSheet(
+            f"QPlainTextEdit {{ background:{bg}; color:{text_color}; "
+            f"border:none; border-bottom:2px solid {border}; padding:8px 10px; "
+            f"font-size:{FONT_LABEL}px; selection-background-color:{accent}; "
+            f"selection-color:white; }}"
+        )
+        cell.textChanged.connect(self._mark_dirty)
+        return cell
+
+    def _build_stats_row(self, meals: List[Tuple[str, str]]) -> QWidget:
         row = QWidget()
         row.setStyleSheet("background:transparent;")
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        total_cells = len(_DAYS) * len(meals)
+        meal_names = "، ".join(name for _, name in meals)
         self._stat_labels = {}
         stats = [
-            ("days", str(len(_DAYS)), _ACTIVE_DAYS, _GREEN_LIGHT, _TEAL),
-            ("meals", str(meals_per_day), _MEALS_PER_DAY, _AMBER_LIGHT, _AMBER),
-            ("completed", "0", _COMPLETED, _PURPLE_LIGHT, _NAVY),
+            ("days", str(len(_DAYS)), _ACTIVE_DAYS, f"من {len(_DAYS)} أيام", _GREEN_LIGHT, _TEAL),
+            ("meals", str(len(meals)), _MEALS_PER_DAY, meal_names, _AMBER_LIGHT, _AMBER),
+            ("completed", "0", _COMPLETED, f"من {total_cells} وجبة", _PURPLE_LIGHT, _NAVY),
         ]
-        for key, value, label, background, color in stats:
-            stat_card = self._build_stat_card(key, value, label, background, color)
+        for key, value, label, sublabel, background, color in stats:
+            stat_card = self._build_stat_card(key, value, label, sublabel, background, color)
             self._stat_labels[key] = stat_card.findChild(QLabel, f"statValue{key}")  # type: ignore[assignment]
             layout.addWidget(stat_card)
         layout.addStretch()
         return row
 
-    def _build_stat_card(self, key: str, value: str, label: str, background: str, color: str) -> QWidget:
-        card = _card(f"mealStat{key}", background=background, border=background, radius=18)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(2)
+    def _build_stat_card(
+        self, key: str, value: str, label: str, sublabel: str, badge_bg: str, badge_color: str
+    ) -> QWidget:
+        card = _card(f"mealStat{key}", background="white", border="#EDECE7", radius=16)
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(16, 12, 20, 12)
+        layout.setSpacing(12)
 
-        value_label = QLabel(value)
-        value_label.setObjectName(f"statValue{key}")
-        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        value_label.setStyleSheet(f"background:transparent; color:{color}; font-size:18px; font-weight:900;")
+        badge = QLabel(value)
+        badge.setObjectName(f"statValue{key}")
+        badge.setFixedSize(46, 46)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet(
+            f"background:{badge_bg}; color:{badge_color}; border-radius:23px; "
+            f"font-size:17px; font-weight:900;"
+        )
+        layout.addWidget(badge)
 
-        text_label = QLabel(label)
-        text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text_label.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:{FONT_CAPTION}px; font-weight:700;")
-        layout.addWidget(value_label)
-        layout.addWidget(text_label)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(1)
+        label_lbl = QLabel(label)
+        label_lbl.setStyleSheet(
+            f"background:transparent; color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_LABEL}px; font-weight:700;"
+        )
+        sub_lbl = QLabel(sublabel)
+        sub_lbl.setStyleSheet(f"background:transparent; color:{_MUTED}; font-size:{FONT_CAPTION}px;")
+        text_col.addWidget(label_lbl)
+        text_col.addWidget(sub_lbl)
+        layout.addLayout(text_col)
         return card
 
-    def _build_day_card(self, day_idx: int, day_name: str, meals: List[Tuple[str, str]]) -> QWidget:
-        card = _card(f"mealDayCard{day_idx}", background=_BOARD_BG, radius=24)
-        card.setMinimumWidth(188)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 10, 12, 12)
-        layout.setSpacing(8)
-
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        day_label = QLabel(day_name)
-        f = QFont()
-        f.setPointSize(15)
-        f.setBold(True)
-        day_label.setFont(f)
-        day_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        day_label.setMinimumHeight(34)
-        day_label.setStyleSheet(
-            f"background:{_GREEN_LIGHT}; color:{_INK};"
-            "border-radius:14px; padding:3px 10px;"
-        )
-        meal_count = QLabel(f"{len(meals)} وجبات")
-        meal_count.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        meal_count.setMinimumHeight(26)
-        meal_count.setStyleSheet(
-            f"background:{_PANEL_BG}; color:{_MUTED};"
-            f"border-radius:12px; padding:3px 8px; font-size:{FONT_CAPTION}px; font-weight:700;"
-        )
-        title_row.addWidget(day_label)
-        title_row.addStretch()
-        title_row.addWidget(meal_count)
-        layout.addLayout(title_row)
-
-        for meal_key, meal_name in meals:
-            layout.addWidget(self._build_meal_card(day_idx, meal_key, meal_name))
-        return card
-
-    def _build_meal_card(self, day_idx: int, meal_key: str, meal_name: str) -> QWidget:
-        accent = _MEAL_ACCENTS.get(meal_key, _TEAL)
-        block = _card(f"mealBlock{day_idx}{meal_key}", background="white", radius=18)
-        layout = QVBoxLayout(block)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(5)
-
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        dot = QLabel("")
-        dot.setFixedSize(10, 10)
-        dot.setStyleSheet(f"background:{accent}; border-radius:5px;")
-        label = QLabel(meal_name)
-        label.setStyleSheet(
-            f"background:transparent; color:{accent};"
-            f"font-size:{FONT_LABEL}px; font-weight:900;"
-        )
-        title_row.addWidget(label)
-        title_row.addStretch()
-        title_row.addWidget(dot)
-
-        cell = QPlainTextEdit()
-        cell.setPlaceholderText(_CELL_HINT)
-        cell.setMinimumHeight(50)
-        cell.setMaximumHeight(62)
-        cell.setTabChangesFocus(True)
-        cell.setStyleSheet(
-            f"background:{_CELL_BG}; color:{COLOR_TEXT_PRIMARY};"
-            f"border:1px solid {_PANEL_BORDER}; border-radius:12px; padding:7px; font-size:{FONT_LABEL}px;"
-            f"selection-background-color:{accent}; selection-color:white;"
-        )
-        cell.textChanged.connect(self._mark_dirty)
-        layout.addLayout(title_row)
-        layout.addWidget(cell)
-        self._cells[(day_idx, meal_key)] = cell
-        return block
 
     # ── Programs management ────────────────────────────────────────────────
 

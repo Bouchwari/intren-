@@ -60,7 +60,9 @@ The default counts are pre-filled from `roster_status` so the user only edits
 the exceptions. This is the single biggest time-saver in the whole app â do not
 make the user type all seven numbers every morning.
 
-Signatures: WARDEN, HEADMASTER.
+Signatures: HEADMASTER, STEWARD, WARDEN — corrected from the original
+WARDEN/HEADMASTER-only note after checking the real accepted template
+(`templets/ورقة الاتصال  اليومية.docx`), which has all 3 signature lines.
 
 ---
 

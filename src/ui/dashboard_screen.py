@@ -75,7 +75,7 @@ class BarChartWidget(QWidget):
         group_w = chart_w / n
         bar_w   = group_w * 0.22
         gap     = group_w * 0.04
-        colors  = [QColor(COLOR_ACCENT), QColor(COLOR_SUCCESS), QColor(COLOR_PURPLE)]
+        colors  = [QColor(_MEAL_COLOR_FTOUR), QColor(_MEAL_COLOR_GHADA), QColor(_MEAL_COLOR_ASHA)]
 
         # grid lines
         p.setPen(QPen(QColor(COLOR_BORDER), 1))
@@ -120,7 +120,7 @@ class BarChartWidget(QWidget):
             p.drawText(0, y + 4, pad_l - 4, 16, Qt.AlignmentFlag.AlignRight, str(val))
 
         # legend
-        legend = [("فطور", COLOR_ACCENT), ("غداء", COLOR_SUCCESS), ("عشاء", COLOR_PURPLE)]
+        legend = [("فطور", _MEAL_COLOR_FTOUR), ("غداء", _MEAL_COLOR_GHADA), ("عشاء", _MEAL_COLOR_ASHA)]
         lx = pad_l
         for name, col in legend:
             p.setBrush(QBrush(QColor(col)))
@@ -558,6 +558,14 @@ def _build_charts_row_2(data: DashboardData) -> QWidget:
     return row
 
 
+# Dedicated meal colors — amber/teal/navy, matching the meal program table's
+# convention (ui_design.md). Kept separate from COLOR_ACCENT/COLOR_SUCCESS:
+# those both became shades of green in the Stage 3 palette migration, which
+# made فطور and غداء indistinguishable when this reused them.
+_MEAL_COLOR_FTOUR = "#EF9F27"
+_MEAL_COLOR_GHADA = "#1D9E75"
+_MEAL_COLOR_ASHA  = "#534AB7"
+
 _CYCLE_PALETTE = [COLOR_ACCENT, COLOR_TEAL, COLOR_WARNING, COLOR_PURPLE, COLOR_PRIMARY, COLOR_DANGER]
 
 
@@ -568,9 +576,9 @@ def _build_meal_pills(data: DashboardData) -> QWidget:
     layout.setContentsMargins(0, 0, 0, 0)
 
     pills = [
-        ("🌅", "فطور", data.month.ftour_total, COLOR_ACCENT),
-        ("☀️", "غداء", data.month.ghada_total, COLOR_SUCCESS),
-        ("🌙", "عشاء", data.month.asha_total,  COLOR_PURPLE),
+        ("🌅", "فطور", data.month.ftour_total, _MEAL_COLOR_FTOUR),
+        ("☀️", "غداء", data.month.ghada_total, _MEAL_COLOR_GHADA),
+        ("🌙", "عشاء", data.month.asha_total,  _MEAL_COLOR_ASHA),
     ]
     for icon, label, count, color in pills:
         pill = QFrame()

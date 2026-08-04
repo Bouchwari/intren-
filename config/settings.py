@@ -23,8 +23,13 @@ DB_PATH: Path = BASE_DIR / "matama.db"
 LOGO_PATH: Path = BASE_DIR / "matama_logo.png"
 
 # Bundled fonts — loaded offline via ui.theme.load_fonts(), never rely on a
-# font being installed on Windows.
+# font being installed on Windows. PyInstaller's onedir mode collects datas
+# under an "_internal" subfolder next to the exe (not directly beside it),
+# so fall back there when the direct path doesn't exist — same fix already
+# applied to templets/ lookup in ui/document_header.py.
 FONTS_DIR: Path = BASE_DIR / "assets" / "fonts"
+if getattr(sys, 'frozen', False) and not FONTS_DIR.exists():
+    FONTS_DIR = BASE_DIR / "_internal" / "assets" / "fonts"
 
 # ── App identity ─────────────────────────────────────────────────────────────
 
@@ -71,29 +76,29 @@ SECTION_LABELS: dict[str, str] = {
 }
 
 # ── Color palette (used in stylesheets across all screens) ────────────────────
-# Olive/paper design system — see
+# Teal/cream design system — see
 # .claude/skills/matama/references/ui_design.md for the full rationale.
 # Old names are kept so every existing import keeps working; they now point
-# at the new olive/paper values instead of the original navy/slate ones.
+# at the new teal/cream values instead of the older olive/paper ones.
 
-# Base tokens — already consistent across six screens before this migration
-COLOR_PAPER: str      = "#f5f5f0"
+# Base tokens
+COLOR_PAPER: str      = "#F6F4EF"
 COLOR_PANEL: str      = "#ffffff"
-COLOR_PANEL_ALT: str  = "#eef0e4"
-COLOR_OLIVE: str      = "#5A5A40"
+COLOR_PANEL_ALT: str  = "#E1F5EE"
+COLOR_OLIVE: str      = "#085041"
 
 COLOR_SIDEBAR_BG: str      = "#3F4A2F"
 COLOR_SIDEBAR_HOVER: str   = "#4C5A37"
 COLOR_SIDEBAR_ACTIVE: str  = "#566B3A"
 COLOR_SIDEBAR_BORDER: str  = "#4C5A37"
-COLOR_ACCENT: str          = "#7C8F4F"
-COLOR_ACCENT_DEEP: str     = "#5F7239"
+COLOR_ACCENT: str          = "#1D9E75"
+COLOR_ACCENT_DEEP: str     = "#177E5E"
 COLOR_DANGER: str          = "#B3452C"
-COLOR_SUCCESS: str         = "#4B7F52"
+COLOR_SUCCESS: str         = "#16a34a"
 COLOR_SURFACE: str         = COLOR_PAPER
-COLOR_BORDER: str          = "#dddccd"
+COLOR_BORDER: str          = "#E4E1D8"
 COLOR_TEXT_PRIMARY: str    = COLOR_OLIVE
-COLOR_TEXT_SECONDARY: str  = "#8B8A6F"
+COLOR_TEXT_SECONDARY: str  = "#6B7280"
 COLOR_TEXT_SIDEBAR: str    = "#C9C9B0"
 COLOR_TEXT_SIDEBAR_ACTIVE: str = "#E8E6DA"
 

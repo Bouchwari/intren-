@@ -115,6 +115,37 @@ class DailyContactDocumentTests(unittest.TestCase):
         self.assertEqual(asha.monitors, 1)
         screen.close()
 
+    def test_copy_previous_fills_cards_from_last_available_day(self) -> None:
+        # 2026-06-10 (a Wednesday) has no saved data — the button should
+        # still find 2026-06-09, not just look at the literal day before.
+        database.save_daily_contact(DailyContact(
+            date="2026-06-09", meal_type=daily_contact_screen.MEAL_GHADA,
+            primary_granted=4, collegial_complement=2,
+        ))
+
+        screen = daily_contact_screen.DailyContactScreen()
+        screen._mode_toggle.set_auto(True)  # switch to auto/read-only mode first
+        screen._date_edit.setDate(QDate(2026, 6, 11))
+
+        screen._on_copy_previous_clicked()
+
+        ghada = screen._cards[daily_contact_screen.MEAL_GHADA]
+        self.assertEqual(ghada._pg.value(), 4)
+        self.assertEqual(ghada._cc.value(), 2)
+        self.assertFalse(screen._auto_mode)
+        self.assertFalse(ghada._pg.isReadOnly())
+        screen.close()
+
+    def test_copy_previous_shows_toast_when_nothing_to_copy(self) -> None:
+        screen = daily_contact_screen.DailyContactScreen()
+        screen._date_edit.setDate(QDate(2026, 6, 11))
+
+        screen._on_copy_previous_clicked()
+
+        self.assertIsNotNone(screen._toast)
+        self.assertEqual(screen._toast.text(), daily_contact_screen._TOAST_COPY_NONE)
+        screen.close()
+
     def test_history_shows_saved_and_printed_documents(self) -> None:
         database.record_daily_contact_document(
             "2026-06-11",

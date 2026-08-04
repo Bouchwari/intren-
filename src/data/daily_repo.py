@@ -92,6 +92,24 @@ def get_recent_contacts(limit: int = 60) -> List[DailyContact]:
     return [_row_to_contact(r) for r in rows]
 
 
+def get_last_contacts_before(date: str) -> List[DailyContact]:
+    """Return all meal rows for the most recent date before `date` that has
+    any saved contact data — used by "copy from previous day" so a gap
+    (weekend, holiday) doesn't leave it with nothing to copy from."""
+    with _connection() as conn:
+        found = conn.execute(
+            "SELECT DISTINCT date FROM daily_contact WHERE date<? ORDER BY date DESC LIMIT 1",
+            (date,),
+        ).fetchone()
+        if found is None:
+            return []
+        rows = conn.execute(
+            "SELECT * FROM daily_contact WHERE date=? ORDER BY meal_type",
+            (found["date"],),
+        ).fetchall()
+    return [_row_to_contact(r) for r in rows]
+
+
 # ── Daily contact document log ────────────────────────────────────────────────
 
 def _row_to_contact_document_log(r: sqlite3.Row) -> DailyContactDocumentLog:

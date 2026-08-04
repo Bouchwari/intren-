@@ -2,10 +2,10 @@
 
 
 a = Analysis(
-    ['src\\main.py'],
-    pathex=[],
+    ['src/main.py'],
+    pathex=[SPECPATH],
     binaries=[],
-    datas=[('templets', 'templets')],
+    datas=[('templets', 'templets'), ('assets/fonts', 'assets/fonts')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
