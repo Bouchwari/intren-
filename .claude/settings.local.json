@@ -223,7 +223,9 @@
       "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/holidays_range*.png)",
       "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests)",
       "Bash(pkill -f \".venv/bin/python src/main.py\")",
-      "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/holidays_grouped*.png *)"
+      "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/holidays_grouped*.png *)",
+      "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/calendar_*.png *)",
+      "Bash(rm -f *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
