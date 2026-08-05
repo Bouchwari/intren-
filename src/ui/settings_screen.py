@@ -5,7 +5,7 @@ Application settings: edit school info, supplier info, logo, and backup.
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
@@ -65,11 +65,14 @@ _HOLIDAYS_NOTE = (
 )
 _HOLIDAYS_HEADERS = ["التاريخ", "السبب", ""]
 _HOLIDAY_LABEL_PLACEHOLDER = "سبب العطلة (اختياري)"
+_LBL_FROM = "من:"
+_LBL_TO = "إلى:"
 _BTN_ADD_HOLIDAY = "إضافة"
 _BTN_ADD_HOLIDAY_ICON = "➕"
 _BTN_DELETE_HOLIDAY = "🗑"
 _HOLIDAY_EMPTY = "لا توجد أيام عطل مضافة."
-_HOLIDAY_DUPLICATE = "هذا التاريخ مضاف مسبقًا. تم تحديث السبب."
+_HOLIDAY_ADDED_FMT = "تمت إضافة {added} يوم/أيام عطلة. (تحديث السبب لـ {updated} يوم مضاف مسبقًا)"
+_HOLIDAY_RANGE_ORDER_ERR = "تاريخ \"إلى\" يجب أن يكون بعد تاريخ \"من\"."
 _HOLIDAY_DEL_CONFIRM_TITLE = "تأكيد الحذف"
 _HOLIDAY_DEL_CONFIRM = "حذف هذا اليوم من لائحة العطل؟"
 
@@ -478,17 +481,37 @@ class SettingsScreen(QWidget):
         note.setWordWrap(True)
         layout.addWidget(note)
 
+        def _date_field() -> DateInput:
+            d = DateInput()
+            d.setMinimumHeight(36)
+            d.setMinimumWidth(150)
+            d.setStyleSheet(
+                f"background:white; color:{COLOR_TEXT_PRIMARY}; border:1px solid {_PANEL_BORDER};"
+                f"border-radius:10px; padding:4px 10px; font-size:{FONT_BODY}px;"
+            )
+            return d
+
         add_row = QHBoxLayout()
-        self._holiday_date = DateInput()
+        self._holiday_date_from = _date_field()
+        self._holiday_date_to = _date_field()
         self._holiday_label = QLineEdit()
         self._holiday_label.setPlaceholderText(_HOLIDAY_LABEL_PLACEHOLDER)
         self._holiday_label.setStyleSheet(
             f"background:white; color:{COLOR_TEXT_PRIMARY}; border:1px solid {_PANEL_BORDER};"
             f"border-radius:10px; padding:4px 10px; font-size:{FONT_BODY}px;"
         )
+        # Keep "to" following "from" while they're in sync, so a single day
+        # just needs one click — an explicit change to "to" breaks the sync.
+        self._holiday_range_synced = True
+        self._holiday_date_from.dateChanged.connect(self._on_holiday_from_changed)
+        self._holiday_date_to.dateChanged.connect(self._on_holiday_to_changed)
+
         add_btn = _section_btn(_BTN_ADD_HOLIDAY, COLOR_ACCENT, icon=_BTN_ADD_HOLIDAY_ICON)
         add_btn.clicked.connect(self._on_add_holiday)
-        add_row.addWidget(self._holiday_date)
+        add_row.addWidget(QLabel(_LBL_FROM))
+        add_row.addWidget(self._holiday_date_from)
+        add_row.addWidget(QLabel(_LBL_TO))
+        add_row.addWidget(self._holiday_date_to)
         add_row.addWidget(self._holiday_label, 1)
         add_row.addWidget(add_btn)
         layout.addLayout(add_row)
@@ -724,15 +747,43 @@ class SettingsScreen(QWidget):
             delete_btn.clicked.connect(lambda _checked=False, d=holiday.date: self._on_delete_holiday(d))
             self._holidays_table.setCellWidget(row, 2, delete_btn)
 
+    def _on_holiday_from_changed(self, new_date: QDate) -> None:
+        if self._holiday_range_synced:
+            self._holiday_date_to.blockSignals(True)
+            self._holiday_date_to.setDate(new_date)
+            self._holiday_date_to.blockSignals(False)
+
+    def _on_holiday_to_changed(self, _new_date: QDate) -> None:
+        self._holiday_range_synced = False
+
     def _on_add_holiday(self) -> None:
-        date_str = self._holiday_date.date().toString("yyyy-MM-dd")
+        start = self._holiday_date_from.date()
+        end = self._holiday_date_to.date()
+        if end < start:
+            QMessageBox.warning(self, "تنبيه", _HOLIDAY_RANGE_ORDER_ERR)
+            return
+
         label = self._holiday_label.text().strip()
-        was_duplicate = any(h.date == date_str for h in get_all_holidays())
-        add_holiday(Holiday(date=date_str, label=label))
+        existing_dates = {h.date for h in get_all_holidays()}
+        added = updated = 0
+        date = start
+        while date <= end:
+            date_str = date.toString("yyyy-MM-dd")
+            if date_str in existing_dates:
+                updated += 1
+            else:
+                added += 1
+            add_holiday(Holiday(date=date_str, label=label))
+            date = date.addDays(1)
+
         self._holiday_label.clear()
+        self._holiday_date_to.blockSignals(True)
+        self._holiday_date_to.setDate(start)
+        self._holiday_date_to.blockSignals(False)
+        self._holiday_range_synced = True
         self._refresh_holidays_table()
-        if was_duplicate:
-            QMessageBox.information(self, "تنبيه", _HOLIDAY_DUPLICATE)
+        if added + updated > 1 or updated:
+            QMessageBox.information(self, "تم", _HOLIDAY_ADDED_FMT.format(added=added, updated=updated))
 
     def _on_delete_holiday(self, date_str: str) -> None:
         reply = QMessageBox.question(
