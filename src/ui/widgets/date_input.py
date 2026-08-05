@@ -241,6 +241,15 @@ class _CalendarPopup(QFrame):
             label = QLabel(text)
             label.setObjectName("weekdayHeader")
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            # Without this, some native Qt styles (seen under GNOME/Wayland)
+            # draw their own default frame around QLabel instead of using
+            # our stylesheet, and size it to each label's own text — giving
+            # every column a different width that changes with the text.
+            # WA_StyledBackground forces our (border-less) QSS to apply, and
+            # the fixed size makes every header cell match the day buttons.
+            label.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            label.setFrameShape(QFrame.Shape.NoFrame)
+            label.setFixedSize(36, 22)
             self._grid.addWidget(label, 0, col)
 
         year = self._draft_date.year()
