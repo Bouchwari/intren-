@@ -4,8 +4,11 @@ Shared Google-Calendar-style date picker — extracted from
 daily_contact_screen.py, which had already built and proven this pattern.
 Every other screen was using QDateEdit.setCalendarPopup(True) instead, whose
 native QCalendarWidget grid breaks under the app's RTL layout direction.
-This widget sidesteps that entirely: it's forced Qt.LayoutDirection.LeftToRight
-and draws its own day grid, so there's no native Qt calendar to fight.
+This widget sidesteps that specific bug by drawing its own day grid with a
+plain QGridLayout instead of the native QCalendarWidget — QGridLayout (like
+every other layout in this app) mirrors correctly under real RTL, so the
+popup uses Qt.LayoutDirection.RightToLeft like the rest of the app instead
+of forcing LTR.
 """
 from PySide6.QtCore import QDate, QEvent, QPoint, QRectF, Signal, Qt
 from PySide6.QtGui import QColor, QPainter
@@ -14,12 +17,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from config.settings import COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER
+from config.settings import ARABIC_MONTHS, COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER
 
-_MONTH_NAMES = [
-    "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
-    "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر",
-]
+_MONTH_NAMES = ARABIC_MONTHS[1:]  # drop the index-0 "" placeholder
 _WEEKDAY_HEADERS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]
 _BTN_BACK = "رجوع"
 _BTN_APPLY = "تطبيق"
@@ -88,7 +88,7 @@ class _CalendarPopup(QFrame):
     def __init__(self, selected_date: QDate, parent: QWidget | None = None) -> None:
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setObjectName("sharedCalendarPopup")
-        self.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setFixedWidth(300)
         self._draft_date = selected_date if selected_date.isValid() else QDate.currentDate()
         self._day_buttons: list[_CalendarDayButton] = []
