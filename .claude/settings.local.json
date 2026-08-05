@@ -202,7 +202,9 @@
       "Bash(pkill -f \"test.db\")",
       "Bash(timeout 30 env QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/python -c ' *)",
       "Bash(awk '/def _build_control_panel/,/return panel/' src/ui/meal_program_screen.py)",
-      "Bash(kill 19165)"
+      "Bash(kill 19165)",
+      "Bash(.venv/bin/python -m py_compile src/core/models.py src/data/daily_repo.py src/core/attendance_estimate.py)",
+      "Bash(.venv/bin/python -m pytest tests/test_daily_absence_screen.py -q)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"

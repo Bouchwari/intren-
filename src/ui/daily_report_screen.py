@@ -110,16 +110,18 @@ _BUILDING_ITEMS: List[Tuple[str, str]] = [
     ("equipment_condition", "حالة التجهيزات والأدوات"),
 ]
 
-# Report table columns
+# Report table columns — "مؤد" retired app-wide, always merges into
+# "ممنوح" at the data layer now (see data/daily_repo.py), so a separate
+# column here would just always read 0.
 _COL_MEAL     = "الوجبة"
 _COL_SECTOR   = "القطاع"
-_COL_GRANTED  = "ممنوح"
-_COL_PAYING   = "مؤد"
+_COL_GRANTED  = "كاملة"
 _COL_COMPL    = "متمم"
 _COL_TOTAL    = "المجموع"
-_HEADERS = [_COL_MEAL, _COL_SECTOR, _COL_GRANTED, _COL_PAYING, _COL_COMPL, _COL_TOTAL]
+_HEADERS = [_COL_MEAL, _COL_SECTOR, _COL_GRANTED, _COL_COMPL, _COL_TOTAL]
 
 # Sector row labels within each meal
+_SECTOR_PRIMARY    = "الابتدائي"
 _SECTOR_COLLEGIAL  = "إعدادي"
 _SECTOR_QUALIFYING = "تأهيلي"
 _SECTOR_MONITORS   = "معلمو الداخلية"
@@ -789,8 +791,8 @@ class DailyReportScreen(QWidget):
 
     def _make_report_table(self, data: Dict[str, DailyContact | DailyAbsence]) -> QTableWidget:
         """Build a structured report QTableWidget from a dict of meal→data."""
-        # Rows: 4 per meal (إعدادي, تأهيلي, معلمون, مجموع الوجبة) × 3 + grand total = 13
-        num_rows = len(_MEAL_ORDER) * 4 + 1
+        # Rows: 5 per meal (ابتدائي, إعدادي, تأهيلي, معلمون, مجموع الوجبة) × 3 + grand total = 16
+        num_rows = len(_MEAL_ORDER) * 5 + 1
         table = QTableWidget(num_rows, len(_HEADERS))
         table.setHorizontalHeaderLabels(_HEADERS)
         table.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
@@ -814,7 +816,7 @@ class DailyReportScreen(QWidget):
         """)
 
         row = 0
-        grand_granted = grand_paying = grand_compl = grand_total = 0
+        grand_granted = grand_compl = grand_total = 0
 
         for meal_key, meal_label in _MEAL_ORDER:
             contact = data.get(meal_key)
@@ -823,65 +825,70 @@ class DailyReportScreen(QWidget):
             def _g(obj: Optional[object], attr: str) -> int:
                 return getattr(obj, attr, 0) or 0
 
+            pg = _g(contact, "primary_granted")
+            pc = _g(contact, "primary_complement")
             cg = _g(contact, "collegial_granted")
-            cp = _g(contact, "collegial_paying")
             cc = _g(contact, "collegial_complement")
             qg = _g(contact, "qualifying_granted")
-            qp = _g(contact, "qualifying_paying")
             qc = _g(contact, "qualifying_complement")
             mo = _g(contact, "monitors")
-            ct = cg + cp + cc
-            qt = qg + qp + qc
-            meal_tot = ct + qt + mo
+            mc = _g(contact, "monitors_complement")
+            pt = pg + pc
+            ct = cg + cc
+            qt = qg + qc
+            mt = mo + mc
+            meal_tot = pt + ct + qt + mt
+
+            # الابتدائي row
+            table.setItem(row, 0, _cell(meal_label, bold=True))
+            table.setItem(row, 1, _cell(_SECTOR_PRIMARY))
+            table.setItem(row, 2, _cell(str(pg)))
+            table.setItem(row, 3, _cell(str(pc)))
+            table.setItem(row, 4, _cell(str(pt), bold=True))
+            row += 1
 
             # إعدادي row
-            table.setItem(row, 0, _cell(meal_label, bold=True))
+            table.setItem(row, 0, _cell(""))
             table.setItem(row, 1, _cell(_SECTOR_COLLEGIAL))
             table.setItem(row, 2, _cell(str(cg)))
-            table.setItem(row, 3, _cell(str(cp)))
-            table.setItem(row, 4, _cell(str(cc)))
-            table.setItem(row, 5, _cell(str(ct), bold=True))
+            table.setItem(row, 3, _cell(str(cc)))
+            table.setItem(row, 4, _cell(str(ct), bold=True))
             row += 1
 
             # تأهيلي row
             table.setItem(row, 0, _cell(""))
             table.setItem(row, 1, _cell(_SECTOR_QUALIFYING))
             table.setItem(row, 2, _cell(str(qg)))
-            table.setItem(row, 3, _cell(str(qp)))
-            table.setItem(row, 4, _cell(str(qc)))
-            table.setItem(row, 5, _cell(str(qt), bold=True))
+            table.setItem(row, 3, _cell(str(qc)))
+            table.setItem(row, 4, _cell(str(qt), bold=True))
             row += 1
 
-            # معلمون row (no ممنوح/مؤد/متمم breakdown)
+            # معلمون row
             table.setItem(row, 0, _cell(""))
             table.setItem(row, 1, _cell(_SECTOR_MONITORS))
-            table.setItem(row, 2, _cell("—"))
-            table.setItem(row, 3, _cell("—"))
-            table.setItem(row, 4, _cell("—"))
-            table.setItem(row, 5, _cell(str(mo), bold=True))
+            table.setItem(row, 2, _cell(str(mo)))
+            table.setItem(row, 3, _cell(str(mc)))
+            table.setItem(row, 4, _cell(str(mt), bold=True))
             row += 1
 
             # مجموع الوجبة row
             table.setItem(row, 0, _cell(""))
             table.setItem(row, 1, _cell(_SECTOR_TOTAL, bold=True, bg="#f0f9ff"))
-            table.setItem(row, 2, _cell(str(cg + qg), bold=True, bg="#f0f9ff"))
-            table.setItem(row, 3, _cell(str(cp + qp), bold=True, bg="#f0f9ff"))
-            table.setItem(row, 4, _cell(str(cc + qc), bold=True, bg="#f0f9ff"))
-            table.setItem(row, 5, _cell(str(meal_tot), bold=True, bg=COLOR_PANEL_ALT, fg=COLOR_ACCENT_DEEP))
+            table.setItem(row, 2, _cell(str(pg + cg + qg + mo), bold=True, bg="#f0f9ff"))
+            table.setItem(row, 3, _cell(str(pc + cc + qc + mc), bold=True, bg="#f0f9ff"))
+            table.setItem(row, 4, _cell(str(meal_tot), bold=True, bg=COLOR_PANEL_ALT, fg=COLOR_ACCENT_DEEP))
             row += 1
 
-            grand_granted += cg + qg
-            grand_paying  += cp + qp
-            grand_compl   += cc + qc
+            grand_granted += pg + cg + qg + mo
+            grand_compl   += pc + cc + qc + mc
             grand_total   += meal_tot
 
         # Grand total row
         table.setItem(row, 0, _cell(_GRAND_TOTAL, bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
         table.setItem(row, 1, _cell("", bg=COLOR_ACCENT_DEEP))
         table.setItem(row, 2, _cell(str(grand_granted), bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
-        table.setItem(row, 3, _cell(str(grand_paying),  bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
-        table.setItem(row, 4, _cell(str(grand_compl),   bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
-        table.setItem(row, 5, _cell(str(grand_total),   bold=True, bg=COLOR_ACCENT, fg="white"))
+        table.setItem(row, 3, _cell(str(grand_compl),   bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
+        table.setItem(row, 4, _cell(str(grand_total),   bold=True, bg=COLOR_ACCENT, fg="white"))
 
         table.setMaximumHeight(num_rows * 36 + 40)
         return table

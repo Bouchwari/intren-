@@ -10,7 +10,7 @@ from datetime import date
 from statistics import median
 from typing import Literal
 
-from core.models import DailyContact
+from core.models import DailyAbsence, DailyContact
 
 MIN_RECORDS_FOR_ESTIMATE = 3
 MAX_RECORDS_USED = 6
@@ -79,6 +79,21 @@ def estimate_attendance(
         records_used=len(matching),
         reason="estimated",
     )
+
+
+def estimate_absence(
+    active_roster: dict[str, int],
+    history: list[DailyAbsence],
+    target_date: date,
+    meal: str,
+) -> EstimateResult:
+    """Estimate today's likely ABSENCE count per category, the same way
+    estimate_attendance() estimates attendance — DailyAbsence shares the
+    exact same category shape (primary/collegial/qualifying/monitors ×
+    full/lunch), so the same median-historical-rate logic applies directly:
+    "usually ~3 من 45 قسم إعدادي غائبون على الغذاء يوم الاثنين", not a
+    random number."""
+    return estimate_attendance(active_roster, history, target_date, meal)  # type: ignore[arg-type]
 
 
 def _matching_records(

@@ -151,20 +151,29 @@ class DailyAbsence:
     date: str           # YYYY-MM-DD
     meal_type: str      # ftour / ghada / asha
 
+    # الابتدائي
+    primary_granted: int = 0        # منحة كاملة
+    primary_complement: int = 0     # وجبة غذاء
+
     # إعدادي (collegial)
-    collegial_granted: int = 0      # ممنوح
-    collegial_paying: int = 0       # مؤد
-    collegial_complement: int = 0   # متمم
+    collegial_granted: int = 0      # منحة كاملة
+    collegial_paying: int = 0       # قديم: مؤدى، يدمج في منحة كاملة
+    collegial_complement: int = 0   # وجبة غذاء
 
     # تأهيلي (qualifying)
-    qualifying_granted: int = 0     # ممنوح
-    qualifying_paying: int = 0      # مؤد
-    qualifying_complement: int = 0  # متمم
+    qualifying_granted: int = 0     # منحة كاملة
+    qualifying_paying: int = 0      # قديم: مؤدى، يدمج في منحة كاملة
+    qualifying_complement: int = 0  # وجبة غذاء
 
     # معلمو الداخلية
     monitors: int = 0
+    monitors_complement: int = 0
 
     id: Optional[int] = None
+
+    @property
+    def primary_total(self) -> int:
+        return self.primary_granted + self.primary_complement
 
     @property
     def collegial_total(self) -> int:
@@ -175,8 +184,12 @@ class DailyAbsence:
         return self.qualifying_granted + self.qualifying_paying + self.qualifying_complement
 
     @property
+    def monitors_total(self) -> int:
+        return self.monitors + self.monitors_complement
+
+    @property
     def grand_total(self) -> int:
-        return self.collegial_total + self.qualifying_total + self.monitors
+        return self.primary_total + self.collegial_total + self.qualifying_total + self.monitors_total
 
 
 @dataclass

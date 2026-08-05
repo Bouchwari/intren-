@@ -15,13 +15,17 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
-    COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
+    COLOR_BORDER, COLOR_DANGER, COLOR_PAPER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
+from core.attendance_estimate import EstimateResult, estimate_absence
+from core.contact_counts import count_students
 from core.models import DailyAbsence
-from data.database import get_day_absences, get_recent_absences, save_daily_absence
+from data.database import (
+    get_all_students, get_day_absences, get_recent_absences, save_daily_absence,
+)
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -35,19 +39,34 @@ _BTN_NEXT_ICON  = "←"
 _BTN_TODAY      = "اليوم"
 _BTN_LOAD       = "تحميل"
 _BTN_LOAD_ICON  = "📂"
+_BTN_AUTO       = "توليد تلقائي"
+_BTN_AUTO_ICON  = "🧮"
 _BTN_SAVE       = "حفظ اليوم"
 _BTN_SAVE_ICON  = "💾"
 _LBL_DATE       = "التاريخ:"
+_LBL_PRIMARY    = "الابتدائي"
 _LBL_COLLEGIAL  = "إعدادي"
 _LBL_QUALIFYING = "تأهيلي"
 _LBL_MONITORS   = "معلمو الداخلية"
-_LBL_GRANTED    = "ممنوح"
-_LBL_PAYING     = "مؤد"
+_LBL_GRANTED    = "كاملة"
 _LBL_COMPLEMENT = "متمم"
 _LBL_GRAND_TOT  = "إجمالي الغياب"
-_HDR_HISTORY    = ["التاريخ", "الوجبة", "إعدادي (م)", "إعدادي (مؤ)", "إعدادي (مت)",
-                   "تأهيلي (م)", "تأهيلي (مؤ)", "تأهيلي (مت)", "معلمون", "الإجمالي"]
+_HDR_HISTORY    = ["التاريخ", "الوجبة",
+                   "ابتدائي (ك)", "ابتدائي (مت)",
+                   "إعدادي (ك)", "إعدادي (مت)",
+                   "تأهيلي (ك)", "تأهيلي (مت)",
+                   "معلمون (ك)", "معلمون (مت)", "الإجمالي"]
 _SAVED_OK       = "تم حفظ ورقة الغياب بنجاح."
+_TOAST_NO_STUDENTS = "لا يوجد تلاميذ في اللائحة — استورد اللائحة أولاً من صفحة التلاميذ."
+_ESTIMATE_HISTORY_LIMIT = 900
+_CONFIDENCE_LABELS = {"low": "منخفضة", "medium": "متوسطة", "high": "عالية"}
+_ESTIMATE_NOTE_LOW = (
+    "⚠️ لا يوجد سجل غياب كافٍ للتقدير (متوفر {records} من 3 أيام على الأقل لنفس اليوم والوجبة)"
+    " — تم عرض 0 غياب، يرجى المراجعة يدوياً."
+)
+_ESTIMATE_NOTE_ESTIMATED = (
+    "🧮 غياب مُقدَّر اعتماداً على {records} يوم سابق لنفس اليوم والوجبة — مستوى الثقة: {confidence}."
+)
 
 _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_FTOUR, MEAL_LABELS[MEAL_FTOUR]),
@@ -61,11 +80,15 @@ _MEAL_COLORS = {
     MEAL_GHADA: "#ea580c",   # orange-600
     MEAL_ASHA:  "#9f1239",   # rose-900
 }
-_PAGE_BG = "#f5f5f0"
+_PAGE_BG = COLOR_PAPER
 _PANEL_BG = "#ffffff"
 _PANEL_BORDER = "#dddccd"
-_INK = "#5A5A40"
-_HISTORY_COLUMN_WIDTHS = [92, 86, 78, 78, 78, 78, 78, 78, 82, 82]
+_INK = COLOR_TEXT_PRIMARY
+# Light red tint for chrome (table header) — matches this page's own red
+# theme (_MEAL_COLORS, #fff5f5 alternate rows) rather than the app-wide
+# COLOR_PANEL_ALT, which is teal and would clash here.
+_HISTORY_HEADER_BG = "#FBEAEA"
+_HISTORY_COLUMN_WIDTHS = [92, 78, 70, 70, 70, 70, 70, 70, 70, 70, 82]
 
 
 def _spin() -> QSpinBox:
@@ -114,7 +137,7 @@ class _AbsenceCard(QGroupBox):
 
         # Column headers
         hdr = QGridLayout()
-        for col, lbl in enumerate(["", _LBL_GRANTED, _LBL_PAYING, _LBL_COMPLEMENT, "المجموع"]):
+        for col, lbl in enumerate(["", _LBL_GRANTED, _LBL_COMPLEMENT, "المجموع"]):
             h = QLabel(lbl)
             h.setAlignment(Qt.AlignmentFlag.AlignCenter)
             h.setStyleSheet(
@@ -131,35 +154,32 @@ class _AbsenceCard(QGroupBox):
         grid = QGridLayout()
         grid.setSpacing(6)
 
-        self._cg = _spin(); self._cp = _spin(); self._cc = _spin()
-        self._qg = _spin(); self._qp = _spin(); self._qc = _spin()
-        self._mo = _spin()
+        self._pg = _spin(); self._pc = _spin()
+        self._cg = _spin(); self._cc = _spin()
+        self._qg = _spin(); self._qc = _spin()
+        self._mo = _spin(); self._mc = _spin()
 
+        self._pt_lbl = QLabel("0")
         self._ct_lbl = QLabel("0")
         self._qt_lbl = QLabel("0")
+        self._mt_lbl = QLabel("0")
         self._gt_lbl = QLabel("0")
 
-        for lbl in (self._ct_lbl, self._qt_lbl):
+        for lbl in (self._pt_lbl, self._ct_lbl, self._qt_lbl, self._mt_lbl):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(f"color:{self._color}; font-weight:bold; font-size:{FONT_SECTION}px;")
 
-        # إعدادي row
-        grid.addWidget(QLabel(_LBL_COLLEGIAL), 0, 0)
-        grid.addWidget(self._cg, 0, 1)
-        grid.addWidget(self._cp, 0, 2)
-        grid.addWidget(self._cc, 0, 3)
-        grid.addWidget(self._ct_lbl, 0, 4)
-
-        # تأهيلي row
-        grid.addWidget(QLabel(_LBL_QUALIFYING), 1, 0)
-        grid.addWidget(self._qg, 1, 1)
-        grid.addWidget(self._qp, 1, 2)
-        grid.addWidget(self._qc, 1, 3)
-        grid.addWidget(self._qt_lbl, 1, 4)
-
-        # معلمون row
-        grid.addWidget(QLabel(_LBL_MONITORS), 2, 0)
-        grid.addWidget(self._mo, 2, 1, 1, 3)
+        rows = [
+            (_LBL_PRIMARY, self._pg, self._pc, self._pt_lbl),
+            (_LBL_COLLEGIAL, self._cg, self._cc, self._ct_lbl),
+            (_LBL_QUALIFYING, self._qg, self._qc, self._qt_lbl),
+            (_LBL_MONITORS, self._mo, self._mc, self._mt_lbl),
+        ]
+        for row, (label, granted_spin, complement_spin, total_lbl) in enumerate(rows):
+            grid.addWidget(QLabel(label), row, 0)
+            grid.addWidget(granted_spin, row, 1)
+            grid.addWidget(complement_spin, row, 2)
+            grid.addWidget(total_lbl, row, 3)
         layout.addLayout(grid)
 
         # Grand total
@@ -175,42 +195,66 @@ class _AbsenceCard(QGroupBox):
         gt_row.addWidget(self._gt_lbl)
         layout.addLayout(gt_row)
 
-        for sp in (self._cg, self._cp, self._cc,
-                   self._qg, self._qp, self._qc, self._mo):
+        for sp in (self._pg, self._pc, self._cg, self._cc,
+                   self._qg, self._qc, self._mo, self._mc):
             sp.valueChanged.connect(self._update_totals)
 
     def _update_totals(self) -> None:
         absence = self.to_absence("")
+        self._pt_lbl.setText(str(absence.primary_total))
         self._ct_lbl.setText(str(absence.collegial_total))
         self._qt_lbl.setText(str(absence.qualifying_total))
+        self._mt_lbl.setText(str(absence.monitors_total))
         self._gt_lbl.setText(str(absence.grand_total))
 
     def load(self, absence: Optional[DailyAbsence]) -> None:
         if absence is None:
-            for sp in (self._cg, self._cp, self._cc,
-                       self._qg, self._qp, self._qc, self._mo):
+            for sp in (self._pg, self._pc, self._cg, self._cc,
+                       self._qg, self._qc, self._mo, self._mc):
                 sp.setValue(0)
         else:
-            self._cg.setValue(absence.collegial_granted)
-            self._cp.setValue(absence.collegial_paying)
+            self._pg.setValue(absence.primary_granted)
+            self._pc.setValue(absence.primary_complement)
+            self._cg.setValue(absence.collegial_granted + absence.collegial_paying)
             self._cc.setValue(absence.collegial_complement)
-            self._qg.setValue(absence.qualifying_granted)
-            self._qp.setValue(absence.qualifying_paying)
+            self._qg.setValue(absence.qualifying_granted + absence.qualifying_paying)
             self._qc.setValue(absence.qualifying_complement)
             self._mo.setValue(absence.monitors)
+            self._mc.setValue(absence.monitors_complement)
+        self._update_totals()
+
+    def set_counts(
+        self,
+        primary_full: int, primary_lunch: int,
+        collegial_full: int, collegial_lunch: int,
+        qualifying_full: int, qualifying_lunch: int,
+        monitors_full: int, monitors_lunch: int,
+    ) -> None:
+        """Fill from an estimate — same shape as load(), but from plain ints
+        instead of a DailyAbsence, and always leaves the fields editable."""
+        for spin, value in (
+            (self._pg, primary_full), (self._pc, primary_lunch),
+            (self._cg, collegial_full), (self._cc, collegial_lunch),
+            (self._qg, qualifying_full), (self._qc, qualifying_lunch),
+            (self._mo, monitors_full), (self._mc, monitors_lunch),
+        ):
+            spin.setValue(max(0, int(value)))
         self._update_totals()
 
     def to_absence(self, date: str) -> DailyAbsence:
         return DailyAbsence(
             date=date,
             meal_type=self._meal_key,
+            primary_granted=self._pg.value(),
+            primary_complement=self._pc.value(),
             collegial_granted=self._cg.value(),
-            collegial_paying=self._cp.value(),
+            collegial_paying=0,
             collegial_complement=self._cc.value(),
             qualifying_granted=self._qg.value(),
-            qualifying_paying=self._qp.value(),
+            qualifying_paying=0,
             qualifying_complement=self._qc.value(),
             monitors=self._mo.value(),
+            monitors_complement=self._mc.value(),
         )
 
 
@@ -249,6 +293,7 @@ class DailyAbsenceScreen(QWidget):
 
         inner.addLayout(self._build_header())
         inner.addLayout(self._build_date_bar())
+        inner.addWidget(self._build_estimate_note())
         inner.addLayout(self._build_cards_row())
         inner.addWidget(self._build_history())
         inner.addStretch()
@@ -291,6 +336,7 @@ class DailyAbsenceScreen(QWidget):
             (_BTN_PREV,  _BTN_PREV_ICON, self._go_prev,       _INK),
             (_BTN_NEXT,  _BTN_NEXT_ICON, self._go_next,       _INK),
             (_BTN_LOAD,  _BTN_LOAD_ICON, self._load_selected, "#0891b2"),
+            (_BTN_AUTO,  _BTN_AUTO_ICON, self._on_auto_generate_clicked, "#7c3aed"),
         ]:
             btn = self._btn(label, color, icon=icon)
             btn.clicked.connect(slot)
@@ -308,6 +354,30 @@ class DailyAbsenceScreen(QWidget):
             label, icon=icon, bg=color, text_color="white",
             border_radius=12, padding_h=12, font_size=13, bold=False, min_height=36,
         )
+
+    def _build_estimate_note(self) -> QLabel:
+        label = QLabel("")
+        label.setWordWrap(True)
+        label.setVisible(False)
+        label.setStyleSheet(
+            f"background:transparent; color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;"
+        )
+        self._estimate_note = label
+        return label
+
+    def _set_estimate_note(self, result: Optional[EstimateResult]) -> None:
+        if result is None:
+            self._estimate_note.setVisible(False)
+            return
+        if result.reason == "insufficient_history":
+            text = _ESTIMATE_NOTE_LOW.format(records=result.records_used)
+        else:
+            text = _ESTIMATE_NOTE_ESTIMATED.format(
+                records=result.records_used,
+                confidence=_CONFIDENCE_LABELS.get(result.confidence, result.confidence),
+            )
+        self._estimate_note.setText(text)
+        self._estimate_note.setVisible(True)
 
     def _build_cards_row(self) -> QGridLayout:
         row = QGridLayout()
@@ -356,7 +426,7 @@ class DailyAbsenceScreen(QWidget):
                 font-size:{FONT_LABEL}px;
             }}
             QHeaderView::section {{
-                background:#E4E4D7; color:{_INK};
+                background:{_HISTORY_HEADER_BG}; color:{_INK};
                 padding:7px 10px; border:none;
                 border-bottom:1px solid {_PANEL_BORDER};
                 font-weight:bold; font-size:{FONT_CAPTION}px;
@@ -389,6 +459,7 @@ class DailyAbsenceScreen(QWidget):
         absences = {a.meal_type: a for a in get_day_absences(date_str)}
         for meal_key, card in self._cards.items():
             card.load(absences.get(meal_key))
+        self._set_estimate_note(None)
         self._refresh_history()
 
     def _refresh_history(self) -> None:
@@ -401,10 +472,11 @@ class DailyAbsenceScreen(QWidget):
             values = [
                 a.date,
                 meal_labels.get(a.meal_type, a.meal_type),
-                str(a.collegial_granted), str(a.collegial_paying),
-                str(a.collegial_complement), str(a.qualifying_granted),
-                str(a.qualifying_paying), str(a.qualifying_complement),
-                str(a.monitors), str(a.grand_total),
+                str(a.primary_granted), str(a.primary_complement),
+                str(a.collegial_granted), str(a.collegial_complement),
+                str(a.qualifying_granted), str(a.qualifying_complement),
+                str(a.monitors), str(a.monitors_complement),
+                str(a.grand_total),
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
@@ -412,6 +484,68 @@ class DailyAbsenceScreen(QWidget):
                     int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                 )
                 self._history_table.setItem(r, col, item)
+
+    def _on_auto_generate_clicked(self) -> None:
+        """Fill today's absence counts from historical patterns for this
+        weekday+meal — a median rate, not a random number (see
+        core.attendance_estimate). Fields stay editable afterward."""
+        students = get_all_students()
+        if not students:
+            QMessageBox.information(self, "توليد تلقائي", _TOAST_NO_STUDENTS)
+            return
+
+        active_roster = self._flatten_counts(count_students(students))
+        target_date = self._date_edit.date().toPython()
+        history = get_recent_absences(limit=_ESTIMATE_HISTORY_LIMIT)
+
+        # One estimate call drives all 3 cards, same as the contact sheet's
+        # auto-generate — ghada carries the وجبة غذاء (lunch-only) rate,
+        # ftour/asha only ever get the "full" column.
+        result = estimate_absence(active_roster, history, target_date, MEAL_GHADA)
+        counts = self._unflatten_counts(result.counts)
+        self._apply_generated_counts(counts)
+        self._set_estimate_note(result)
+
+    def _flatten_counts(self, counts: Dict[str, Dict[str, int]]) -> Dict[str, int]:
+        return {
+            f"{category}_{grant_kind}": count
+            for category, grants in counts.items()
+            for grant_kind, count in grants.items()
+        }
+
+    def _unflatten_counts(self, roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
+        counts: Dict[str, Dict[str, int]] = {
+            "primary": {}, "collegial": {}, "qualifying": {}, "monitors": {},
+        }
+        for key, value in roster.items():
+            category, grant_kind = key.rsplit("_", 1)
+            counts[category][grant_kind] = value
+        return counts
+
+    def _apply_generated_counts(self, counts: Dict[str, Dict[str, int]]) -> None:
+        primary = counts.get("primary", {})
+        collegial = counts.get("collegial", {})
+        qualifying = counts.get("qualifying", {})
+        monitors = counts.get("monitors", {})
+
+        self._cards[MEAL_FTOUR].set_counts(
+            primary.get("full", 0), 0,
+            collegial.get("full", 0), 0,
+            qualifying.get("full", 0), 0,
+            monitors.get("full", 0), 0,
+        )
+        self._cards[MEAL_GHADA].set_counts(
+            primary.get("full", 0), primary.get("lunch", 0),
+            collegial.get("full", 0), collegial.get("lunch", 0),
+            qualifying.get("full", 0), qualifying.get("lunch", 0),
+            monitors.get("full", 0), monitors.get("lunch", 0),
+        )
+        self._cards[MEAL_ASHA].set_counts(
+            primary.get("full", 0), 0,
+            collegial.get("full", 0), 0,
+            qualifying.get("full", 0), 0,
+            monitors.get("full", 0), 0,
+        )
 
     def _on_history_click(self) -> None:
         row = self._history_table.currentRow()

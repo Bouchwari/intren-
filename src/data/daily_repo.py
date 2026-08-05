@@ -231,13 +231,16 @@ def _row_to_absence(r: sqlite3.Row) -> DailyAbsence:
         id=r["id"],
         date=r["date"],
         meal_type=r["meal_type"],
-        collegial_granted=r["collegial_granted"],
-        collegial_paying=r["collegial_paying"],
+        primary_granted=r["primary_granted"],
+        primary_complement=r["primary_complement"],
+        collegial_granted=r["collegial_granted"] + r["collegial_paying"],
+        collegial_paying=0,
         collegial_complement=r["collegial_complement"],
-        qualifying_granted=r["qualifying_granted"],
-        qualifying_paying=r["qualifying_paying"],
+        qualifying_granted=r["qualifying_granted"] + r["qualifying_paying"],
+        qualifying_paying=0,
         qualifying_complement=r["qualifying_complement"],
         monitors=r["monitors"],
+        monitors_complement=r["monitors_complement"],
     )
 
 
@@ -257,23 +260,28 @@ def save_daily_absence(a: DailyAbsence) -> None:
         conn.execute("""
             INSERT INTO daily_absence
                 (date, meal_type,
+                 primary_granted, primary_complement,
                  collegial_granted, collegial_paying, collegial_complement,
                  qualifying_granted, qualifying_paying, qualifying_complement,
-                 monitors)
-            VALUES (?,?,?,?,?,?,?,?,?)
+                 monitors, monitors_complement)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(date, meal_type) DO UPDATE SET
+                primary_granted      = excluded.primary_granted,
+                primary_complement   = excluded.primary_complement,
                 collegial_granted    = excluded.collegial_granted,
                 collegial_paying     = excluded.collegial_paying,
                 collegial_complement = excluded.collegial_complement,
                 qualifying_granted   = excluded.qualifying_granted,
                 qualifying_paying    = excluded.qualifying_paying,
                 qualifying_complement= excluded.qualifying_complement,
-                monitors             = excluded.monitors
+                monitors             = excluded.monitors,
+                monitors_complement  = excluded.monitors_complement
         """, (
             a.date, a.meal_type,
-            a.collegial_granted, a.collegial_paying, a.collegial_complement,
-            a.qualifying_granted, a.qualifying_paying, a.qualifying_complement,
-            a.monitors,
+            a.primary_granted, a.primary_complement,
+            a.collegial_granted + a.collegial_paying, 0, a.collegial_complement,
+            a.qualifying_granted + a.qualifying_paying, 0, a.qualifying_complement,
+            a.monitors, a.monitors_complement,
         ))
 
 
