@@ -21,8 +21,10 @@ from config.settings import ARABIC_MONTHS, COLOR_ACCENT, COLOR_ACCENT_DEEP, COLO
 
 _MONTH_NAMES = ARABIC_MONTHS[1:]  # drop the index-0 "" placeholder
 # Monday-first, matching Morocco's work week (not the Sunday-first Mashriqi
-# convention) — ن ث ر خ ج س ح = Mon Tue Wed Thu Fri Sat Sun.
-_WEEKDAY_HEADERS = ["ن", "ث", "ر", "خ", "ج", "س", "ح"]
+# convention). Two letters each, not one — ح/ج/خ differ only by a small dot
+# and were unreadable at small size, so a single "ح" could be mistaken for
+# "ج" (Friday) and look like a duplicate.
+_WEEKDAY_HEADERS = ["إث", "ثل", "أر", "خم", "جم", "سب", "أح"]  # Mon..Sun
 _BTN_BACK = "رجوع"
 _BTN_APPLY = "تطبيق"
 
@@ -120,8 +122,9 @@ class _CalendarPopup(QFrame):
                 width: 20px;
             }}
             QLabel#weekdayHeader {{
-                color: #999;
-                font-size: 12px;
+                color: #555;
+                font-size: 14px;
+                font-weight: 600;
             }}
             QPushButton#backButton {{
                 border: 1px solid {COLOR_BORDER};
