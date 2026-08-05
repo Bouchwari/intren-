@@ -17,14 +17,15 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
-from config.settings import ARABIC_MONTHS, COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER
+from config.settings import ARABIC_DAY_NAMES, ARABIC_MONTHS, COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER
 
 _MONTH_NAMES = ARABIC_MONTHS[1:]  # drop the index-0 "" placeholder
-# Monday-first, matching Morocco's work week (not the Sunday-first Mashriqi
-# convention). Two letters each, not one — ح/ج/خ differ only by a small dot
-# and were unreadable at small size, so a single "ح" could be mistaken for
-# "ج" (Friday) and look like a duplicate.
-_WEEKDAY_HEADERS = ["إث", "ثل", "أر", "خم", "جم", "سب", "أح"]  # Mon..Sun
+# Full names, Monday-first — matching Morocco's work week and
+# config.settings.ARABIC_DAY_NAMES, the app's one canonical day-name list.
+# A single letter (ح/ج/خ differ only by a small dot) or a 2-letter
+# abbreviation both proved unreadable at small size; full names remove the
+# ambiguity entirely.
+_WEEKDAY_HEADERS = ARABIC_DAY_NAMES
 _BTN_BACK = "رجوع"
 _BTN_APPLY = "تطبيق"
 
@@ -93,7 +94,7 @@ class _CalendarPopup(QFrame):
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setObjectName("sharedCalendarPopup")
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-        self.setFixedWidth(300)
+        self.setFixedWidth(380)  # wide enough for full day names like "الأربعاء"
         self._draft_date = selected_date if selected_date.isValid() else QDate.currentDate()
         self._day_buttons: list[_CalendarDayButton] = []
         self._building = False
@@ -123,7 +124,7 @@ class _CalendarPopup(QFrame):
             }}
             QLabel#weekdayHeader {{
                 color: #555;
-                font-size: 14px;
+                font-size: 11px;
                 font-weight: 600;
             }}
             QPushButton#backButton {{
@@ -243,14 +244,19 @@ class _CalendarPopup(QFrame):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             # Without this, some native Qt styles (seen under GNOME/Wayland)
             # draw their own default frame around QLabel instead of using
-            # our stylesheet, and size it to each label's own text — giving
-            # every column a different width that changes with the text.
-            # WA_StyledBackground forces our (border-less) QSS to apply, and
-            # the fixed size makes every header cell match the day buttons.
+            # our stylesheet, sized to each label's own text — giving every
+            # column a different width. WA_StyledBackground forces our
+            # (border-less) QSS to apply; the equal column stretch below
+            # (Qt's equivalent of CSS grid-template-columns: repeat(7,1fr))
+            # is what actually makes every column the same width regardless
+            # of how long that day's name is.
             label.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             label.setFrameShape(QFrame.Shape.NoFrame)
-            label.setFixedSize(36, 22)
+            label.setMinimumWidth(44)
+            label.setFixedHeight(22)
             self._grid.addWidget(label, 0, col)
+        for col in range(7):
+            self._grid.setColumnStretch(col, 1)
 
         year = self._draft_date.year()
         month = self._draft_date.month()
