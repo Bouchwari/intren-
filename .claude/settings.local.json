@@ -235,7 +235,18 @@
       "Bash(timeout 20 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportCoreTests.test_skipped_days_dont_count_as_done -v)",
       "Bash(timeout 20 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportCoreTests.test_a_failing_day_is_reported_but_doesnt_stop_the_batch -v)",
       "Bash(timeout 30 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportScreenIntegrationTests.test_daily_contact_batch_export_skips_days_with_no_data -v)",
-      "Bash(timeout 60 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests)"
+      "Bash(timeout 60 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests)",
+      "Bash(.venv/bin/python -m PyInstaller --version)",
+      "Bash(.venv/bin/python -m PyInstaller Matama.spec --noconfirm)",
+      "Bash(git check-ignore *)",
+      "Bash(DISPLAY=:0 timeout 5 /home/abbdo/Downloads/intren--main/.venv/bin/python /home/abbdo/Downloads/intren--main/src/main.py)",
+      "Bash(pkill -f \"src/main.py\" 2>/dev/null; find ~/.local/share/applications ~/Desktop /usr/share/applications -iname \"*matama*\" 2>/dev/null)",
+      "Bash(chmod +x /home/abbdo/Downloads/intren--main/run_test.sh)",
+      "Bash(chmod +x /home/abbdo/Downloads/intren--main/Matama-Test.desktop)",
+      "Bash(.venv/bin/python scripts/seed_test_db.py)",
+      "Bash(MATAMA_DB_PATH=\"/home/abbdo/Downloads/intren--main/matama_test.db\" .venv/bin/python scripts/seed_test_db.py)",
+      "Bash(unset MATAMA_DB_PATH)",
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 60 .venv/bin/python -m unittest discover -s tests)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
