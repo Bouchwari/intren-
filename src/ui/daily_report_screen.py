@@ -31,6 +31,7 @@ from data.database import (
     get_dates_with_data, get_daily_report, get_school_settings,
     save_daily_report,
 )
+from ui.batch_export import run_batch_export
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
 from ui.widgets.date_input import DateInput
@@ -47,6 +48,8 @@ _BTN_NEXT_ICON  = "←"
 _BTN_TODAY      = "اليوم"
 _BTN_GENERATE      = "توليد التقرير"
 _BTN_GENERATE_ICON = "🔄"
+_BTN_BATCH_EXPORT      = "توليد لعدة أيام"
+_BTN_BATCH_EXPORT_ICON = "🗂"
 _BTN_SAVE_NOTES = "💾  حفظ الملاحظات"
 _LBL_DATE       = "التاريخ:"
 _LBL_NOTES      = "ملاحظات المسير"
@@ -492,6 +495,30 @@ def _write_daily_report_pdf(
         painter.end()
 
 
+def _report_for_date(date_str: str) -> DailyReport:
+    """The DailyReport for a date, independent of any live screen: the
+    saved report if one exists (respecting a manual beneficiary override —
+    see DailyReportScreen._load_report_fields), otherwise beneficiary
+    counts freshly computed from that date's contact/absence sheets with a
+    blank checklist. Used by batch export, which has no open screen to
+    read live widget state from."""
+    report = get_daily_report(date_str) or DailyReport(date=date_str)
+    if report.id is not None:
+        return report
+
+    contacts = {c.meal_type: c for c in get_day_contacts(date_str)}
+    absences = {a.meal_type: a for a in get_day_absences(date_str)}
+    fields = {}
+    for meal_key, _ in _MEAL_ORDER:
+        contact = contacts.get(meal_key)
+        absence = absences.get(meal_key)
+        expected = contact.grand_total if contact else 0
+        absent = absence.grand_total if absence else 0
+        fields[f"{meal_key}_expected"] = expected
+        fields[f"{meal_key}_present"] = max(0, expected - absent)
+    return DailyReport(date=date_str, **fields)
+
+
 class DailyReportScreen(QWidget):
     """Daily report screen — auto-generated from contact + absence data."""
 
@@ -794,8 +821,12 @@ class DailyReportScreen(QWidget):
         export_btn = self._btn(_BTN_EXPORT, COLOR_TEXT_PRIMARY, icon=_BTN_EXPORT_ICON)
         export_btn.clicked.connect(self._on_export)
         export_btn.setMaximumWidth(160)
+        batch_btn = self._btn(_BTN_BATCH_EXPORT, COLOR_TEXT_PRIMARY, icon=_BTN_BATCH_EXPORT_ICON)
+        batch_btn.clicked.connect(self._on_batch_export)
+        batch_btn.setMaximumWidth(200)
         btn_row.addWidget(save_btn)
         btn_row.addWidget(export_btn)
+        btn_row.addWidget(batch_btn)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -1105,3 +1136,21 @@ class DailyReportScreen(QWidget):
             QMessageBox.information(self, "تم", _PDF_SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
+
+    def _on_batch_export(self) -> None:
+        """Export the daily report for every date in a range in one go,
+        one PDF per date, skipping dates with no contact/absence data at
+        all. Read-only: unlike _on_export this never calls
+        save_daily_report — it exports whatever is already saved (or
+        freshly computed) for each date without changing it."""
+        settings = get_school_settings()
+
+        def generate_day(date_str: str, folder: Path) -> bool:
+            if not get_day_contacts(date_str) and not get_day_absences(date_str):
+                return False
+            report = _report_for_date(date_str)
+            path = folder / f"{_PDF_DEFAULT_NAME}_{date_str}.pdf"
+            _write_daily_report_pdf(path, settings, date_str, report)
+            return True
+
+        run_batch_export(self, generate_day)

@@ -37,6 +37,7 @@ from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
+from ui.batch_export import run_batch_export
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
@@ -86,6 +87,8 @@ _HDR_HISTORY    = ["رقم الوثيقة", "التاريخ", "العملية", 
 _SAVED_OK       = "تم حفظ ورقة الاتصال بنجاح."
 _BTN_EXPORT_DOC = "طباعة وتسجيل"
 _BTN_EXPORT_DOC_ICON = "🖨"
+_BTN_BATCH_EXPORT = "توليد لعدة أيام"
+_BTN_BATCH_EXPORT_ICON = "🗂"
 _DOCX_DIALOG_TITLE = "تحميل ورقة الاتصال اليومية"
 _DOCX_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _DOCX_SAVED_OK = "تم تحميل ورقة الاتصال اليومية بنجاح."
@@ -972,8 +975,11 @@ class DailyContactScreen(QWidget):
         save_btn.clicked.connect(self._on_save)
         export_btn = self._btn(_BTN_EXPORT_DOC, _INK, icon=_BTN_EXPORT_DOC_ICON)
         export_btn.clicked.connect(self._on_export)
+        batch_btn = self._btn(_BTN_BATCH_EXPORT, _INK, icon=_BTN_BATCH_EXPORT_ICON)
+        batch_btn.clicked.connect(self._on_batch_export)
         actions_row.addWidget(save_btn)
         actions_row.addWidget(export_btn)
+        actions_row.addWidget(batch_btn)
         actions.layout().addLayout(actions_row)
 
         document = self._toolbar_group(_LBL_DOCUMENT)
@@ -1497,6 +1503,45 @@ class DailyContactScreen(QWidget):
         except Exception as exc:
             error_prefix = _PDF_SAVE_ERROR if is_pdf else _DOCX_SAVE_ERROR
             QMessageBox.critical(self, "خطأ", f"{error_prefix}\n{exc}")
+
+    def _on_batch_export(self) -> None:
+        """Export the contact sheet for every date in a range in one go,
+        one PDF/Word file per date, skipping dates with no saved data.
+        Read-only: unlike _on_export, this never saves/records anything —
+        it only exports what's already in the database, so it can't
+        advance the document-number counter or touch saved data."""
+        fmt = get_document_export_format()
+        if fmt == EXPORT_FORMAT_ASK:
+            fmt = ask_export_format(self)
+            if fmt is None:
+                return
+        is_pdf = fmt == EXPORT_FORMAT_PDF
+        suffix = ".pdf" if is_pdf else ".docx"
+        default_name = _PDF_DEFAULT_NAME if is_pdf else _DOCX_DEFAULT_NAME
+        settings = get_school_settings()
+
+        def generate_day(date_str: str, folder: Path) -> bool:
+            contacts = get_day_contacts(date_str)
+            if not contacts:
+                return False
+            path = folder / f"{default_name}_{date_str}{suffix}"
+            if is_pdf:
+                _write_daily_contact_pdf(
+                    path, date_str, contacts,
+                    place=settings.city if settings else "",
+                )
+            else:
+                _write_daily_contact_docx(
+                    path, date_str, contacts,
+                    place=settings.city if settings else "",
+                    academy=settings.aref if settings else "",
+                    province=settings.direction_provinciale if settings else "",
+                    school_name=settings.school_name if settings else "",
+                    school_year=settings.school_year if settings else "",
+                )
+            return True
+
+        run_batch_export(self, generate_day)
 
     def _on_save(self) -> None:
         date_str = self._selected_date_str()
