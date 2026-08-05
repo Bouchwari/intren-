@@ -204,7 +204,18 @@
       "Bash(awk '/def _build_control_panel/,/return panel/' src/ui/meal_program_screen.py)",
       "Bash(kill 19165)",
       "Bash(.venv/bin/python -m py_compile src/core/models.py src/data/daily_repo.py src/core/attendance_estimate.py)",
-      "Bash(.venv/bin/python -m pytest tests/test_daily_absence_screen.py -q)"
+      "Bash(.venv/bin/python -m pytest tests/test_daily_absence_screen.py -q)",
+      "Bash(kill 11584)",
+      "Bash(QT_QPA_PLATFORM=offscreen python -m pytest tests/test_daily_report_screen.py -q)",
+      "Bash(QT_QPA_PLATFORM=offscreen python3 -m pytest tests/test_daily_report_screen.py tests/test_daily_absence_screen.py tests/test_daily_contact_screen.py -q)",
+      "Bash(QT_QPA_PLATFORM=offscreen python3 -m unittest tests.test_daily_report_screen tests.test_daily_absence_screen tests.test_daily_contact_screen -v)",
+      "Bash(find / -maxdepth 6 -iname \"pyside6\" -type d)",
+      "Bash(find / -maxdepth 8 -iname \"activate\" -path \"*venv*\")",
+      "Bash(pip3 show *)",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_daily_report_screen tests.test_daily_absence_screen tests.test_daily_contact_screen -v)",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_daily_report_screen -v)",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -v)",
+      "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/settings_holidays*.png *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
