@@ -13,7 +13,7 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from core.models import DailyAbsence, DailyContact, Student, Violation
+from core.models import DailyAbsence, DailyContact, Holiday, Student, Violation
 from data import database, stats_repository
 
 
@@ -152,6 +152,23 @@ class DatabaseIntegrityTests(unittest.TestCase):
 
         self.assertEqual(len(programs), 1)
         self.assertTrue(programs[0].is_ramadan)
+
+    def test_holiday_add_query_and_delete_round_trip(self) -> None:
+        database.add_holiday(Holiday(date="2026-06-15", label="عطلة نصف السنة"))
+        database.add_holiday(Holiday(date="2026-03-21", label="طريق مقطوعة بسبب الثلج"))
+
+        self.assertTrue(database.is_holiday("2026-06-15"))
+        self.assertFalse(database.is_holiday("2026-06-16"))
+        all_holidays = database.get_all_holidays()
+        self.assertEqual([h.date for h in all_holidays], ["2026-03-21", "2026-06-15"])
+
+        database.add_holiday(Holiday(date="2026-06-15", label="محدث"))  # same date -> updates label
+        self.assertEqual(database.get_all_holidays()[1].label, "محدث")
+        self.assertEqual(len(database.get_all_holidays()), 2)
+
+        database.delete_holiday("2026-06-15")
+        self.assertFalse(database.is_holiday("2026-06-15"))
+        self.assertEqual(len(database.get_all_holidays()), 1)
 
 
 if __name__ == "__main__":

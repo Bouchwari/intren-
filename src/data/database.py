@@ -245,6 +245,10 @@ def init_database() -> None:
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL DEFAULT ''
             );
+            CREATE TABLE IF NOT EXISTS holidays (
+                date  TEXT PRIMARY KEY,
+                label TEXT NOT NULL DEFAULT ''
+            );
         """)
         _migrate(conn)
 
@@ -311,4 +315,10 @@ from data.monthly_repo import (  # noqa: E402
     save_monthly_report_notes,
     get_months_with_data,
     get_expense_data,
+)
+from data.holiday_repo import (  # noqa: E402
+    get_all_holidays,
+    add_holiday,
+    delete_holiday,
+    is_holiday,
 )

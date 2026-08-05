@@ -9,8 +9,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QPushButton,
-    QScrollArea, QFrame, QSizePolicy, QVBoxLayout, QWidget,
+    QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
+    QScrollArea, QFrame, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
@@ -21,11 +21,13 @@ from config.settings import (
     FONT_BODY, FONT_LABEL,
 )
 from core.excel_handler import load_level_catalog
-from core.models import SchoolSettings
+from core.models import Holiday, SchoolSettings
 from data.database import (
+    add_holiday, delete_holiday, get_all_holidays,
     get_document_export_format, get_level_preferences, get_school_settings,
     save_document_export_format, save_level_preferences, save_school_settings,
 )
+from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
 _PAGE_BG = "#f5f5f0"
@@ -43,6 +45,7 @@ _GRP_LEVELS     = "المستويات المستعملة"
 _GRP_LOGO       = "شعار المؤسسة"
 _GRP_EXPORT     = "تصدير الوثائق"
 _GRP_BACKUP     = "النسخ الاحتياطي"
+_GRP_HOLIDAYS   = "أيام العطل"
 _BTN_SAVE       = "حفظ التغييرات"
 _BTN_SAVE_ICON  = "💾"
 _BTN_LOGO       = "اختيار صورة الشعار"
@@ -53,6 +56,22 @@ _MSG_SAVED      = "تم حفظ الإعدادات بنجاح."
 _MSG_REQUIRED   = "الحقول التالية مطلوبة:\n• اسم المؤسسة\n• السنة الدراسية\n• اسم المدير"
 _MSG_LOGO_OK    = "تم تحديث الشعار بنجاح."
 _MSG_BACKUP_OK  = "تم إنشاء النسخة الاحتياطية بنجاح."
+
+# ── Holidays ──────────────────────────────────────────────────────────────
+_HOLIDAYS_NOTE = (
+    "أضف الأيام التي تعرف مسبقًا أن المطعمة ستكون فيها مغلقة (عطلة، توقف "
+    "استثنائي...). تساعد هذه اللائحة في تمييز \"يوم عطلة\" عن \"يوم نسي فيه "
+    "إدخال البيانات\" عند توليد الوثائق لعدة أيام دفعة واحدة."
+)
+_HOLIDAYS_HEADERS = ["التاريخ", "السبب", ""]
+_HOLIDAY_LABEL_PLACEHOLDER = "سبب العطلة (اختياري)"
+_BTN_ADD_HOLIDAY = "إضافة"
+_BTN_ADD_HOLIDAY_ICON = "➕"
+_BTN_DELETE_HOLIDAY = "🗑"
+_HOLIDAY_EMPTY = "لا توجد أيام عطل مضافة."
+_HOLIDAY_DUPLICATE = "هذا التاريخ مضاف مسبقًا. تم تحديث السبب."
+_HOLIDAY_DEL_CONFIRM_TITLE = "تأكيد الحذف"
+_HOLIDAY_DEL_CONFIRM = "حذف هذا اليوم من لائحة العطل؟"
 
 
 def _field(text: str = "", placeholder: str = "") -> QLineEdit:
@@ -166,6 +185,7 @@ class SettingsScreen(QWidget):
         self._build_levels_section()
         self._build_logo_section()
         self._build_export_format_section()
+        self._build_holidays_section()
         self._build_backup_section()
         self._form_layout.addStretch()
 
@@ -434,6 +454,78 @@ class SettingsScreen(QWidget):
         layout.addWidget(backup_btn, alignment=Qt.AlignmentFlag.AlignRight)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
 
+    def _build_holidays_section(self) -> None:
+        grp = QGroupBox(_GRP_HOLIDAYS)
+        grp.setMinimumWidth(760)
+        grp.setMaximumWidth(1120)
+        grp.setStyleSheet(f"""
+            QGroupBox {{
+                background:{_PANEL_BG};
+                font-weight:bold; font-size:{FONT_BODY}px; color:{_INK};
+                border:1px solid {_PANEL_BORDER}; border-radius:16px;
+                margin-top:14px; padding:14px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin:margin; subcontrol-position:top right;
+                padding:0 8px; right:14px;
+            }}
+        """)
+        layout = QVBoxLayout(grp)
+        layout.setSpacing(10)
+
+        note = QLabel(_HOLIDAYS_NOTE)
+        note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        add_row = QHBoxLayout()
+        self._holiday_date = DateInput()
+        self._holiday_label = QLineEdit()
+        self._holiday_label.setPlaceholderText(_HOLIDAY_LABEL_PLACEHOLDER)
+        self._holiday_label.setStyleSheet(
+            f"background:white; color:{COLOR_TEXT_PRIMARY}; border:1px solid {_PANEL_BORDER};"
+            f"border-radius:10px; padding:4px 10px; font-size:{FONT_BODY}px;"
+        )
+        add_btn = _section_btn(_BTN_ADD_HOLIDAY, COLOR_ACCENT, icon=_BTN_ADD_HOLIDAY_ICON)
+        add_btn.clicked.connect(self._on_add_holiday)
+        add_row.addWidget(self._holiday_date)
+        add_row.addWidget(self._holiday_label, 1)
+        add_row.addWidget(add_btn)
+        layout.addLayout(add_row)
+
+        self._holidays_table = QTableWidget(0, len(_HOLIDAYS_HEADERS))
+        self._holidays_table.setHorizontalHeaderLabels(_HOLIDAYS_HEADERS)
+        self._holidays_table.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self._holidays_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._holidays_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._holidays_table.verticalHeader().setVisible(False)
+        self._holidays_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self._holidays_table.horizontalHeader().setStretchLastSection(True)
+        self._holidays_table.setMinimumHeight(160)
+        self._holidays_table.setStyleSheet(f"""
+            QTableWidget {{
+                border:1px solid {_PANEL_BORDER}; border-radius:8px;
+                font-size:{FONT_LABEL}px; background:white;
+                gridline-color:{_PANEL_BORDER};
+            }}
+            QHeaderView::section {{
+                background:{COLOR_ACCENT}; color:white;
+                padding:8px 8px; border:none; font-weight:bold;
+            }}
+            QTableWidget::item {{ padding:5px 8px; }}
+        """)
+        layout.addWidget(self._holidays_table)
+
+        self._holidays_empty_lbl = QLabel(_HOLIDAY_EMPTY)
+        self._holidays_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._holidays_empty_lbl.setStyleSheet(
+            f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px; padding:8px;"
+        )
+        layout.addWidget(self._holidays_empty_lbl)
+
+        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._refresh_holidays_table()
+
     # ── Load / Save ────────────────────────────────────────────────────────
 
     def _load_current_settings(self) -> None:
@@ -612,3 +704,42 @@ class SettingsScreen(QWidget):
             QMessageBox.information(self, "تم", _MSG_BACKUP_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")
+
+    # ── Holidays ───────────────────────────────────────────────────────────
+
+    def _refresh_holidays_table(self) -> None:
+        holidays = get_all_holidays()
+        self._holidays_empty_lbl.setVisible(not holidays)
+        self._holidays_table.setVisible(bool(holidays))
+        self._holidays_table.setRowCount(len(holidays))
+        self._holidays_table.verticalHeader().setDefaultSectionSize(34)
+        for row, holiday in enumerate(holidays):
+            self._holidays_table.setItem(row, 0, QTableWidgetItem(holiday.date))
+            self._holidays_table.setItem(row, 1, QTableWidgetItem(holiday.label))
+            delete_btn = IconButton(
+                _BTN_DELETE_HOLIDAY, bg=COLOR_DANGER, text_color="white",
+                border_radius=6, padding_h=8, font_size=12, bold=False, min_height=24,
+            )
+            delete_btn.setFixedWidth(40)
+            delete_btn.clicked.connect(lambda _checked=False, d=holiday.date: self._on_delete_holiday(d))
+            self._holidays_table.setCellWidget(row, 2, delete_btn)
+
+    def _on_add_holiday(self) -> None:
+        date_str = self._holiday_date.date().toString("yyyy-MM-dd")
+        label = self._holiday_label.text().strip()
+        was_duplicate = any(h.date == date_str for h in get_all_holidays())
+        add_holiday(Holiday(date=date_str, label=label))
+        self._holiday_label.clear()
+        self._refresh_holidays_table()
+        if was_duplicate:
+            QMessageBox.information(self, "تنبيه", _HOLIDAY_DUPLICATE)
+
+    def _on_delete_holiday(self, date_str: str) -> None:
+        reply = QMessageBox.question(
+            self, _HOLIDAY_DEL_CONFIRM_TITLE, _HOLIDAY_DEL_CONFIRM,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            delete_holiday(date_str)
+            self._refresh_holidays_table()

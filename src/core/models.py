@@ -315,3 +315,13 @@ class Violation:
     reported_by: str = ""       # staff member who reported it
     student_id: Optional[int] = None   # FK → students.id (nullable)
     id: Optional[int] = None
+
+
+@dataclass
+class Holiday:
+    """A day the cafeteria is known to be closed in advance (weekend,
+    ministry-set break, or a rare exception like roads blocked by snow).
+    One row per calendar date — used to tell "closed" apart from "someone
+    forgot to enter data" in batch exports and monthly summaries."""
+    date: str    # YYYY-MM-DD
+    label: str = ""  # e.g. "عطلة نصف السنة"
