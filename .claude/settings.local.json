@@ -246,7 +246,11 @@
       "Bash(.venv/bin/python scripts/seed_test_db.py)",
       "Bash(MATAMA_DB_PATH=\"/home/abbdo/Downloads/intren--main/matama_test.db\" .venv/bin/python scripts/seed_test_db.py)",
       "Bash(unset MATAMA_DB_PATH)",
-      "Bash(QT_QPA_PLATFORM=offscreen timeout 60 .venv/bin/python -m unittest discover -s tests)"
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 60 .venv/bin/python -m unittest discover -s tests)",
+      "Bash(.venv/bin/python -m py_compile src/ui/batch_export.py)",
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 60 .venv/bin/python -m unittest tests.test_batch_export -v)",
+      "Bash(.venv/bin/python -m py_compile src/ui/daily_absence_screen.py src/ui/daily_contact_screen.py src/ui/batch_export.py)",
+      "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/contact_buttons*.png /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/absence_buttons.png /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/contact_actions_crop.png *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
