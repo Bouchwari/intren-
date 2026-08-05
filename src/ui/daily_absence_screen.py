@@ -20,12 +20,15 @@ from config.settings import (
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
+import datetime
+
 from core.attendance_estimate import EstimateResult, estimate_absence
 from core.contact_counts import count_students
 from core.models import DailyAbsence
 from data.database import (
-    get_all_students, get_day_absences, get_recent_absences, save_daily_absence,
+    get_all_students, get_day_absences, get_recent_absences, is_holiday, save_daily_absence,
 )
+from ui.batch_export import run_batch_generate_data
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -58,6 +61,8 @@ _HDR_HISTORY    = ["التاريخ", "الوجبة",
                    "معلمون (ك)", "معلمون (مت)", "الإجمالي"]
 _SAVED_OK       = "تم حفظ ورقة الغياب بنجاح."
 _TOAST_NO_STUDENTS = "لا يوجد تلاميذ في اللائحة — استورد اللائحة أولاً من صفحة التلاميذ."
+_BTN_BATCH_GENERATE = "توليد الأرقام لعدة أيام"
+_BTN_BATCH_GENERATE_ICON = "🎲"
 _ESTIMATE_HISTORY_LIMIT = 900
 _CONFIDENCE_LABELS = {"low": "منخفضة", "medium": "متوسطة", "high": "عالية"}
 _ESTIMATE_NOTE_LOW = (
@@ -258,6 +263,40 @@ class _AbsenceCard(QGroupBox):
         )
 
 
+def _counts_to_absences(date_str: str, counts: Dict[str, Dict[str, int]]) -> List[DailyAbsence]:
+    """Same per-meal mapping DailyAbsenceScreen._apply_generated_counts uses
+    to fill the live cards, but building DailyAbsence rows to save directly
+    instead — used by batch data generation, which has no open cards to
+    write into."""
+    primary = counts.get("primary", {})
+    collegial = counts.get("collegial", {})
+    qualifying = counts.get("qualifying", {})
+    monitors = counts.get("monitors", {})
+    return [
+        DailyAbsence(
+            date=date_str, meal_type=MEAL_FTOUR,
+            primary_granted=primary.get("full", 0),
+            collegial_granted=collegial.get("full", 0),
+            qualifying_granted=qualifying.get("full", 0),
+            monitors=monitors.get("full", 0),
+        ),
+        DailyAbsence(
+            date=date_str, meal_type=MEAL_GHADA,
+            primary_granted=primary.get("full", 0), primary_complement=primary.get("lunch", 0),
+            collegial_granted=collegial.get("full", 0), collegial_complement=collegial.get("lunch", 0),
+            qualifying_granted=qualifying.get("full", 0), qualifying_complement=qualifying.get("lunch", 0),
+            monitors=monitors.get("full", 0), monitors_complement=monitors.get("lunch", 0),
+        ),
+        DailyAbsence(
+            date=date_str, meal_type=MEAL_ASHA,
+            primary_granted=primary.get("full", 0),
+            collegial_granted=collegial.get("full", 0),
+            qualifying_granted=qualifying.get("full", 0),
+            monitors=monitors.get("full", 0),
+        ),
+    ]
+
+
 # ── Main screen ───────────────────────────────────────────────────────────────
 
 class DailyAbsenceScreen(QWidget):
@@ -343,6 +382,10 @@ class DailyAbsenceScreen(QWidget):
             row.addWidget(btn)
 
         row.addStretch()
+
+        batch_generate_btn = self._btn(_BTN_BATCH_GENERATE, "#7c3aed", icon=_BTN_BATCH_GENERATE_ICON)
+        batch_generate_btn.clicked.connect(self._on_batch_generate_data)
+        row.addWidget(batch_generate_btn)
 
         save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS, icon=_BTN_SAVE_ICON)
         save_btn.clicked.connect(self._on_save)
@@ -546,6 +589,30 @@ class DailyAbsenceScreen(QWidget):
             qualifying.get("full", 0), 0,
             monitors.get("full", 0), 0,
         )
+
+    def _on_batch_generate_data(self) -> None:
+        """Auto-fill AND SAVE real absence numbers for every date in a
+        range that has none yet — the same estimator behind "توليد تلقائي"
+        (median of real historical same-weekday rates, not random), just
+        run over many days instead of one. Never overwrites a day that
+        already has saved data, and skips real holidays."""
+        students = get_all_students()
+        if not students:
+            QMessageBox.information(self, "تنبيه", _TOAST_NO_STUDENTS)
+            return
+        active_roster = self._flatten_counts(count_students(students))
+        history = get_recent_absences(limit=_ESTIMATE_HISTORY_LIMIT)
+
+        def generate_day(date_str: str) -> bool:
+            if is_holiday(date_str) or get_day_absences(date_str):
+                return False
+            target_date = datetime.date.fromisoformat(date_str)
+            result = estimate_absence(active_roster, history, target_date, MEAL_GHADA)
+            for absence in _counts_to_absences(date_str, self._unflatten_counts(result.counts)):
+                save_daily_absence(absence)
+            return True
+
+        run_batch_generate_data(self, generate_day)
 
     def _on_history_click(self) -> None:
         row = self._history_table.currentRow()

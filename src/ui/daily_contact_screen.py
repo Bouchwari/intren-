@@ -37,7 +37,7 @@ from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
-from ui.batch_export import run_batch_export
+from ui.batch_export import run_batch_export, run_batch_generate_data
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
@@ -51,6 +51,7 @@ from data.database import (
     get_recent_contacts,
     get_recent_daily_contact_documents,
     get_school_settings,
+    is_holiday,
     record_daily_contact_document,
     save_daily_contact_document_number_draft,
     save_daily_contact,
@@ -89,6 +90,9 @@ _BTN_EXPORT_DOC = "طباعة وتسجيل"
 _BTN_EXPORT_DOC_ICON = "🖨"
 _BTN_BATCH_EXPORT = "توليد لعدة أيام"
 _BTN_BATCH_EXPORT_ICON = "🗂"
+_BTN_BATCH_GENERATE = "توليد الأرقام لعدة أيام"
+_BTN_BATCH_GENERATE_ICON = "🎲"
+_TOAST_BATCH_NO_STUDENTS = "لا يوجد تلاميذ مسجلون — لا يمكن توليد أرقام تلقائية."
 _DOCX_DIALOG_TITLE = "تحميل ورقة الاتصال اليومية"
 _DOCX_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _DOCX_SAVED_OK = "تم تحميل ورقة الاتصال اليومية بنجاح."
@@ -891,6 +895,40 @@ class _MealCard(QGroupBox):
         )
 
 
+def _counts_to_contacts(date_str: str, counts: Dict[str, Dict[str, int]]) -> List[DailyContact]:
+    """Same per-meal mapping DailyContactScreen._apply_generated_counts uses
+    to fill the live cards, but building DailyContact rows to save directly
+    instead — used by batch data generation, which has no open cards to
+    write into."""
+    primary = counts.get("primary", {})
+    collegial = counts.get("collegial", {})
+    qualifying = counts.get("qualifying", {})
+    monitors = counts.get("monitors", {})
+    return [
+        DailyContact(
+            date=date_str, meal_type=MEAL_FTOUR,
+            primary_granted=primary.get("full", 0),
+            collegial_granted=collegial.get("full", 0),
+            qualifying_granted=qualifying.get("full", 0),
+            monitors=monitors.get("full", 0),
+        ),
+        DailyContact(
+            date=date_str, meal_type=MEAL_GHADA,
+            primary_granted=primary.get("full", 0), primary_complement=primary.get("lunch", 0),
+            collegial_granted=collegial.get("full", 0), collegial_complement=collegial.get("lunch", 0),
+            qualifying_granted=qualifying.get("full", 0), qualifying_complement=qualifying.get("lunch", 0),
+            monitors=monitors.get("full", 0), monitors_complement=monitors.get("lunch", 0),
+        ),
+        DailyContact(
+            date=date_str, meal_type=MEAL_ASHA,
+            primary_granted=primary.get("full", 0),
+            collegial_granted=collegial.get("full", 0),
+            qualifying_granted=qualifying.get("full", 0),
+            monitors=monitors.get("full", 0),
+        ),
+    ]
+
+
 # ── Main screen ───────────────────────────────────────────────────────────────
 
 class DailyContactScreen(QWidget):
@@ -977,9 +1015,12 @@ class DailyContactScreen(QWidget):
         export_btn.clicked.connect(self._on_export)
         batch_btn = self._btn(_BTN_BATCH_EXPORT, _INK, icon=_BTN_BATCH_EXPORT_ICON)
         batch_btn.clicked.connect(self._on_batch_export)
+        batch_generate_btn = self._btn(_BTN_BATCH_GENERATE, _INK, icon=_BTN_BATCH_GENERATE_ICON)
+        batch_generate_btn.clicked.connect(self._on_batch_generate_data)
         actions_row.addWidget(save_btn)
         actions_row.addWidget(export_btn)
         actions_row.addWidget(batch_btn)
+        actions_row.addWidget(batch_generate_btn)
         actions.layout().addLayout(actions_row)
 
         document = self._toolbar_group(_LBL_DOCUMENT)
@@ -1542,6 +1583,30 @@ class DailyContactScreen(QWidget):
             return True
 
         run_batch_export(self, generate_day)
+
+    def _on_batch_generate_data(self) -> None:
+        """Auto-fill AND SAVE real contact numbers for every date in a
+        range that has none yet — the same estimator behind "توليد تلقائي"
+        (median of real historical same-weekday rates, not random), just
+        run over many days instead of one. Never overwrites a day that
+        already has saved data, and skips real holidays."""
+        students = get_all_students()
+        if not students:
+            QMessageBox.information(self, "تنبيه", _TOAST_BATCH_NO_STUDENTS)
+            return
+        active_roster = self._flatten_counts(count_students(students))
+        history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
+
+        def generate_day(date_str: str) -> bool:
+            if is_holiday(date_str) or get_day_contacts(date_str):
+                return False
+            target_date = datetime.date.fromisoformat(date_str)
+            result = estimate_attendance(active_roster, history, target_date, MEAL_GHADA)
+            for contact in _counts_to_contacts(date_str, self._unflatten_counts(result.counts)):
+                save_daily_contact(contact)
+            return True
+
+        run_batch_generate_data(self, generate_day)
 
     def _on_save(self) -> None:
         date_str = self._selected_date_str()

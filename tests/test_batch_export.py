@@ -16,9 +16,10 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
 from config.settings import EXPORT_FORMAT_PDF
-from core.models import DailyAbsence, DailyContact
+from core.models import DailyAbsence, DailyContact, Holiday, Student
 from data import database
 from ui import batch_export as be
+from ui import daily_absence_screen as das
 from ui import daily_contact_screen as dcs
 from ui import daily_report_screen as drs
 
@@ -175,6 +176,101 @@ class BatchExportScreenIntegrationTests(unittest.TestCase):
             screen._on_batch_export()
 
         self.assertIsNone(database.get_daily_report("2026-06-01"))
+        screen.close()
+
+
+class BatchGenerateDataTests(unittest.TestCase):
+    """توليد الأرقام لعدة أيام — auto-fill AND SAVE real numbers (the same
+    estimator behind توليد تلقائي) for every day in a range that has none
+    yet, instead of one day at a time."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self._db_tmpdir = tempfile.TemporaryDirectory()
+        self._original_db_path = database.DB_PATH
+        database.DB_PATH = Path(self._db_tmpdir.name) / "test_matama.db"
+        database.init_database()
+        for name in ("تلميذ 1", "تلميذ 2", "تلميذ 3"):
+            database.add_student(Student(
+                full_name=name, student_class="الأولى إعدادي", grant_type="منحة كاملة",
+            ))
+        self._original_info = QMessageBox.information
+        QMessageBox.information = staticmethod(lambda *a, **k: None)
+
+    def tearDown(self) -> None:
+        QMessageBox.information = self._original_info
+        database.DB_PATH = self._original_db_path
+        self._db_tmpdir.cleanup()
+
+    def test_daily_contact_fills_and_saves_every_day_in_range(self) -> None:
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), "/unused"):
+            screen._on_batch_generate_data()
+
+        for day in ("2026-06-01", "2026-06-02", "2026-06-03"):
+            contacts = database.get_day_contacts(day)
+            self.assertEqual({c.meal_type for c in contacts}, {dcs.MEAL_FTOUR, dcs.MEAL_GHADA, dcs.MEAL_ASHA})
+        screen.close()
+
+    def test_daily_contact_never_overwrites_a_day_that_already_has_data(self) -> None:
+        database.save_daily_contact(DailyContact(
+            date="2026-06-02", meal_type=dcs.MEAL_GHADA, collegial_granted=999,
+        ))
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), "/unused"):
+            screen._on_batch_generate_data()
+
+        untouched = [c for c in database.get_day_contacts("2026-06-02") if c.meal_type == dcs.MEAL_GHADA][0]
+        self.assertEqual(untouched.collegial_granted, 999)
+        screen.close()
+
+    def test_daily_contact_skips_a_real_holiday(self) -> None:
+        database.add_holiday(Holiday(date="2026-06-02", label="عطلة تجريبية"))
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), "/unused"):
+            screen._on_batch_generate_data()
+
+        self.assertEqual(database.get_day_contacts("2026-06-02"), [])
+        self.assertNotEqual(database.get_day_contacts("2026-06-01"), [])
+        screen.close()
+
+    def test_daily_absence_fills_and_saves_every_day_in_range(self) -> None:
+        screen = das.DailyAbsenceScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 2), "/unused"):
+            screen._on_batch_generate_data()
+
+        for day in ("2026-06-01", "2026-06-02"):
+            absences = database.get_day_absences(day)
+            self.assertEqual({a.meal_type for a in absences}, {das.MEAL_FTOUR, das.MEAL_GHADA, das.MEAL_ASHA})
+        screen.close()
+
+    def test_daily_absence_never_overwrites_a_day_that_already_has_data(self) -> None:
+        database.save_daily_absence(DailyAbsence(
+            date="2026-06-01", meal_type=das.MEAL_GHADA, collegial_granted=7,
+        ))
+
+        screen = das.DailyAbsenceScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), "/unused"):
+            screen._on_batch_generate_data()
+
+        untouched = [a for a in database.get_day_absences("2026-06-01") if a.meal_type == das.MEAL_GHADA][0]
+        self.assertEqual(untouched.collegial_granted, 7)
+        screen.close()
+
+    def test_no_students_shows_message_and_saves_nothing(self) -> None:
+        database.DB_PATH = Path(self._db_tmpdir.name) / "empty_roster.db"
+        database.init_database()
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), "/unused"):
+            screen._on_batch_generate_data()
+
+        self.assertEqual(database.get_day_contacts("2026-06-01"), [])
         screen.close()
 
 

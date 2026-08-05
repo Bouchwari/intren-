@@ -1,14 +1,16 @@
 """
 src/ui/batch_export.py
-Shared "generate for a range of days" flow: pick a date range, pick a
-folder, then call a per-day export callback once for every date in the
-range — used by daily_contact_screen.py and daily_report_screen.py's
-"توليد لعدة أيام" buttons instead of exporting one date at a time.
+Shared "do this for a range of days" flow. Two entry points share the
+same من/إلى date picker and per-day loop:
 
-Read-only: it only writes files. It never saves/records anything to the
-database, so it can't advance a document-number counter or silently
-overwrite a saved report — each date's export is built from whatever is
-already saved for it.
+- run_batch_export(): pick a range, then a folder, then write one file
+  per date — used by the "توليد لعدة أيام" export buttons. Read-only: it
+  only writes files, never saves/records to the database.
+- run_batch_generate_data(): pick a range, then call a callback once per
+  date that fills in and SAVES real numbers (e.g. the same estimator
+  behind "توليد تلقائي", just run over many days) — used by the
+  "توليد الأرقام لعدة أيام" buttons. No folder step, since nothing is
+  written to disk.
 """
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -31,6 +33,7 @@ _FOLDER_DIALOG_TITLE = "اختر المجلد لحفظ الملفات"
 _RANGE_ORDER_ERR = "تاريخ \"إلى\" يجب أن يكون بعد تاريخ \"من\"."
 _RESULT_TITLE = "تم"
 _NO_DAYS_MSG = "لا توجد بيانات محفوظة في هذا النطاق — لم يتم إنشاء أي ملف."
+_NO_DAYS_GENERATED_MSG = "لم يتم توليد أي يوم — كل الأيام في هذا النطاق إما بها بيانات مسبقًا أو أيام عطل."
 
 
 class _DateRangeDialog(QDialog):
@@ -90,6 +93,35 @@ class _DateRangeDialog(QDialog):
         return self._range
 
 
+def pick_date_range(parent: QWidget) -> Optional[Tuple[QDate, QDate]]:
+    """Show the من/إلى dialog, return the chosen (start, end) inclusive
+    range or None if cancelled. Shared first step of every batch action."""
+    dialog = _DateRangeDialog(parent)
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+    return dialog.chosen_range()
+
+
+def _run_over_range(
+    start: QDate, end: QDate, process_day: Callable[[str], bool]
+) -> Tuple[int, list]:
+    """Call process_day(date_str) once per date in [start, end] inclusive.
+    Returns (done_count, failed_dates) — a date that raises counts as
+    failed but doesn't stop the rest."""
+    done = 0
+    failed_dates: list = []
+    date = start
+    while date <= end:
+        date_str = date.toString("yyyy-MM-dd")
+        try:
+            if process_day(date_str):
+                done += 1
+        except Exception:
+            failed_dates.append(date_str)
+        date = date.addDays(1)
+    return done, failed_dates
+
+
 def run_batch_export(
     parent: QWidget,
     generate_day: Callable[[str, Path], bool],
@@ -99,10 +131,7 @@ def run_batch_export(
     wrote a file, False if that date had nothing to export — it should not
     raise for "no data", only for a real failure. Shows a summary at the
     end; a date that raises is counted as failed but doesn't stop the rest."""
-    dialog = _DateRangeDialog(parent)
-    if dialog.exec() != QDialog.DialogCode.Accepted:
-        return
-    date_range = dialog.chosen_range()
+    date_range = pick_date_range(parent)
     if date_range is None:
         return
     start, end = date_range
@@ -113,17 +142,7 @@ def run_batch_export(
     folder = Path(folder_str)
 
     total_days = start.daysTo(end) + 1
-    done = 0
-    failed_dates: list[str] = []
-    date = start
-    while date <= end:
-        date_str = date.toString("yyyy-MM-dd")
-        try:
-            if generate_day(date_str, folder):
-                done += 1
-        except Exception:
-            failed_dates.append(date_str)
-        date = date.addDays(1)
+    done, failed_dates = _run_over_range(start, end, lambda date_str: generate_day(date_str, folder))
 
     if done == 0 and not failed_dates:
         QMessageBox.information(parent, _RESULT_TITLE, _NO_DAYS_MSG)
@@ -135,4 +154,35 @@ def run_batch_export(
         lines.append(f"تم تجاوز {skipped} يوم بلا بيانات محفوظة.")
     if failed_dates:
         lines.append(f"تعذر إنشاء {len(failed_dates)} ملف: " + "، ".join(failed_dates))
+    QMessageBox.information(parent, _RESULT_TITLE, "\n".join(lines))
+
+
+def run_batch_generate_data(
+    parent: QWidget,
+    generate_day: Callable[[str], bool],
+) -> None:
+    """Ask for a date range, then call generate_day(date_str) once per date
+    (inclusive) — no folder step, since this saves numbers to the database
+    instead of writing files. generate_day must return True if it filled
+    in and saved that date, False if it was skipped (already has data, or
+    a real holiday) — it should not raise for a normal skip, only for a
+    real failure. Shows a summary at the end."""
+    date_range = pick_date_range(parent)
+    if date_range is None:
+        return
+    start, end = date_range
+
+    total_days = start.daysTo(end) + 1
+    done, failed_dates = _run_over_range(start, end, generate_day)
+
+    if done == 0 and not failed_dates:
+        QMessageBox.information(parent, _RESULT_TITLE, _NO_DAYS_GENERATED_MSG)
+        return
+
+    skipped = total_days - done - len(failed_dates)
+    lines = [f"تم توليد أرقام {done} يوم من أصل {total_days} يوم."]
+    if skipped:
+        lines.append(f"تم تجاوز {skipped} يوم (بيانات محفوظة مسبقًا أو يوم عطلة).")
+    if failed_dates:
+        lines.append(f"تعذر توليد {len(failed_dates)} يوم: " + "، ".join(failed_dates))
     QMessageBox.information(parent, _RESULT_TITLE, "\n".join(lines))
