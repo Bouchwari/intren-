@@ -225,7 +225,17 @@
       "Bash(pkill -f \".venv/bin/python src/main.py\")",
       "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/holidays_grouped*.png *)",
       "Bash(rm -f /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/calendar_*.png *)",
-      "Bash(rm -f *)"
+      "Bash(rm -f *)",
+      "Bash(.venv/bin/python -m py_compile src/ui/batch_export.py src/ui/daily_contact_screen.py src/ui/daily_report_screen.py)",
+      "Bash(QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export -v)",
+      "Bash(pkill -f \"unittest tests.test_batch_export\")",
+      "Bash(timeout 60 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export -v)",
+      "Bash(timeout 20 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportCoreTests.test_calls_generate_day_once_per_date_inclusive -v)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(timeout 20 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportCoreTests.test_skipped_days_dont_count_as_done -v)",
+      "Bash(timeout 20 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportCoreTests.test_a_failing_day_is_reported_but_doesnt_stop_the_batch -v)",
+      "Bash(timeout 30 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_batch_export.BatchExportScreenIntegrationTests.test_daily_contact_batch_export_skips_days_with_no_data -v)",
+      "Bash(timeout 60 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
