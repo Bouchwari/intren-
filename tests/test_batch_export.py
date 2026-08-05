@@ -273,6 +273,22 @@ class BatchGenerateDataTests(unittest.TestCase):
         self.assertEqual(database.get_day_contacts("2026-06-01"), [])
         screen.close()
 
+    def test_unclassified_students_warn_instead_of_saving_silent_zeros(self) -> None:
+        """Regression: real students with no القسم (class) assigned made
+        count_students() classify nobody, so batch generate silently saved
+        real rows full of zeros — indistinguishable from doing nothing.
+        Must warn and save nothing instead."""
+        database.DB_PATH = Path(self._db_tmpdir.name) / "unclassified_roster.db"
+        database.init_database()
+        database.add_student(Student(full_name="تلميذ بدون قسم", student_class="", grant_type="full"))
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), "/unused"):
+            screen._on_batch_generate_data()
+
+        self.assertEqual(database.get_day_contacts("2026-06-01"), [])
+        screen.close()
+
 
 if __name__ == "__main__":
     unittest.main()

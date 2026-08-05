@@ -137,6 +137,10 @@ _MODE_AUTO_LABEL = "وضع: توليد تلقائي 🤖"
 _TOAST_MANUAL = "تم التحويل إلى الإدخال اليدوي — يمكنك تعديل الأرقام"
 _TOAST_AUTO = "اضغط تحميل اليوم لتوليد الأرقام تلقائياً"
 _TOAST_NO_STUDENTS = "لا يوجد تلاميذ في اللائحة"
+_TOAST_NO_CLASSIFIED_STUDENTS = (
+    "لم يتم التعرف على قسم أي تلميذ — تأكد من ملء حقل \"القسم\" في لائحة"
+    " التلاميذ، وإلا فسيتم توليد أرقام صفرية."
+)
 _ESTIMATE_HISTORY_LIMIT = 900
 _CONFIDENCE_LABELS = {"low": "منخفضة", "medium": "متوسطة", "high": "عالية"}
 _ESTIMATE_NOTE_LOW = (
@@ -1341,6 +1345,12 @@ class DailyContactScreen(QWidget):
             return
 
         active_roster = self._flatten_counts(count_students(students))
+        if sum(active_roster.values()) == 0:
+            self._apply_generated_counts(empty_counts())
+            self._set_estimate_note(None)
+            self._show_toast(_TOAST_NO_CLASSIFIED_STUDENTS)
+            return
+
         target_date = self._date_edit.date().toPython()
         history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
 
@@ -1595,6 +1605,9 @@ class DailyContactScreen(QWidget):
             QMessageBox.information(self, "تنبيه", _TOAST_BATCH_NO_STUDENTS)
             return
         active_roster = self._flatten_counts(count_students(students))
+        if sum(active_roster.values()) == 0:
+            QMessageBox.information(self, "تنبيه", _TOAST_NO_CLASSIFIED_STUDENTS)
+            return
         history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
 
         def generate_day(date_str: str) -> bool:

@@ -115,6 +115,23 @@ class DailyContactDocumentTests(unittest.TestCase):
         self.assertEqual(asha.monitors, 1)
         screen.close()
 
+    def test_auto_generate_warns_instead_of_silently_saving_zeros(self) -> None:
+        """Regression: real students with no القسم (class) assigned made
+        count_students() classify nobody, so the estimator had zero
+        students to work from and silently produced all-zero numbers —
+        indistinguishable from the button doing nothing at all. Must warn
+        instead of silently generating zeros."""
+        database.add_student(Student(full_name="تلميذ بدون قسم", student_class="", grant_type="full"))
+        screen = daily_contact_screen.DailyContactScreen()
+        screen._on_mode_changed(True)
+
+        screen._on_load_today_clicked()
+
+        self.assertEqual(screen._toast.text(), daily_contact_screen._TOAST_NO_CLASSIFIED_STUDENTS)
+        ghada = screen._cards[daily_contact_screen.MEAL_GHADA].to_contact("2026-06-11")
+        self.assertEqual(ghada.grand_total, 0)
+        screen.close()
+
     def test_copy_previous_fills_cards_from_last_available_day(self) -> None:
         # 2026-06-10 (a Wednesday) has no saved data — the button should
         # still find 2026-06-09, not just look at the literal day before.
