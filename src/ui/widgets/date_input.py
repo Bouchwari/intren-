@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
 from config.settings import ARABIC_MONTHS, COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER
 
 _MONTH_NAMES = ARABIC_MONTHS[1:]  # drop the index-0 "" placeholder
-_WEEKDAY_HEADERS = ["ح", "ن", "ث", "ر", "خ", "ج", "س"]
+# Monday-first, matching Morocco's work week (not the Sunday-first Mashriqi
+# convention) — ن ث ر خ ج س ح = Mon Tue Wed Thu Fri Sat Sun.
+_WEEKDAY_HEADERS = ["ن", "ث", "ر", "خ", "ج", "س", "ح"]
 _BTN_BACK = "رجوع"
 _BTN_APPLY = "تطبيق"
 
@@ -241,7 +243,9 @@ class _CalendarPopup(QFrame):
         year = self._draft_date.year()
         month = self._draft_date.month()
         first_day = QDate(year, month, 1)
-        start_col = first_day.dayOfWeek() % 7
+        # QDate.dayOfWeek() is 1=Monday..7=Sunday, which already matches the
+        # Monday-first _WEEKDAY_HEADERS order, so Monday needs column 0.
+        start_col = (first_day.dayOfWeek() - 1) % 7
         for day in range(1, first_day.daysInMonth() + 1):
             date = QDate(year, month, day)
             position = start_col + day - 1
