@@ -224,6 +224,18 @@ def get_recent_daily_contact_documents(limit: int = 40) -> List[DailyContactDocu
     return [_row_to_contact_document_log(r) for r in rows]
 
 
+def get_document_number_for_date(date: str) -> Optional[int]:
+    """Return the official رقم الوثيقة already assigned to this date (the
+    most recent recorded save/print/batch-export event), or None if this
+    date was never assigned one."""
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT document_number FROM daily_contact_documents WHERE date=? ORDER BY id DESC LIMIT 1",
+            (date,),
+        ).fetchone()
+    return int(row["document_number"]) if row else None
+
+
 # ── Daily absence CRUD ────────────────────────────────────────────────────────
 
 def _row_to_absence(r: sqlite3.Row) -> DailyAbsence:

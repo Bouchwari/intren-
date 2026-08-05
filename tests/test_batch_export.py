@@ -192,6 +192,53 @@ class BatchExportScreenIntegrationTests(unittest.TestCase):
         self.assertIn("1 يوم عطلة", message)
         screen.close()
 
+    def test_daily_contact_batch_export_assigns_a_real_number_when_missing(self) -> None:
+        """Regression: a day filled by توليد الأرقام لعدة أيام has contact
+        data but was never officially "printed", so it had no recorded
+        رقم الوثيقة — the combined PDF showed "...." for it. Batch export
+        must now assign and record a real number for such a day."""
+        database.save_daily_contact(DailyContact(
+            date="2026-06-01", meal_type=dcs.MEAL_GHADA, collegial_granted=5,
+        ))
+        self.assertIsNone(database.get_document_number_for_date("2026-06-01"))
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), self._out_path):
+            screen._on_batch_export()
+
+        assigned = database.get_document_number_for_date("2026-06-01")
+        self.assertIsNotNone(assigned)
+        self.assertGreaterEqual(assigned, 1)
+        screen.close()
+
+    def test_daily_contact_batch_export_keeps_an_already_recorded_number(self) -> None:
+        database.save_daily_contact(DailyContact(
+            date="2026-06-01", meal_type=dcs.MEAL_GHADA, collegial_granted=5,
+        ))
+        database.record_daily_contact_document(
+            "2026-06-01", 42, "print", [DailyContact(date="2026-06-01", meal_type=dcs.MEAL_GHADA, collegial_granted=5)],
+        )
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), self._out_path):
+            screen._on_batch_export()
+
+        self.assertEqual(database.get_document_number_for_date("2026-06-01"), 42)
+        screen.close()
+
+    def test_daily_contact_batch_export_assigns_increasing_numbers_in_date_order(self) -> None:
+        for day in ("2026-06-01", "2026-06-02", "2026-06-03"):
+            database.save_daily_contact(DailyContact(date=day, meal_type=dcs.MEAL_GHADA, collegial_granted=5))
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_path):
+            screen._on_batch_export()
+
+        numbers = [database.get_document_number_for_date(d) for d in ("2026-06-01", "2026-06-02", "2026-06-03")]
+        self.assertEqual(numbers, sorted(numbers))
+        self.assertEqual(len(set(numbers)), 3)
+        screen.close()
+
     @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
     def test_daily_report_batch_export_makes_one_combined_pdf(self) -> None:
         database.save_daily_contact(DailyContact(

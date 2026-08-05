@@ -293,6 +293,7 @@ from data.daily_repo import (  # noqa: E402
     save_daily_contact_document_number_draft,
     record_daily_contact_document,
     get_recent_daily_contact_documents,
+    get_document_number_for_date,
     get_day_absences,
     save_daily_absence,
     get_recent_absences,

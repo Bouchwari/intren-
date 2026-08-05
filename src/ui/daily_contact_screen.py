@@ -47,6 +47,7 @@ from data.database import (
     get_all_students,
     get_daily_contact_document_number_draft,
     get_document_export_format,
+    get_document_number_for_date,
     get_last_contacts_before,
     get_next_daily_contact_document_number,
     get_recent_contacts,
@@ -130,6 +131,7 @@ _HISTORY_DATE_COLUMN = 1
 _ACTION_LABELS = {
     "save": "حفظ",
     "print": "طباعة",
+    "batch_export": "توليد لعدة أيام",
 }
 _MODE_MANUAL = "إدخال يدوي"
 _MODE_AUTO = "توليد تلقائي"
@@ -1578,9 +1580,14 @@ class DailyContactScreen(QWidget):
         PDF — one page per day, like a mail merge, instead of a separate
         file per day. A real holiday or a day with no saved data still
         gets its own page explaining why, instead of silently vanishing.
-        Read-only: unlike _on_export, this never saves/records anything —
-        it only exports what's already in the database, so it can't
-        advance the document-number counter or touch saved data."""
+
+        Unlike _on_export this never touches saved contact numbers or the
+        منحة/غياب data — but a day that was never officially numbered
+        before (e.g. its numbers came from "توليد الأرقام لعدة أيام"
+        instead of the single-day طباعة وتسجيل) DOES get assigned and
+        permanently recorded a real رقم الوثيقة here, in date order, so
+        every page in the printed packet has a real number instead of
+        "....". A day that already has a recorded number keeps it."""
         settings = get_school_settings()
         holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
@@ -1598,8 +1605,13 @@ class DailyContactScreen(QWidget):
                     "لم يتم تسجيل بيانات ورقة الاتصال لهذا اليوم بعد.",
                 )
                 return "empty"
+            document_number = get_document_number_for_date(date_str)
+            if document_number is None:
+                document_number = get_next_daily_contact_document_number()
+                record_daily_contact_document(date_str, document_number, "batch_export", contacts)
             _draw_daily_contact_pdf_page(
-                painter, page_w, page_h, date_str, contacts, place=settings.city if settings else "",
+                painter, page_w, page_h, date_str, contacts,
+                document_number=str(document_number), place=settings.city if settings else "",
             )
             return "data"
 
