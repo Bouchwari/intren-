@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -6,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from PySide6.QtCore import QDate
+from PySide6.QtGui import QPageLayout
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
 
@@ -22,6 +25,16 @@ from ui import batch_export as be
 from ui import daily_absence_screen as das
 from ui import daily_contact_screen as dcs
 from ui import daily_report_screen as drs
+
+_HAS_PDFINFO = shutil.which("pdfinfo") is not None
+
+
+def _pdf_page_count(path: Path) -> int:
+    result = subprocess.run(["pdfinfo", str(path)], capture_output=True, text=True, check=True)
+    for line in result.stdout.splitlines():
+        if line.startswith("Pages:"):
+            return int(line.split(":")[1].strip())
+    raise RuntimeError(f"could not find page count in pdfinfo output for {path}")
 
 
 class _FakeRangeDialog:
@@ -45,60 +58,80 @@ class _FakeRangeDialog:
 
 class _AcceptRange(ExitStack):
     """Patches the date-range dialog to accept the given range immediately
-    and the folder picker to return `folder`, so run_batch_export() runs
-    headless. `.info` is the mocked QMessageBox.information, for asserting
-    on the summary message shown at the end."""
+    and the save-file picker to return `path`, so run_batch_combined_pdf()
+    (and run_batch_generate_data(), which never opens a file dialog at all)
+    run headless. `.info` is the mocked QMessageBox.information, for
+    asserting on the summary message shown at the end."""
 
-    def __init__(self, start: QDate, end: QDate, folder: str) -> None:
+    def __init__(self, start: QDate, end: QDate, path: str) -> None:
         super().__init__()
-        self._start, self._end, self._folder = start, end, folder
+        self._start, self._end, self._path = start, end, path
         self.info = None
 
     def __enter__(self):
         super().__enter__()
         self.enter_context(patch.object(be, "_DateRangeDialog", _FakeRangeDialog(self._start, self._end)))
-        self.enter_context(patch.object(QFileDialog, "getExistingDirectory", return_value=self._folder))
+        self.enter_context(patch.object(QFileDialog, "getSaveFileName", return_value=(self._path, "PDF (*.pdf)")))
         self.info = self.enter_context(patch.object(QMessageBox, "information", return_value=None))
         return self
 
 
 class BatchExportCoreTests(unittest.TestCase):
+    """run_batch_combined_pdf()'s own mechanics, independent of any screen:
+    one shared PDF, one page per date, nothing silently skipped."""
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
+        self._out_path = str(Path(self._tmpdir.name) / "combined.pdf")
 
     def tearDown(self) -> None:
         self._tmpdir.cleanup()
 
-    def test_calls_generate_day_once_per_date_inclusive(self) -> None:
+    def test_calls_build_page_once_per_date_inclusive(self) -> None:
         seen = []
-        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._tmpdir.name):
-            be.run_batch_export(None, lambda date_str, folder: seen.append(date_str) or True)
+
+        def build_page(painter, page_w, page_h, date_str):
+            seen.append(date_str)
+            return "data"
+
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_path):
+            be.run_batch_combined_pdf(None, "test", QPageLayout.Orientation.Portrait, build_page)
         self.assertEqual(seen, ["2026-06-01", "2026-06-02", "2026-06-03"])
 
-    def test_skipped_days_dont_count_as_done(self) -> None:
-        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 2), self._tmpdir.name) as ctx:
-            be.run_batch_export(None, lambda date_str, folder: date_str == "2026-06-01")
+    @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
+    def test_produces_one_pdf_with_one_page_per_date(self) -> None:
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_path):
+            be.run_batch_combined_pdf(None, "test", QPageLayout.Orientation.Portrait, lambda *a: "data")
+        self.assertEqual(_pdf_page_count(Path(self._out_path)), 3)
+
+    def test_category_counts_appear_in_summary(self) -> None:
+        categories = iter(["data", "holiday", "empty"])
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_path) as ctx:
+            be.run_batch_combined_pdf(
+                None, "test", QPageLayout.Orientation.Portrait, lambda *a: next(categories),
+            )
         message = ctx.info.call_args[0][2]
-        self.assertIn("1 ملف من أصل 2 يوم", message)
+        self.assertIn("1 يوم ببيانات فعلية", message)
+        self.assertIn("1 يوم عطلة", message)
+        self.assertIn("1 يوم بلا بيانات مسجلة", message)
 
     def test_a_failing_day_is_reported_but_doesnt_stop_the_batch(self) -> None:
         seen = []
 
-        def generate_day(date_str: str, folder: Path) -> bool:
+        def build_page(painter, page_w, page_h, date_str):
             seen.append(date_str)
             if date_str == "2026-06-02":
                 raise RuntimeError("boom")
-            return True
+            return "data"
 
-        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._tmpdir.name) as ctx:
-            be.run_batch_export(None, generate_day)
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_path) as ctx:
+            be.run_batch_combined_pdf(None, "test", QPageLayout.Orientation.Portrait, build_page)
         self.assertEqual(seen, ["2026-06-01", "2026-06-02", "2026-06-03"])
         message = ctx.info.call_args[0][2]
-        self.assertIn("2 ملف من أصل 3", message)
         self.assertIn("2026-06-02", message)
 
 
@@ -110,11 +143,13 @@ class BatchExportScreenIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self._db_tmpdir = tempfile.TemporaryDirectory()
         self._out_tmpdir = tempfile.TemporaryDirectory()
+        self._out_path = str(Path(self._out_tmpdir.name) / "combined.pdf")
         self._original_db_path = database.DB_PATH
         database.DB_PATH = Path(self._db_tmpdir.name) / "test_matama.db"
         database.init_database()
-        # Skip the "PDF or Word?" prompt _on_batch_export shows when no
-        # preference is saved — it's a real modal dialog, would hang here.
+        # Legacy PDF-or-Word preference no longer read by batch export
+        # (combined mode is PDF-only), kept here in case a future format
+        # choice is added — harmless no-op today.
         database.save_document_export_format(EXPORT_FORMAT_PDF)
         self._original_info = QMessageBox.information
         QMessageBox.information = staticmethod(lambda *a, **k: None)
@@ -125,42 +160,53 @@ class BatchExportScreenIntegrationTests(unittest.TestCase):
         self._db_tmpdir.cleanup()
         self._out_tmpdir.cleanup()
 
-    def test_daily_contact_batch_export_skips_days_with_no_data(self) -> None:
+    @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
+    def test_daily_contact_batch_export_makes_one_combined_pdf(self) -> None:
         database.save_daily_contact(DailyContact(
             date="2026-06-01", meal_type=dcs.MEAL_GHADA, collegial_granted=5,
         ))
-        # 2026-06-02 intentionally left with no data.
+        # 2026-06-02 intentionally left with no data -> its own placeholder page.
         database.save_daily_contact(DailyContact(
             date="2026-06-03", meal_type=dcs.MEAL_GHADA, collegial_granted=7,
         ))
 
         screen = dcs.DailyContactScreen()
-        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_tmpdir.name):
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 3), self._out_path):
             screen._on_batch_export()
 
-        written = sorted(p.name for p in Path(self._out_tmpdir.name).glob("*.pdf"))
-        self.assertEqual(len(written), 2)
-        self.assertTrue(any("2026-06-01" in name for name in written))
-        self.assertTrue(any("2026-06-03" in name for name in written))
-        self.assertFalse(any("2026-06-02" in name for name in written))
+        self.assertEqual(_pdf_page_count(Path(self._out_path)), 3)
         screen.close()
 
-    def test_daily_report_batch_export_uses_contact_and_absence_data(self) -> None:
+    def test_daily_contact_batch_export_marks_holiday_days(self) -> None:
+        database.add_holiday(Holiday(date="2026-06-02", label="عطلة تجريبية"))
+        database.save_daily_contact(DailyContact(
+            date="2026-06-01", meal_type=dcs.MEAL_GHADA, collegial_granted=5,
+        ))
+
+        screen = dcs.DailyContactScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 2), self._out_path) as ctx:
+            screen._on_batch_export()
+
+        message = ctx.info.call_args[0][2]
+        self.assertIn("1 يوم ببيانات فعلية", message)
+        self.assertIn("1 يوم عطلة", message)
+        screen.close()
+
+    @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
+    def test_daily_report_batch_export_makes_one_combined_pdf(self) -> None:
         database.save_daily_contact(DailyContact(
             date="2026-06-01", meal_type=drs.MEAL_GHADA, collegial_granted=10,
         ))
         database.save_daily_absence(DailyAbsence(
             date="2026-06-01", meal_type=drs.MEAL_GHADA, collegial_granted=2,
         ))
-        # 2026-06-02 has neither contact nor absence data -> must be skipped.
+        # 2026-06-02 has neither contact nor absence data -> placeholder page.
 
         screen = drs.DailyReportScreen()
-        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 2), self._out_tmpdir.name):
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 2), self._out_path):
             screen._on_batch_export()
 
-        written = list(Path(self._out_tmpdir.name).glob("*.pdf"))
-        self.assertEqual(len(written), 1)
-        self.assertIn("2026-06-01", written[0].name)
+        self.assertEqual(_pdf_page_count(Path(self._out_path)), 2)
         screen.close()
 
     def test_batch_export_never_saves_report_to_database(self) -> None:
@@ -172,10 +218,34 @@ class BatchExportScreenIntegrationTests(unittest.TestCase):
         ))
 
         screen = drs.DailyReportScreen()
-        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), self._out_tmpdir.name):
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), self._out_path):
             screen._on_batch_export()
 
         self.assertIsNone(database.get_daily_report("2026-06-01"))
+        screen.close()
+
+    @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
+    def test_daily_absence_batch_export_makes_one_combined_pdf(self) -> None:
+        database.save_daily_absence(DailyAbsence(
+            date="2026-06-01", meal_type=das.MEAL_GHADA, collegial_granted=2,
+        ))
+        database.save_daily_absence(DailyAbsence(
+            date="2026-06-02", meal_type=das.MEAL_GHADA, collegial_granted=1,
+        ))
+
+        screen = das.DailyAbsenceScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 2), self._out_path):
+            screen._on_batch_export()
+
+        self.assertEqual(_pdf_page_count(Path(self._out_path)), 2)
+        screen.close()
+
+    def test_daily_absence_batch_export_never_saves_to_database(self) -> None:
+        screen = das.DailyAbsenceScreen()
+        with _AcceptRange(QDate(2026, 6, 1), QDate(2026, 6, 1), self._out_path):
+            screen._on_batch_export()
+
+        self.assertEqual(database.get_day_absences("2026-06-01"), [])
         screen.close()
 
 

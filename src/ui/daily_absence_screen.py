@@ -3,12 +3,13 @@ src/ui/daily_absence_screen.py
 Daily absence sheet (ورقة الغياب اليومي) — count absent beneficiaries per meal per day.
 Parallel structure to daily_contact_screen but for absences (red theme).
 """
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen
 from PySide6.QtWidgets import (
-    QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+    QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton,
     QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem,
     QVBoxLayout, QWidget,
@@ -26,9 +27,12 @@ from core.attendance_estimate import EstimateResult, estimate_absence
 from core.contact_counts import count_students
 from core.models import DailyAbsence
 from data.database import (
-    get_all_students, get_day_absences, get_recent_absences, is_holiday, save_daily_absence,
+    get_all_holidays, get_all_students, get_day_absences, get_recent_absences, get_school_settings,
+    is_holiday, save_daily_absence,
 )
-from ui.batch_export import run_batch_generate_data
+from ui.batch_export import draw_placeholder_pdf_page, run_batch_combined_pdf, run_batch_generate_data
+from ui.daily_contact_screen import _draw_contact_pdf_cell, _draw_contact_pdf_text, _format_doc_date
+from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -67,6 +71,15 @@ _TOAST_NO_CLASSIFIED_STUDENTS = (
 )
 _BTN_BATCH_GENERATE = "توليد الأرقام لعدة أيام"
 _BTN_BATCH_GENERATE_ICON = "🎲"
+_BTN_EXPORT      = "تصدير PDF"
+_BTN_EXPORT_ICON = "📄"
+_PDF_DIALOG_TITLE = "تصدير ورقة الغياب اليومي"
+_PDF_DEFAULT_NAME = "ورقة_الغياب_اليومية"
+_PDF_FILTER      = "PDF (*.pdf)"
+_PDF_SAVED_OK    = "تم تصدير ورقة الغياب بنجاح."
+_PDF_SAVE_ERROR  = "تعذر تصدير ورقة الغياب:"
+_BTN_BATCH_EXPORT      = "توليد لعدة أيام"
+_BTN_BATCH_EXPORT_ICON = "🗂"
 _ESTIMATE_HISTORY_LIMIT = 900
 _CONFIDENCE_LABELS = {"low": "منخفضة", "medium": "متوسطة", "high": "عالية"}
 _ESTIMATE_NOTE_LOW = (
@@ -267,6 +280,161 @@ class _AbsenceCard(QGroupBox):
         )
 
 
+def _write_daily_absence_pdf(path: Path, date_str: str, absences: List[DailyAbsence], *, place: str = "") -> None:
+    """Render a single date's absence sheet as its own PDF. Thin wrapper
+    around _draw_daily_absence_pdf_page — batch export uses that directly
+    to draw many days onto one shared writer instead of opening a new
+    file per day."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    writer = QPdfWriter(str(path))
+    writer.setResolution(96)
+    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+    writer.setPageOrientation(QPageLayout.Orientation.Portrait)
+    writer.setPageMargins(QMarginsF(0, 0, 0, 0), QPageLayout.Unit.Millimeter)
+    writer.setTitle(_TITLE)
+
+    painter = QPainter(writer)
+    try:
+        _draw_daily_absence_pdf_page(
+            painter, float(writer.width()), float(writer.height()), date_str, absences, place=place,
+        )
+    finally:
+        painter.end()
+
+
+def _draw_daily_absence_pdf_page(
+    painter: QPainter,
+    page_w: float,
+    page_h: float,
+    date_str: str,
+    absences: List[DailyAbsence],
+    *,
+    place: str = "",
+) -> None:
+    """Draw one absence-sheet page into an already-open painter — same
+    layout as the contact sheet's PDF (_draw_daily_contact_pdf_page in
+    daily_contact_screen.py), red-themed, without a document number since
+    the absence sheet has no numbered-document sequence like the contact
+    sheet's رقم الوثيقة."""
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    absence_by_meal = {a.meal_type: a for a in absences}
+    display_date = _format_doc_date(date_str)
+    place_text = place.strip() or "..............."
+    margin = 38.0
+    content_w = page_w - (margin * 2)
+    settings = get_school_settings()
+
+    title = f"{_TITLE}  ليوم: {display_date}"
+    table_y = draw_official_pdf_header(
+        painter, page_width=page_w, margin=margin, top=18.0, settings=settings, title=title,
+    )
+    table_y += 4
+    _draw_contact_pdf_text(
+        painter, QRectF(margin, table_y, content_w, 18),
+        f"حرر ب{place_text} بتاريخ {display_date}",
+        size=10, color=COLOR_TEXT_SECONDARY,
+        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+    )
+    table_y += 24
+
+    rows_data = [
+        (_LBL_PRIMARY, "primary_granted", "primary_complement"),
+        (_LBL_COLLEGIAL, "collegial_granted", "collegial_complement"),
+        (_LBL_QUALIFYING, "qualifying_granted", "qualifying_complement"),
+        (_LBL_MONITORS, "monitors", "monitors_complement"),
+    ]
+
+    footer_h = 90.0
+    table_x = margin
+    table_w = content_w
+    header_rows_h = 62.0
+    n_data_rows = len(rows_data) + 1  # + total row
+    table_h = page_h - table_y - footer_h - margin
+    row_h = min(46.0, (table_h - header_rows_h) / n_data_rows)
+    label_w = 130.0
+    meal_w = (table_w - label_w) / len(_MEAL_ORDER)
+    sub_w = meal_w / 2
+    right = table_x + table_w
+
+    label_header = QRectF(right - label_w, table_y, label_w, header_rows_h / 2)
+    _draw_contact_pdf_cell(
+        painter, label_header,
+        background=COLOR_DANGER, border=COLOR_DANGER,
+        text="", text_color="white", size=11, bold=True,
+    )
+    current_right = label_header.left()
+    for _, meal_label in _MEAL_ORDER:
+        rect = QRectF(current_right - meal_w, table_y, meal_w, header_rows_h / 2)
+        _draw_contact_pdf_cell(
+            painter, rect,
+            background=COLOR_DANGER, border=COLOR_DANGER,
+            text=meal_label, text_color="white", size=12, bold=True,
+        )
+        current_right = rect.left()
+
+    sub_y = table_y + (header_rows_h / 2)
+    label_subheader = QRectF(right - label_w, sub_y, label_w, header_rows_h / 2)
+    _draw_contact_pdf_cell(
+        painter, label_subheader,
+        background=COLOR_DANGER, border="white",
+        text="الفئة", text_color="white", size=10, bold=True,
+    )
+    current_right = label_subheader.left()
+    for _ in _MEAL_ORDER:
+        for sub_label in (_LBL_GRANTED, _LBL_COMPLEMENT):
+            rect = QRectF(current_right - sub_w, sub_y, sub_w, header_rows_h / 2)
+            _draw_contact_pdf_cell(
+                painter, rect,
+                background=COLOR_DANGER, border="white",
+                text=sub_label, text_color="white", size=9,
+            )
+            current_right = rect.left()
+
+    for row_index, (row_label, granted_field, complement_field) in enumerate(rows_data):
+        row_y = table_y + header_rows_h + (row_index * row_h)
+        label_rect = QRectF(right - label_w, row_y, label_w, row_h)
+        _draw_contact_pdf_cell(
+            painter, label_rect,
+            background="#F8F9FA", border=COLOR_BORDER,
+            text=row_label, text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
+        )
+        current_right = label_rect.left()
+        for meal_key, _ in _MEAL_ORDER:
+            absence = absence_by_meal.get(meal_key) or DailyAbsence(date="", meal_type=meal_key)
+            for field_name in (granted_field, complement_field):
+                rect = QRectF(current_right - sub_w, row_y, sub_w, row_h)
+                _draw_contact_pdf_cell(
+                    painter, rect,
+                    background="white", border=COLOR_BORDER,
+                    text=str(getattr(absence, field_name)), text_color=COLOR_TEXT_PRIMARY, size=11,
+                )
+                current_right = rect.left()
+
+    total_y = table_y + header_rows_h + (len(rows_data) * row_h)
+    total_label_rect = QRectF(right - label_w, total_y, label_w, row_h)
+    _draw_contact_pdf_cell(
+        painter, total_label_rect,
+        background=COLOR_DANGER, border=COLOR_DANGER,
+        text=_LBL_GRAND_TOT, text_color="white", size=11, bold=True,
+    )
+    current_right = total_label_rect.left()
+    for meal_key, _ in _MEAL_ORDER:
+        absence = absence_by_meal.get(meal_key) or DailyAbsence(date="", meal_type=meal_key)
+        rect = QRectF(current_right - meal_w, total_y, meal_w, row_h)
+        _draw_contact_pdf_cell(
+            painter, rect,
+            background="#F8F9FA", border=COLOR_BORDER,
+            text=str(absence.grand_total), text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
+        )
+        current_right = rect.left()
+
+    footer_y = page_h - margin - footer_h + 6
+    draw_official_pdf_footer(
+        painter, page_width=page_w, margin=margin, top=footer_y, settings=settings,
+        roles=["رئيس المؤسسة", "مسير المصالح المادية والمالية", "الحارس العام للداخلية"],
+    )
+
+
 def _counts_to_absences(date_str: str, counts: Dict[str, Dict[str, int]]) -> List[DailyAbsence]:
     """Same per-meal mapping DailyAbsenceScreen._apply_generated_counts uses
     to fill the live cards, but building DailyAbsence rows to save directly
@@ -390,6 +558,14 @@ class DailyAbsenceScreen(QWidget):
         batch_generate_btn = self._btn(_BTN_BATCH_GENERATE, "#7c3aed", icon=_BTN_BATCH_GENERATE_ICON)
         batch_generate_btn.clicked.connect(self._on_batch_generate_data)
         row.addWidget(batch_generate_btn)
+
+        export_btn = self._btn(_BTN_EXPORT, _INK, icon=_BTN_EXPORT_ICON)
+        export_btn.clicked.connect(self._on_export)
+        row.addWidget(export_btn)
+
+        batch_export_btn = self._btn(_BTN_BATCH_EXPORT, _INK, icon=_BTN_BATCH_EXPORT_ICON)
+        batch_export_btn.clicked.connect(self._on_batch_export)
+        row.addWidget(batch_export_btn)
 
         save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS, icon=_BTN_SAVE_ICON)
         save_btn.clicked.connect(self._on_save)
@@ -642,3 +818,56 @@ class DailyAbsenceScreen(QWidget):
             QMessageBox.information(self, "تم", _SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")
+
+    def _on_export(self) -> None:
+        date_str = self._selected_date_str()
+        path_str, _ = QFileDialog.getSaveFileName(
+            self, _PDF_DIALOG_TITLE, f"{_PDF_DEFAULT_NAME}_{date_str}.pdf", _PDF_FILTER,
+        )
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
+
+        try:
+            absences = [card.to_absence(date_str) for card in self._cards.values()]
+            for absence in absences:
+                save_daily_absence(absence)
+            self._refresh_history()
+            settings = get_school_settings()
+            _write_daily_absence_pdf(path, date_str, absences, place=settings.city if settings else "")
+            QMessageBox.information(self, "تم", _PDF_SAVED_OK)
+        except Exception as exc:
+            QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
+
+    def _on_batch_export(self) -> None:
+        """Export the absence sheet for a range of days as ONE combined
+        PDF — one page per day, like a mail merge, instead of a separate
+        file per day. A real holiday or a day with no saved data still
+        gets its own page explaining why, instead of silently vanishing.
+        Read-only: never saves/records anything — it only exports what's
+        already in the database."""
+        settings = get_school_settings()
+        holiday_labels = {h.date: h.label for h in get_all_holidays()}
+
+        def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
+            if date_str in holiday_labels:
+                label = holiday_labels[date_str] or "بدون سبب محدد"
+                draw_placeholder_pdf_page(
+                    painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+                )
+                return "holiday"
+            absences = get_day_absences(date_str)
+            if not absences:
+                draw_placeholder_pdf_page(
+                    painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+                    "لم يتم تسجيل بيانات ورقة الغياب لهذا اليوم بعد.",
+                )
+                return "empty"
+            _draw_daily_absence_pdf_page(
+                painter, page_w, page_h, date_str, absences, place=settings.city if settings else "",
+            )
+            return "data"
+
+        run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Portrait, build_page)

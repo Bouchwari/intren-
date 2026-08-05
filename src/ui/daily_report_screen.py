@@ -27,11 +27,12 @@ from config.settings import (
 )
 from core.models import DailyContact, DailyAbsence, DailyReport
 from data.database import (
+    get_all_holidays,
     get_day_contacts, get_day_absences,
     get_dates_with_data, get_daily_report, get_school_settings,
     save_daily_report,
 )
-from ui.batch_export import run_batch_export
+from ui.batch_export import draw_placeholder_pdf_page, run_batch_combined_pdf
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
 from ui.widgets.date_input import DateInput
@@ -460,8 +461,10 @@ def _write_daily_report_pdf(
     date_str: str,
     report: DailyReport,
 ) -> None:
-    """Render two copies of the report side by side on one landscape
-    sheet — one for the مسير, one for the مدير, one sheet of paper."""
+    """Render a single date's report as its own PDF. Thin wrapper around
+    _draw_daily_report_pdf_page — batch export uses that directly to draw
+    many days onto one shared writer instead of opening a new file per
+    day."""
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -472,27 +475,39 @@ def _write_daily_report_pdf(
 
     painter = QPainter(writer)
     try:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        page_w = float(writer.width())
-        page_h = float(writer.height())
-        margin = 24.0
-        gap = 14.0
-        copy_w = (page_w - (margin * 2) - gap) / 2
-        copy_h = page_h - (margin * 2)
-
-        _draw_report_copy(
-            painter, x=margin, y=margin, width=copy_w, height=copy_h,
-            settings=settings, date_str=date_str, report=report,
-        )
-        painter.setPen(QPen(QColor(COLOR_BORDER), 1, Qt.PenStyle.DashLine))
-        cut_x = margin + copy_w + (gap / 2)
-        painter.drawLine(int(cut_x), int(margin), int(cut_x), int(page_h - margin))
-        _draw_report_copy(
-            painter, x=margin + copy_w + gap, y=margin, width=copy_w, height=copy_h,
-            settings=settings, date_str=date_str, report=report,
-        )
+        _draw_daily_report_pdf_page(painter, float(writer.width()), float(writer.height()), settings, date_str, report)
     finally:
         painter.end()
+
+
+def _draw_daily_report_pdf_page(
+    painter: QPainter,
+    page_w: float,
+    page_h: float,
+    settings,
+    date_str: str,
+    report: DailyReport,
+) -> None:
+    """Draw one landscape page into an already-open painter: two copies of
+    the report side by side — one for the مسير, one for the مدير, one
+    sheet of paper."""
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    margin = 24.0
+    gap = 14.0
+    copy_w = (page_w - (margin * 2) - gap) / 2
+    copy_h = page_h - (margin * 2)
+
+    _draw_report_copy(
+        painter, x=margin, y=margin, width=copy_w, height=copy_h,
+        settings=settings, date_str=date_str, report=report,
+    )
+    painter.setPen(QPen(QColor(COLOR_BORDER), 1, Qt.PenStyle.DashLine))
+    cut_x = margin + copy_w + (gap / 2)
+    painter.drawLine(int(cut_x), int(margin), int(cut_x), int(page_h - margin))
+    _draw_report_copy(
+        painter, x=margin + copy_w + gap, y=margin, width=copy_w, height=copy_h,
+        settings=settings, date_str=date_str, report=report,
+    )
 
 
 def _report_for_date(date_str: str) -> DailyReport:
@@ -1138,19 +1153,31 @@ class DailyReportScreen(QWidget):
             QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
 
     def _on_batch_export(self) -> None:
-        """Export the daily report for every date in a range in one go,
-        one PDF per date, skipping dates with no contact/absence data at
-        all. Read-only: unlike _on_export this never calls
+        """Export the daily report for a range of days as ONE combined
+        PDF — one page per day, like a mail merge, instead of a separate
+        file per day. A real holiday or a day with no contact/absence
+        data still gets its own page explaining why, instead of silently
+        vanishing. Read-only: unlike _on_export this never calls
         save_daily_report — it exports whatever is already saved (or
         freshly computed) for each date without changing it."""
         settings = get_school_settings()
+        holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
-        def generate_day(date_str: str, folder: Path) -> bool:
+        def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
+            if date_str in holiday_labels:
+                label = holiday_labels[date_str] or "بدون سبب محدد"
+                draw_placeholder_pdf_page(
+                    painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+                )
+                return "holiday"
             if not get_day_contacts(date_str) and not get_day_absences(date_str):
-                return False
+                draw_placeholder_pdf_page(
+                    painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+                    "لم يتم تسجيل بيانات ورقتي الاتصال أو الغياب لهذا اليوم بعد.",
+                )
+                return "empty"
             report = _report_for_date(date_str)
-            path = folder / f"{_PDF_DEFAULT_NAME}_{date_str}.pdf"
-            _write_daily_report_pdf(path, settings, date_str, report)
-            return True
+            _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report)
+            return "data"
 
-        run_batch_export(self, generate_day)
+        run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Landscape, build_page)

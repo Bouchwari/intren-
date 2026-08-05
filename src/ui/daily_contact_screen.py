@@ -37,12 +37,13 @@ from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
-from ui.batch_export import run_batch_export, run_batch_generate_data
+from ui.batch_export import draw_placeholder_pdf_page, run_batch_combined_pdf, run_batch_generate_data
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 from data.database import (
     get_day_contacts,
+    get_all_holidays,
     get_all_students,
     get_daily_contact_document_number_draft,
     get_document_export_format,
@@ -427,16 +428,11 @@ def _write_daily_contact_pdf(
     document_number: str = "",
     place: str = "",
 ) -> None:
-    """Render the daily contact sheet as an official PDF, using the same
-    header/footer helpers already proven on the meal program PDF export.
-    academy/province/school_name are not accepted here (unlike the DOCX
-    writer) because draw_official_pdf_header reads them straight off the
-    SchoolSettings row instead of taking them as separate strings."""
+    """Render the daily contact sheet as a single-page official PDF. Thin
+    wrapper around _draw_daily_contact_pdf_page — batch export uses that
+    directly to draw many days onto one shared writer instead of opening
+    a new file per day."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    contact_by_meal = {contact.meal_type: contact for contact in contacts}
-    display_date = _format_doc_date(date_str)
-    place_text = place.strip() or "..............."
-
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
@@ -446,145 +442,167 @@ def _write_daily_contact_pdf(
 
     painter = QPainter(writer)
     try:
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        page_w = float(writer.width())
-        page_h = float(writer.height())
-        margin = 38.0
-        content_w = page_w - (margin * 2)
-        settings = get_school_settings()
-
-        title = f"{_TITLE}  رقم: {document_number or '....'} ليوم: {display_date}"
-        table_y = draw_official_pdf_header(
-            painter,
-            page_width=page_w,
-            margin=margin,
-            top=18.0,
-            settings=settings,
-            title=title,
-        )
-        table_y += 4
-        _draw_contact_pdf_text(
-            painter,
-            QRectF(margin, table_y, content_w, 18),
-            f"حرر ب{place_text} بتاريخ {display_date}",
-            size=10,
-            color=COLOR_TEXT_SECONDARY,
-            align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
-        )
-        table_y += 24
-
-        rows_data = [
-            (_LBL_PRIMARY, "primary_granted", "primary_complement"),
-            (_LBL_COLLEGIAL, "collegial_granted", "collegial_complement"),
-            (_LBL_QUALIFYING, "qualifying_granted", "qualifying_complement"),
-            (_LBL_MONITORS, "monitors", "monitors_complement"),
-        ]
-
-        footer_h = 90.0
-        table_x = margin
-        table_w = content_w
-        header_rows_h = 62.0
-        n_data_rows = len(rows_data) + 1  # + total row
-        table_h = page_h - table_y - footer_h - margin
-        # Cap row height instead of always stretching to fill the page —
-        # with only 5 rows on a portrait A4 page, stretching to the footer
-        # made each row balloon to ~140pt for a single centered number.
-        row_h = min(46.0, (table_h - header_rows_h) / n_data_rows)
-        label_w = 130.0
-        meal_w = (table_w - label_w) / len(_MEAL_ORDER)
-        sub_w = meal_w / 2
-        right = table_x + table_w
-
-        # Header row 1: label column + one cell per meal name
-        label_header = QRectF(right - label_w, table_y, label_w, header_rows_h / 2)
-        _draw_contact_pdf_cell(
-            painter, label_header,
-            background=COLOR_ACCENT, border=COLOR_ACCENT,
-            text="", text_color="white", size=11, bold=True,
-        )
-        current_right = label_header.left()
-        for _, meal_label in _MEAL_ORDER:
-            rect = QRectF(current_right - meal_w, table_y, meal_w, header_rows_h / 2)
-            _draw_contact_pdf_cell(
-                painter, rect,
-                background=COLOR_ACCENT, border=COLOR_ACCENT,
-                text=meal_label, text_color="white", size=12, bold=True,
-            )
-            current_right = rect.left()
-
-        # Header row 2: granted / complement sub-labels under each meal
-        sub_y = table_y + (header_rows_h / 2)
-        label_subheader = QRectF(right - label_w, sub_y, label_w, header_rows_h / 2)
-        _draw_contact_pdf_cell(
-            painter, label_subheader,
-            background=COLOR_ACCENT, border="white",
-            text="الفئة", text_color="white", size=10, bold=True,
-        )
-        current_right = label_subheader.left()
-        for _ in _MEAL_ORDER:
-            for sub_label in (_LBL_GRANTED, _LBL_COMPLEMENT):
-                rect = QRectF(current_right - sub_w, sub_y, sub_w, header_rows_h / 2)
-                _draw_contact_pdf_cell(
-                    painter, rect,
-                    background=COLOR_ACCENT, border="white",
-                    text=sub_label, text_color="white", size=9,
-                )
-                current_right = rect.left()
-
-        # Data rows
-        for row_index, (row_label, granted_field, complement_field) in enumerate(rows_data):
-            row_y = table_y + header_rows_h + (row_index * row_h)
-            label_rect = QRectF(right - label_w, row_y, label_w, row_h)
-            _draw_contact_pdf_cell(
-                painter, label_rect,
-                background="#F8F9FA", border=COLOR_BORDER,
-                text=row_label, text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
-            )
-            current_right = label_rect.left()
-            for meal_key, _ in _MEAL_ORDER:
-                contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
-                for field_name in (granted_field, complement_field):
-                    rect = QRectF(current_right - sub_w, row_y, sub_w, row_h)
-                    _draw_contact_pdf_cell(
-                        painter, rect,
-                        background="white", border=COLOR_BORDER,
-                        text=str(getattr(contact, field_name)), text_color=COLOR_TEXT_PRIMARY, size=11,
-                    )
-                    current_right = rect.left()
-
-        # Total row
-        total_y = table_y + header_rows_h + (len(rows_data) * row_h)
-        total_label_rect = QRectF(right - label_w, total_y, label_w, row_h)
-        _draw_contact_pdf_cell(
-            painter, total_label_rect,
-            background=COLOR_ACCENT, border=COLOR_ACCENT,
-            text=_LBL_TOTAL, text_color="white", size=11, bold=True,
-        )
-        current_right = total_label_rect.left()
-        for meal_key, _ in _MEAL_ORDER:
-            contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
-            rect = QRectF(current_right - meal_w, total_y, meal_w, row_h)
-            _draw_contact_pdf_cell(
-                painter, rect,
-                background="#F8F9FA", border=COLOR_BORDER,
-                text=str(contact.grand_total), text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
-            )
-            current_right = rect.left()
-
-        footer_y = page_h - margin - footer_h + 6
-        # HEADMASTER + STEWARD + WARDEN — matches the real accepted template
-        # (templets/ورقة الاتصال  اليومية.docx has all 3 signature lines;
-        # documents.md's "WARDEN, HEADMASTER" was missing STEWARD).
-        draw_official_pdf_footer(
-            painter,
-            page_width=page_w,
-            margin=margin,
-            top=footer_y,
-            settings=settings,
-            roles=["رئيس المؤسسة", "مسير المصالح المادية والمالية", "الحارس العام للداخلية"],
+        _draw_daily_contact_pdf_page(
+            painter, float(writer.width()), float(writer.height()),
+            date_str, contacts, document_number=document_number, place=place,
         )
     finally:
         painter.end()
+
+
+def _draw_daily_contact_pdf_page(
+    painter: QPainter,
+    page_w: float,
+    page_h: float,
+    date_str: str,
+    contacts: List[DailyContact],
+    *,
+    document_number: str = "",
+    place: str = "",
+) -> None:
+    """Draw one contact-sheet page into an already-open painter — the same
+    header/footer helpers already proven on the meal program PDF export.
+    academy/province/school_name are not accepted here (unlike the DOCX
+    writer) because draw_official_pdf_header reads them straight off the
+    SchoolSettings row instead of taking them as separate strings."""
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    contact_by_meal = {contact.meal_type: contact for contact in contacts}
+    display_date = _format_doc_date(date_str)
+    place_text = place.strip() or "..............."
+    margin = 38.0
+    content_w = page_w - (margin * 2)
+    settings = get_school_settings()
+
+    title = f"{_TITLE}  رقم: {document_number or '....'} ليوم: {display_date}"
+    table_y = draw_official_pdf_header(
+        painter,
+        page_width=page_w,
+        margin=margin,
+        top=18.0,
+        settings=settings,
+        title=title,
+    )
+    table_y += 4
+    _draw_contact_pdf_text(
+        painter,
+        QRectF(margin, table_y, content_w, 18),
+        f"حرر ب{place_text} بتاريخ {display_date}",
+        size=10,
+        color=COLOR_TEXT_SECONDARY,
+        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+    )
+    table_y += 24
+
+    rows_data = [
+        (_LBL_PRIMARY, "primary_granted", "primary_complement"),
+        (_LBL_COLLEGIAL, "collegial_granted", "collegial_complement"),
+        (_LBL_QUALIFYING, "qualifying_granted", "qualifying_complement"),
+        (_LBL_MONITORS, "monitors", "monitors_complement"),
+    ]
+
+    footer_h = 90.0
+    table_x = margin
+    table_w = content_w
+    header_rows_h = 62.0
+    n_data_rows = len(rows_data) + 1  # + total row
+    table_h = page_h - table_y - footer_h - margin
+    # Cap row height instead of always stretching to fill the page —
+    # with only 5 rows on a portrait A4 page, stretching to the footer
+    # made each row balloon to ~140pt for a single centered number.
+    row_h = min(46.0, (table_h - header_rows_h) / n_data_rows)
+    label_w = 130.0
+    meal_w = (table_w - label_w) / len(_MEAL_ORDER)
+    sub_w = meal_w / 2
+    right = table_x + table_w
+
+    # Header row 1: label column + one cell per meal name
+    label_header = QRectF(right - label_w, table_y, label_w, header_rows_h / 2)
+    _draw_contact_pdf_cell(
+        painter, label_header,
+        background=COLOR_ACCENT, border=COLOR_ACCENT,
+        text="", text_color="white", size=11, bold=True,
+    )
+    current_right = label_header.left()
+    for _, meal_label in _MEAL_ORDER:
+        rect = QRectF(current_right - meal_w, table_y, meal_w, header_rows_h / 2)
+        _draw_contact_pdf_cell(
+            painter, rect,
+            background=COLOR_ACCENT, border=COLOR_ACCENT,
+            text=meal_label, text_color="white", size=12, bold=True,
+        )
+        current_right = rect.left()
+
+    # Header row 2: granted / complement sub-labels under each meal
+    sub_y = table_y + (header_rows_h / 2)
+    label_subheader = QRectF(right - label_w, sub_y, label_w, header_rows_h / 2)
+    _draw_contact_pdf_cell(
+        painter, label_subheader,
+        background=COLOR_ACCENT, border="white",
+        text="الفئة", text_color="white", size=10, bold=True,
+    )
+    current_right = label_subheader.left()
+    for _ in _MEAL_ORDER:
+        for sub_label in (_LBL_GRANTED, _LBL_COMPLEMENT):
+            rect = QRectF(current_right - sub_w, sub_y, sub_w, header_rows_h / 2)
+            _draw_contact_pdf_cell(
+                painter, rect,
+                background=COLOR_ACCENT, border="white",
+                text=sub_label, text_color="white", size=9,
+            )
+            current_right = rect.left()
+
+    # Data rows
+    for row_index, (row_label, granted_field, complement_field) in enumerate(rows_data):
+        row_y = table_y + header_rows_h + (row_index * row_h)
+        label_rect = QRectF(right - label_w, row_y, label_w, row_h)
+        _draw_contact_pdf_cell(
+            painter, label_rect,
+            background="#F8F9FA", border=COLOR_BORDER,
+            text=row_label, text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
+        )
+        current_right = label_rect.left()
+        for meal_key, _ in _MEAL_ORDER:
+            contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
+            for field_name in (granted_field, complement_field):
+                rect = QRectF(current_right - sub_w, row_y, sub_w, row_h)
+                _draw_contact_pdf_cell(
+                    painter, rect,
+                    background="white", border=COLOR_BORDER,
+                    text=str(getattr(contact, field_name)), text_color=COLOR_TEXT_PRIMARY, size=11,
+                )
+                current_right = rect.left()
+
+    # Total row
+    total_y = table_y + header_rows_h + (len(rows_data) * row_h)
+    total_label_rect = QRectF(right - label_w, total_y, label_w, row_h)
+    _draw_contact_pdf_cell(
+        painter, total_label_rect,
+        background=COLOR_ACCENT, border=COLOR_ACCENT,
+        text=_LBL_TOTAL, text_color="white", size=11, bold=True,
+    )
+    current_right = total_label_rect.left()
+    for meal_key, _ in _MEAL_ORDER:
+        contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
+        rect = QRectF(current_right - meal_w, total_y, meal_w, row_h)
+        _draw_contact_pdf_cell(
+            painter, rect,
+            background="#F8F9FA", border=COLOR_BORDER,
+            text=str(contact.grand_total), text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
+        )
+        current_right = rect.left()
+
+    footer_y = page_h - margin - footer_h + 6
+    # HEADMASTER + STEWARD + WARDEN — matches the real accepted template
+    # (templets/ورقة الاتصال  اليومية.docx has all 3 signature lines;
+    # documents.md's "WARDEN, HEADMASTER" was missing STEWARD).
+    draw_official_pdf_footer(
+        painter,
+        page_width=page_w,
+        margin=margin,
+        top=footer_y,
+        settings=settings,
+        roles=["رئيس المؤسسة", "مسير المصالح المادية والمالية", "الحارس العام للداخلية"],
+    )
 
 
 def _spin_style(read_only: bool = False) -> str:
@@ -1556,43 +1574,36 @@ class DailyContactScreen(QWidget):
             QMessageBox.critical(self, "خطأ", f"{error_prefix}\n{exc}")
 
     def _on_batch_export(self) -> None:
-        """Export the contact sheet for every date in a range in one go,
-        one PDF/Word file per date, skipping dates with no saved data.
+        """Export the contact sheet for a range of days as ONE combined
+        PDF — one page per day, like a mail merge, instead of a separate
+        file per day. A real holiday or a day with no saved data still
+        gets its own page explaining why, instead of silently vanishing.
         Read-only: unlike _on_export, this never saves/records anything —
         it only exports what's already in the database, so it can't
         advance the document-number counter or touch saved data."""
-        fmt = get_document_export_format()
-        if fmt == EXPORT_FORMAT_ASK:
-            fmt = ask_export_format(self)
-            if fmt is None:
-                return
-        is_pdf = fmt == EXPORT_FORMAT_PDF
-        suffix = ".pdf" if is_pdf else ".docx"
-        default_name = _PDF_DEFAULT_NAME if is_pdf else _DOCX_DEFAULT_NAME
         settings = get_school_settings()
+        holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
-        def generate_day(date_str: str, folder: Path) -> bool:
+        def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
+            if date_str in holiday_labels:
+                label = holiday_labels[date_str] or "بدون سبب محدد"
+                draw_placeholder_pdf_page(
+                    painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+                )
+                return "holiday"
             contacts = get_day_contacts(date_str)
             if not contacts:
-                return False
-            path = folder / f"{default_name}_{date_str}{suffix}"
-            if is_pdf:
-                _write_daily_contact_pdf(
-                    path, date_str, contacts,
-                    place=settings.city if settings else "",
+                draw_placeholder_pdf_page(
+                    painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+                    "لم يتم تسجيل بيانات ورقة الاتصال لهذا اليوم بعد.",
                 )
-            else:
-                _write_daily_contact_docx(
-                    path, date_str, contacts,
-                    place=settings.city if settings else "",
-                    academy=settings.aref if settings else "",
-                    province=settings.direction_provinciale if settings else "",
-                    school_name=settings.school_name if settings else "",
-                    school_year=settings.school_year if settings else "",
-                )
-            return True
+                return "empty"
+            _draw_daily_contact_pdf_page(
+                painter, page_w, page_h, date_str, contacts, place=settings.city if settings else "",
+            )
+            return "data"
 
-        run_batch_export(self, generate_day)
+        run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Portrait, build_page)
 
     def _on_batch_generate_data(self) -> None:
         """Auto-fill AND SAVE real contact numbers for every date in a
