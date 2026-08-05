@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=نظام المطعمة (تجربة)
+Name[en]=Matama (Test)
+Comment=نسخة تجريبية للاختبار فقط — لا تؤثر على بياناتك الحقيقية
+Exec=/home/abbdo/Downloads/intren--main/run_test.sh
+Path=/home/abbdo/Downloads/intren--main
+Icon=utilities-terminal
+Terminal=false
+Categories=Office;

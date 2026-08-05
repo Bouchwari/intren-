@@ -16,8 +16,13 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
-# Where the SQLite database lives (next to the exe when packaged)
-DB_PATH: Path = BASE_DIR / "matama.db"
+# Where the SQLite database lives (next to the exe when packaged).
+# MATAMA_DB_PATH lets a separate test launcher (see run_test.sh) point the
+# app at a throwaway database instead, so trying things out never touches
+# the real one — unset (the normal case) always uses matama.db as before.
+import os
+
+DB_PATH: Path = Path(os.environ["MATAMA_DB_PATH"]) if os.environ.get("MATAMA_DB_PATH") else BASE_DIR / "matama.db"
 
 # School logo (copied here when the user uploads one via Settings)
 LOGO_PATH: Path = BASE_DIR / "matama_logo.png"
