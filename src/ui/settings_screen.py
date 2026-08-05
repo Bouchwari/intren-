@@ -75,6 +75,7 @@ _HOLIDAY_ADDED_FMT = "تمت إضافة {added} يوم/أيام عطلة. (تح�
 _HOLIDAY_RANGE_ORDER_ERR = "تاريخ \"إلى\" يجب أن يكون بعد تاريخ \"من\"."
 _HOLIDAY_DEL_CONFIRM_TITLE = "تأكيد الحذف"
 _HOLIDAY_DEL_CONFIRM = "حذف هذا اليوم من لائحة العطل؟"
+_HOLIDAY_DEL_CONFIRM_RANGE = "حذف كل الأيام ({count}) من لائحة العطل؟"
 
 
 def _field(text: str = "", placeholder: str = "") -> QLineEdit:
@@ -119,6 +120,24 @@ def _section_btn(label: str, color: str, *, icon: str | None = None) -> QPushBut
         label, icon=icon, bg=color, text_color="white",
         border_radius=12, padding_h=18, font_size=13, bold=True, min_height=38,
     )
+
+
+def _group_consecutive_holidays(holidays: list[Holiday]) -> list[tuple[str, str, str, list[str]]]:
+    """Collapse runs of back-to-back dates sharing the same label into one
+    group — a whole marked-off week shows as one row instead of seven.
+    Returns (start_date, end_date, label, every date in the group), input
+    must already be sorted by date (get_all_holidays() guarantees this)."""
+    groups: list[tuple[str, str, str, list[str]]] = []
+    for holiday in holidays:
+        if groups:
+            _start, prev_end, prev_label, prev_dates = groups[-1]
+            prev_date = QDate.fromString(prev_end, "yyyy-MM-dd")
+            this_date = QDate.fromString(holiday.date, "yyyy-MM-dd")
+            if holiday.label == prev_label and prev_date.addDays(1) == this_date:
+                groups[-1] = (_start, holiday.date, prev_label, prev_dates + [holiday.date])
+                continue
+        groups.append((holiday.date, holiday.date, holiday.label, [holiday.date]))
+    return groups
 
 
 def _unique(values: list[str]) -> list[str]:
@@ -522,8 +541,10 @@ class SettingsScreen(QWidget):
         self._holidays_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._holidays_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._holidays_table.verticalHeader().setVisible(False)
-        self._holidays_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self._holidays_table.horizontalHeader().setStretchLastSection(True)
+        header = self._holidays_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # التاريخ
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)          # السبب — the empty column was
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # fixed-width but stretched
         self._holidays_table.setMinimumHeight(160)
         self._holidays_table.setStyleSheet(f"""
             QTableWidget {{
@@ -734,17 +755,19 @@ class SettingsScreen(QWidget):
         holidays = get_all_holidays()
         self._holidays_empty_lbl.setVisible(not holidays)
         self._holidays_table.setVisible(bool(holidays))
-        self._holidays_table.setRowCount(len(holidays))
+        groups = _group_consecutive_holidays(holidays)
+        self._holidays_table.setRowCount(len(groups))
         self._holidays_table.verticalHeader().setDefaultSectionSize(34)
-        for row, holiday in enumerate(holidays):
-            self._holidays_table.setItem(row, 0, QTableWidgetItem(holiday.date))
-            self._holidays_table.setItem(row, 1, QTableWidgetItem(holiday.label))
+        for row, (start, end, label, dates) in enumerate(groups):
+            date_text = f"‎{start}‎" if start == end else f"‎{start}‎  —  ‎{end}‎"
+            self._holidays_table.setItem(row, 0, QTableWidgetItem(date_text))
+            self._holidays_table.setItem(row, 1, QTableWidgetItem(label))
             delete_btn = IconButton(
                 _BTN_DELETE_HOLIDAY, bg=COLOR_DANGER, text_color="white",
                 border_radius=6, padding_h=8, font_size=12, bold=False, min_height=24,
             )
             delete_btn.setFixedWidth(40)
-            delete_btn.clicked.connect(lambda _checked=False, d=holiday.date: self._on_delete_holiday(d))
+            delete_btn.clicked.connect(lambda _checked=False, ds=dates: self._on_delete_holiday_group(ds))
             self._holidays_table.setCellWidget(row, 2, delete_btn)
 
     def _on_holiday_from_changed(self, new_date: QDate) -> None:
@@ -785,12 +808,14 @@ class SettingsScreen(QWidget):
         if added + updated > 1 or updated:
             QMessageBox.information(self, "تم", _HOLIDAY_ADDED_FMT.format(added=added, updated=updated))
 
-    def _on_delete_holiday(self, date_str: str) -> None:
+    def _on_delete_holiday_group(self, dates: list[str]) -> None:
+        message = _HOLIDAY_DEL_CONFIRM if len(dates) == 1 else _HOLIDAY_DEL_CONFIRM_RANGE.format(count=len(dates))
         reply = QMessageBox.question(
-            self, _HOLIDAY_DEL_CONFIRM_TITLE, _HOLIDAY_DEL_CONFIRM,
+            self, _HOLIDAY_DEL_CONFIRM_TITLE, message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            delete_holiday(date_str)
+            for date_str in dates:
+                delete_holiday(date_str)
             self._refresh_holidays_table()
