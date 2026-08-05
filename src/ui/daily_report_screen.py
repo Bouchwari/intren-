@@ -92,6 +92,8 @@ _HYGIENE_ITEMS: List[Tuple[str, str]] = [
 _LBL_BENEFICIARIES = "2 — تتبع المستفيدين من خدمة المطعمة"
 _LBL_EXPECTED = "العدد المقترح"
 _LBL_PRESENT  = "الحاضرون فعليا"
+_BTN_RECOMPUTE      = "إعادة الحساب من ورقتي الاتصال والغياب"
+_BTN_RECOMPUTE_ICON = "🔄"
 
 _LBL_QUALITY = "3 — تتبع الوجبات المقدمة"
 _QUALITY_ITEMS: List[Tuple[str, str]] = [
@@ -702,6 +704,18 @@ class DailyReportScreen(QWidget):
         # 2 — Beneficiaries (expected / actually present, per meal)
         ben_grp, ben_layout = self._checklist_group(_LBL_BENEFICIARIES)
         self._beneficiary_spins: Dict[str, Tuple[QSpinBox, QSpinBox]] = {}
+
+        recompute_row = QHBoxLayout()
+        recompute_btn = IconButton(
+            _BTN_RECOMPUTE, icon=_BTN_RECOMPUTE_ICON, bg=COLOR_SURFACE,
+            text_color=COLOR_TEXT_PRIMARY, border_radius=6, padding_h=10,
+            font_size=12, bold=False, min_height=28,
+        )
+        recompute_btn.clicked.connect(self._recompute_beneficiary_counts)
+        recompute_row.addWidget(recompute_btn)
+        recompute_row.addStretch()
+        ben_layout.addLayout(recompute_row)
+
         header = QHBoxLayout()
         header.addWidget(QLabel(""), 1)
         header.addWidget(QLabel(_LBL_EXPECTED, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;"))
@@ -890,7 +904,12 @@ class DailyReportScreen(QWidget):
         table.setItem(row, 3, _cell(str(grand_compl),   bold=True, bg=COLOR_ACCENT_DEEP, fg="white"))
         table.setItem(row, 4, _cell(str(grand_total),   bold=True, bg=COLOR_ACCENT, fg="white"))
 
-        table.setMaximumHeight(num_rows * 36 + 40)
+        # A cap alone doesn't stop the surrounding layout from squeezing
+        # this table smaller than its content — pin both bounds so all 16
+        # rows render (this exact bug hit the meal-program panel earlier).
+        table_height = num_rows * 36 + 40
+        table.setMinimumHeight(table_height)
+        table.setMaximumHeight(table_height)
         return table
 
     # ── Generate ───────────────────────────────────────────────────────────
@@ -912,6 +931,8 @@ class DailyReportScreen(QWidget):
 
         contacts = {c.meal_type: c for c in get_day_contacts(date_str)}
         absences = {a.meal_type: a for a in get_day_absences(date_str)}
+        self._current_contacts = contacts
+        self._current_absences = absences
 
         has_data = bool(contacts or absences)
         self._no_data_lbl.setVisible(not has_data)
@@ -947,8 +968,8 @@ class DailyReportScreen(QWidget):
             self._absence_table = self._make_report_table(absences)  # type: ignore[arg-type]
             self._report_card_layout.addWidget(self._absence_table)
 
-        # Load notes + checklist
-        self._load_report_fields(date_str)
+        # Load notes + checklist (beneficiary counts computed from contacts/absences)
+        self._load_report_fields(date_str, contacts, absences)
 
         # Refresh quick-jump combo
         self._refresh_quick_combo()
@@ -982,10 +1003,27 @@ class DailyReportScreen(QWidget):
 
     # ── Checklist load / save / export ────────────────────────────────────
 
-    def _load_report_fields(self, date_str: str) -> None:
+    def _load_report_fields(
+        self,
+        date_str: str,
+        contacts: Dict[str, DailyContact],
+        absences: Dict[str, DailyAbsence],
+    ) -> None:
         """Populate notes + every checklist widget from the saved report,
-        or reset to defaults (not-rated / zero) if none exists yet."""
+        or reset to defaults (not-rated / zero) if none exists yet.
+
+        Beneficiary expected/present counts are computed fresh from the
+        contact and absence sheets ONLY the first time a date has no saved
+        report yet: "expected" is who's registered to eat (contact sheet
+        total for that meal), "present" is expected minus absent (absence
+        sheet total). Once a report has been saved for a date, its saved
+        beneficiary numbers are shown instead — clicking "توليد التقرير"
+        again (e.g. to refresh the checklist or navigate dates) must never
+        silently discard a value the مسير already typed and saved. Use the
+        "إعادة الحساب" button (_recompute_beneficiary_counts) to pull fresh
+        numbers on demand."""
         report = get_daily_report(date_str) or DailyReport(date=date_str)
+        self._current_report_id = report.id
 
         self._notes_edit.setPlainText(report.notes)
 
@@ -996,9 +1034,26 @@ class DailyReportScreen(QWidget):
         for field, combo in self._building_combos.items():
             combo.setCurrentIndex(combo.findData(getattr(report, field)))
 
+        if report.id is not None:
+            for meal_key, (expected, present) in self._beneficiary_spins.items():
+                expected.setValue(getattr(report, f"{meal_key}_expected"))
+                present.setValue(getattr(report, f"{meal_key}_present"))
+        else:
+            self._recompute_beneficiary_counts()
+
+    def _recompute_beneficiary_counts(self) -> None:
+        """Force-refill expected/present from the contact and absence
+        sheets, overwriting whatever is currently in the spinboxes. Only
+        triggered by an explicit user click — never called automatically
+        once a report has already been saved for the date, so it can't
+        silently wipe a saved manual override (see _load_report_fields)."""
         for meal_key, (expected, present) in self._beneficiary_spins.items():
-            expected.setValue(getattr(report, f"{meal_key}_expected"))
-            present.setValue(getattr(report, f"{meal_key}_present"))
+            contact = self._current_contacts.get(meal_key)
+            absence = self._current_absences.get(meal_key)
+            expected_count = contact.grand_total if contact else 0
+            absent_count = absence.grand_total if absence else 0
+            expected.setValue(expected_count)
+            present.setValue(max(0, expected_count - absent_count))
 
     def _current_report(self) -> DailyReport:
         """Build a DailyReport from every checklist widget's current value."""
