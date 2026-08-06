@@ -498,10 +498,10 @@ def _build_quick_actions(navigate_to: Callable[[int], None]) -> QFrame:
     layout.addWidget(title)
 
     actions = [
-        ("لائحة التلاميذ", 1),
-        ("تسجيل الحضور", 3),
-        ("التقرير اليومي", 5),
-        ("المحضر الشهري", 6),
+        ("لائحة التلاميذ", 2),
+        ("تسجيل الحضور", 4),
+        ("التقرير اليومي", 6),
+        ("المحضر الشهري", 7),
     ]
     for label, index in actions:
         layout.addWidget(_quick_button(label, index, navigate_to), 1)

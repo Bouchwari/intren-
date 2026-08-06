@@ -166,34 +166,26 @@ def draw_placeholder_pdf_page(
     painter.drawText(QRectF(margin, page_h / 2 - 20, content_w, 60), message, message_option)
 
 
-def run_batch_combined_pdf(
-    parent: QWidget,
-    default_filename: str,
+def write_combined_pdf(
+    path: Path,
+    start: QDate,
+    end: QDate,
     orientation: QPageLayout.Orientation,
     build_page: Callable[[QPainter, float, float, str], str],
-) -> None:
-    """Ask for a date range, then ONE output PDF path, then draw one page
-    per date (inclusive) onto a single shared writer — one document, not
-    a folder of files. build_page(painter, page_w, page_h, date_str) must
-    draw that date's page (real data, or a placeholder — see
-    draw_placeholder_pdf_page) and return a category string used only for
-    the closing summary: "data", "holiday", or "empty". Every date gets a
-    page; nothing is silently skipped. A date whose build_page raises gets
-    a blank page but doesn't stop the rest of the batch."""
-    date_range = pick_date_range(parent)
-    if date_range is None:
-        return
-    start, end = date_range
-
-    suggested = f"{default_filename}_{start.toString('yyyy-MM-dd')}_إلى_{end.toString('yyyy-MM-dd')}.pdf"
-    path_str, _ = QFileDialog.getSaveFileName(parent, _SAVE_DIALOG_TITLE, suggested, _PDF_FILTER)
-    if not path_str:
-        return
-    path = Path(path_str)
-    if path.suffix.lower() != ".pdf":
-        path = path.with_suffix(".pdf")
+) -> Tuple[dict, list]:
+    """Core writer, no dialogs: draw one page per date in [start, end]
+    (inclusive) onto a single shared QPdfWriter at path — one document,
+    not a folder of files. build_page(painter, page_w, page_h, date_str)
+    must draw that date's page (real data, or a placeholder — see
+    draw_placeholder_pdf_page) and return a category string: "data",
+    "holiday", or "empty". Every date gets a page; nothing is silently
+    skipped. A date whose build_page raises gets a blank page but doesn't
+    stop the rest. Returns (category -> count, failed_dates) for the
+    caller to build its own summary — see run_batch_combined_pdf for the
+    single-document dialog-driven version, or drive this directly (e.g.
+    ui/work_pipeline_screen.py's "generate everything", which already has
+    its own range and writes several documents into one chosen folder)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
@@ -221,6 +213,10 @@ def run_batch_combined_pdf(
     finally:
         painter.end()
 
+    return counts, failed_dates
+
+
+def _summarize_combined_pdf(path: Path, counts: dict, failed_dates: list) -> str:
     lines = [f"تم إنشاء المستند: {path.name}"]
     if counts.get("data"):
         lines.append(f"{counts['data']} يوم ببيانات فعلية.")
@@ -230,7 +226,32 @@ def run_batch_combined_pdf(
         lines.append(f"{counts['empty']} يوم بلا بيانات مسجلة.")
     if failed_dates:
         lines.append(f"تعذر رسم {len(failed_dates)} يوم: " + "، ".join(failed_dates))
-    QMessageBox.information(parent, _RESULT_TITLE, "\n".join(lines))
+    return "\n".join(lines)
+
+
+def run_batch_combined_pdf(
+    parent: QWidget,
+    default_filename: str,
+    orientation: QPageLayout.Orientation,
+    build_page: Callable[[QPainter, float, float, str], str],
+) -> None:
+    """Ask for a date range, then ONE output PDF path, then write the
+    combined document there (see write_combined_pdf) and show a summary."""
+    date_range = pick_date_range(parent)
+    if date_range is None:
+        return
+    start, end = date_range
+
+    suggested = f"{default_filename}_{start.toString('yyyy-MM-dd')}_إلى_{end.toString('yyyy-MM-dd')}.pdf"
+    path_str, _ = QFileDialog.getSaveFileName(parent, _SAVE_DIALOG_TITLE, suggested, _PDF_FILTER)
+    if not path_str:
+        return
+    path = Path(path_str)
+    if path.suffix.lower() != ".pdf":
+        path = path.with_suffix(".pdf")
+
+    counts, failed_dates = write_combined_pdf(path, start, end, orientation, build_page)
+    QMessageBox.information(parent, _RESULT_TITLE, _summarize_combined_pdf(path, counts, failed_dates))
 
 
 def run_batch_generate_data(

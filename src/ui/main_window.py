@@ -31,21 +31,23 @@ from ui.order_letter_screen import OrderLetterScreen
 from ui.students_screen import StudentsScreen
 from ui.settings_screen import SettingsScreen
 from ui.widgets.icon_button import IconButton
+from ui.work_pipeline_screen import WorkPipelineScreen
 
 # Nav items: (icon emoji, Arabic label, screen_index)
 # Indices must match the order screens are added to _build_stack()
 _NAV_ITEMS: list[tuple[str, str, int]] = [
-    ("🏠", "الرئيسية",              0),
-    ("👥", "لائحة التلاميذ",        1),
-    ("🍽️", "البرنامج الغذائي",      2),
-    ("📋", "ورقة الاتصال اليومية",  3),
-    ("📉", "ورقة الغياب اليومي",    4),
-    ("📄", "التقرير اليومي",        5),
-    ("📊", "المحضر الشهري",         6),
-    ("✉️", "رسالة الطلبية",         7),
-    ("💰", "بيان المصاريف",         8),
-    ("📕", "دفتر المخالفات",        9),
-    ("⚙️", "الإعدادات",            10),
+    ("🏠", "يوم العمل",              0),
+    ("📈", "الإحصائيات",            1),
+    ("👥", "لائحة التلاميذ",        2),
+    ("🍽️", "البرنامج الغذائي",      3),
+    ("📋", "ورقة الاتصال اليومية",  4),
+    ("📉", "ورقة الغياب اليومي",    5),
+    ("📄", "التقرير اليومي",        6),
+    ("📊", "المحضر الشهري",         7),
+    ("✉️", "رسالة الطلبية",         8),
+    ("💰", "بيان المصاريف",         9),
+    ("📕", "دفتر المخالفات",        10),
+    ("⚙️", "الإعدادات",            11),
 ]
 
 _SIDEBAR_WIDTH = 235
@@ -57,7 +59,7 @@ _NAV_TEXT = COLOR_TEXT_SIDEBAR
 _MENU_HIDE = "إخفاء الصفحات"
 _MENU_SHOW = "إظهار الصفحات"
 _MENU_ICON = "☰"
-_MEAL_PROGRAM_INDEX = 2
+_MEAL_PROGRAM_INDEX = 3
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -95,7 +97,7 @@ class MainWindow(QMainWindow):
         self._nav_buttons: list[_NavButton] = []
         self._sidebar_visible = True
         self._build_ui()
-        self._navigate(0)   # start on dashboard
+        self._navigate(0)   # start on يوم العمل (work pipeline)
 
     # ── Build ──────────────────────────────────────────────────────────────
 
@@ -180,25 +182,29 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self._stack.setStyleSheet(f"background-color: {_APP_BG}; border: none;")
 
-        # Index 0 — Dashboard (passes navigate callback so quick-action buttons work)
+        # Index 0 — يوم العمل (Work Day pipeline) — the app's landing screen
+        self._pipeline = WorkPipelineScreen(navigate_to=self._navigate)
+        self._stack.addWidget(self._pipeline)                           # 0
+
+        # Index 1 — Dashboard / statistics (passes navigate callback so quick-action buttons work)
         self._dashboard = DashboardScreen(navigate_to=self._navigate)
-        self._stack.addWidget(self._dashboard)                          # 0
+        self._stack.addWidget(self._dashboard)                          # 1
 
-        # Index 1 — Students
-        self._stack.addWidget(StudentsScreen())                         # 1
+        # Index 2 — Students
+        self._stack.addWidget(StudentsScreen())                         # 2
 
-        # Indices 2-9 — mix of built and placeholder screens
-        self._stack.addWidget(MealProgramScreen())                          # 2 — built
-        self._stack.addWidget(DailyContactScreen())                         # 3 — built
-        self._stack.addWidget(DailyAbsenceScreen())                          # 4 — built
-        self._stack.addWidget(DailyReportScreen())                           # 5 — built
-        self._stack.addWidget(MonthlyReportScreen())                          # 6 — built
-        self._stack.addWidget(OrderLetterScreen())                            # 7 — built
-        self._stack.addWidget(ExpenseStatementScreen())                       # 8 — built
-        self._stack.addWidget(IncidentLogScreen())                            # 9 — built
+        # Indices 3-10 — mix of built and placeholder screens
+        self._stack.addWidget(MealProgramScreen())                          # 3 — built
+        self._stack.addWidget(DailyContactScreen())                         # 4 — built
+        self._stack.addWidget(DailyAbsenceScreen())                          # 5 — built
+        self._stack.addWidget(DailyReportScreen())                           # 6 — built
+        self._stack.addWidget(MonthlyReportScreen())                          # 7 — built
+        self._stack.addWidget(OrderLetterScreen())                            # 8 — built
+        self._stack.addWidget(ExpenseStatementScreen())                       # 9 — built
+        self._stack.addWidget(IncidentLogScreen())                            # 10 — built
 
-        # Index 10 — Settings
-        self._stack.addWidget(SettingsScreen())                         # 10
+        # Index 11 — Settings
+        self._stack.addWidget(SettingsScreen())                         # 11
 
         return self._stack
 
