@@ -953,6 +953,64 @@ def _counts_to_contacts(date_str: str, counts: Dict[str, Dict[str, int]]) -> Lis
     ]
 
 
+def _unflatten_counts(roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
+    counts = empty_counts()
+    for key, value in roster.items():
+        category, grant_kind = key.rsplit("_", 1)
+        counts[category][grant_kind] = value
+    return counts
+
+
+def generate_and_save_contact_for_date(
+    date_str: str, active_roster: Dict[str, int], history: List[DailyContact],
+) -> bool:
+    """Auto-fill AND SAVE real contact numbers for one date using the same
+    estimator as "توليد تلقائي" — shared by the batch-generate button and
+    ui/work_pipeline_screen.py. Returns False (no-op) for a real holiday
+    or a date that already has saved data, never overwriting it."""
+    if is_holiday(date_str) or get_day_contacts(date_str):
+        return False
+    target_date = datetime.date.fromisoformat(date_str)
+    result = estimate_attendance(active_roster, history, target_date, MEAL_GHADA)
+    for contact in _counts_to_contacts(date_str, _unflatten_counts(result.counts)):
+        save_daily_contact(contact)
+    return True
+
+
+def build_contact_pdf_page(
+    painter, page_w: float, page_h: float, date_str: str,
+    holiday_labels: Dict[str, str], settings,
+) -> str:
+    """Draw one date's page for a combined batch PDF — real data, a
+    holiday placeholder, or a no-data placeholder — and assign/record a
+    real رقم الوثيقة for a date that never had one. Shared by
+    _on_batch_export and ui/work_pipeline_screen.py's "generate
+    everything" action. Returns "data" / "holiday" / "empty" for the
+    caller's summary."""
+    if date_str in holiday_labels:
+        label = holiday_labels[date_str] or "بدون سبب محدد"
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+        )
+        return "holiday"
+    contacts = get_day_contacts(date_str)
+    if not contacts:
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+            "لم يتم تسجيل بيانات ورقة الاتصال لهذا اليوم بعد.",
+        )
+        return "empty"
+    document_number = get_document_number_for_date(date_str)
+    if document_number is None:
+        document_number = get_next_daily_contact_document_number()
+        record_daily_contact_document(date_str, document_number, "batch_export", contacts)
+    _draw_daily_contact_pdf_page(
+        painter, page_w, page_h, date_str, contacts,
+        document_number=str(document_number), place=settings.city if settings else "",
+    )
+    return "data"
+
+
 # ── Main screen ───────────────────────────────────────────────────────────────
 
 class DailyContactScreen(QWidget):
@@ -1592,28 +1650,7 @@ class DailyContactScreen(QWidget):
         holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
         def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
-            if date_str in holiday_labels:
-                label = holiday_labels[date_str] or "بدون سبب محدد"
-                draw_placeholder_pdf_page(
-                    painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
-                )
-                return "holiday"
-            contacts = get_day_contacts(date_str)
-            if not contacts:
-                draw_placeholder_pdf_page(
-                    painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
-                    "لم يتم تسجيل بيانات ورقة الاتصال لهذا اليوم بعد.",
-                )
-                return "empty"
-            document_number = get_document_number_for_date(date_str)
-            if document_number is None:
-                document_number = get_next_daily_contact_document_number()
-                record_daily_contact_document(date_str, document_number, "batch_export", contacts)
-            _draw_daily_contact_pdf_page(
-                painter, page_w, page_h, date_str, contacts,
-                document_number=str(document_number), place=settings.city if settings else "",
-            )
-            return "data"
+            return build_contact_pdf_page(painter, page_w, page_h, date_str, holiday_labels, settings)
 
         run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Portrait, build_page)
 
@@ -1634,13 +1671,7 @@ class DailyContactScreen(QWidget):
         history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
 
         def generate_day(date_str: str) -> bool:
-            if is_holiday(date_str) or get_day_contacts(date_str):
-                return False
-            target_date = datetime.date.fromisoformat(date_str)
-            result = estimate_attendance(active_roster, history, target_date, MEAL_GHADA)
-            for contact in _counts_to_contacts(date_str, self._unflatten_counts(result.counts)):
-                save_daily_contact(contact)
-            return True
+            return generate_and_save_contact_for_date(date_str, active_roster, history)
 
         run_batch_generate_data(self, generate_day)
 

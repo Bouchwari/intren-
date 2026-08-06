@@ -469,6 +469,60 @@ def _counts_to_absences(date_str: str, counts: Dict[str, Dict[str, int]]) -> Lis
     ]
 
 
+def _unflatten_counts(roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
+    counts: Dict[str, Dict[str, int]] = {
+        "primary": {}, "collegial": {}, "qualifying": {}, "monitors": {},
+    }
+    for key, value in roster.items():
+        category, grant_kind = key.rsplit("_", 1)
+        counts[category][grant_kind] = value
+    return counts
+
+
+def generate_and_save_absence_for_date(
+    date_str: str, active_roster: Dict[str, int], history: List[DailyAbsence],
+) -> bool:
+    """Auto-fill AND SAVE real absence numbers for one date using the same
+    estimator as "توليد تلقائي" — shared by the batch-generate button and
+    ui/work_pipeline_screen.py. Returns False (no-op) for a real holiday
+    or a date that already has saved data, never overwriting it."""
+    if is_holiday(date_str) or get_day_absences(date_str):
+        return False
+    target_date = datetime.date.fromisoformat(date_str)
+    result = estimate_absence(active_roster, history, target_date, MEAL_GHADA)
+    for absence in _counts_to_absences(date_str, _unflatten_counts(result.counts)):
+        save_daily_absence(absence)
+    return True
+
+
+def build_absence_pdf_page(
+    painter, page_w: float, page_h: float, date_str: str,
+    holiday_labels: Dict[str, str], settings,
+) -> str:
+    """Draw one date's page for a combined batch PDF — real data, a
+    holiday placeholder, or a no-data placeholder. Shared by
+    _on_batch_export and ui/work_pipeline_screen.py's "generate
+    everything" action. Returns "data" / "holiday" / "empty" for the
+    caller's summary."""
+    if date_str in holiday_labels:
+        label = holiday_labels[date_str] or "بدون سبب محدد"
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+        )
+        return "holiday"
+    absences = get_day_absences(date_str)
+    if not absences:
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+            "لم يتم تسجيل بيانات ورقة الغياب لهذا اليوم بعد.",
+        )
+        return "empty"
+    _draw_daily_absence_pdf_page(
+        painter, page_w, page_h, date_str, absences, place=settings.city if settings else "",
+    )
+    return "data"
+
+
 # ── Main screen ───────────────────────────────────────────────────────────────
 
 class DailyAbsenceScreen(QWidget):
@@ -791,13 +845,7 @@ class DailyAbsenceScreen(QWidget):
         history = get_recent_absences(limit=_ESTIMATE_HISTORY_LIMIT)
 
         def generate_day(date_str: str) -> bool:
-            if is_holiday(date_str) or get_day_absences(date_str):
-                return False
-            target_date = datetime.date.fromisoformat(date_str)
-            result = estimate_absence(active_roster, history, target_date, MEAL_GHADA)
-            for absence in _counts_to_absences(date_str, self._unflatten_counts(result.counts)):
-                save_daily_absence(absence)
-            return True
+            return generate_and_save_absence_for_date(date_str, active_roster, history)
 
         run_batch_generate_data(self, generate_day)
 
@@ -852,22 +900,6 @@ class DailyAbsenceScreen(QWidget):
         holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
         def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
-            if date_str in holiday_labels:
-                label = holiday_labels[date_str] or "بدون سبب محدد"
-                draw_placeholder_pdf_page(
-                    painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
-                )
-                return "holiday"
-            absences = get_day_absences(date_str)
-            if not absences:
-                draw_placeholder_pdf_page(
-                    painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
-                    "لم يتم تسجيل بيانات ورقة الغياب لهذا اليوم بعد.",
-                )
-                return "empty"
-            _draw_daily_absence_pdf_page(
-                painter, page_w, page_h, date_str, absences, place=settings.city if settings else "",
-            )
-            return "data"
+            return build_absence_pdf_page(painter, page_w, page_h, date_str, holiday_labels, settings)
 
         run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Portrait, build_page)

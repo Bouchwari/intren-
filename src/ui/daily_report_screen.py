@@ -534,6 +534,32 @@ def _report_for_date(date_str: str) -> DailyReport:
     return DailyReport(date=date_str, **fields)
 
 
+def build_report_pdf_page(
+    painter, page_w: float, page_h: float, date_str: str,
+    holiday_labels: Dict[str, str], settings,
+) -> str:
+    """Draw one date's page for a combined batch PDF — real data, a
+    holiday placeholder, or a no-data placeholder. Shared by
+    _on_batch_export and ui/work_pipeline_screen.py's "generate
+    everything" action. Returns "data" / "holiday" / "empty" for the
+    caller's summary."""
+    if date_str in holiday_labels:
+        label = holiday_labels[date_str] or "بدون سبب محدد"
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+        )
+        return "holiday"
+    if not get_day_contacts(date_str) and not get_day_absences(date_str):
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+            "لم يتم تسجيل بيانات ورقتي الاتصال أو الغياب لهذا اليوم بعد.",
+        )
+        return "empty"
+    report = _report_for_date(date_str)
+    _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report)
+    return "data"
+
+
 class DailyReportScreen(QWidget):
     """Daily report screen — auto-generated from contact + absence data."""
 
@@ -1164,20 +1190,6 @@ class DailyReportScreen(QWidget):
         holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
         def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
-            if date_str in holiday_labels:
-                label = holiday_labels[date_str] or "بدون سبب محدد"
-                draw_placeholder_pdf_page(
-                    painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
-                )
-                return "holiday"
-            if not get_day_contacts(date_str) and not get_day_absences(date_str):
-                draw_placeholder_pdf_page(
-                    painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
-                    "لم يتم تسجيل بيانات ورقتي الاتصال أو الغياب لهذا اليوم بعد.",
-                )
-                return "empty"
-            report = _report_for_date(date_str)
-            _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report)
-            return "data"
+            return build_report_pdf_page(painter, page_w, page_h, date_str, holiday_labels, settings)
 
         run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Landscape, build_page)
