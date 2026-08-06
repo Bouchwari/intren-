@@ -280,7 +280,10 @@
       "Bash(gh --version)",
       "Bash(gh repo *)",
       "Bash(git ls-remote *)",
-      "Bash(gh api *)"
+      "Bash(gh api *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git branch *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
