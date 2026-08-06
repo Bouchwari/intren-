@@ -20,9 +20,17 @@ matama.db
 matama_dist_before_*.db
 src/data/app.db
 *.db
+*.db.backup
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Real school/student documents the app generates into the project root
+# (never commit — templets/ and assets/ keep their tracked template files
+# since these patterns are root-only)
+/*.pdf
+/*.docx
+/*.xlsx
 
 # Node (new UI prototype)
 new_ui_design/node_modules/
