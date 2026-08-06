@@ -283,7 +283,13 @@
       "Bash(gh api *)",
       "Bash(git remote *)",
       "Bash(git push *)",
-      "Bash(git branch *)"
+      "Bash(git branch *)",
+      "Bash(.venv/bin/python -m py_compile src/core/document_pipeline.py)",
+      "Bash(.venv/bin/python -m py_compile src/ui/daily_absence_screen.py src/ui/daily_contact_screen.py)",
+      "Bash(.venv/bin/python -m py_compile src/ui/work_pipeline_screen.py)",
+      "Bash(.venv/bin/python -m py_compile src/ui/main_window.py src/ui/dashboard_screen.py)",
+      "Bash(timeout 60 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_document_pipeline -v)",
+      "Bash(timeout 90 env QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.test_work_pipeline_screen -v)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
