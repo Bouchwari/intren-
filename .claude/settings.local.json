@@ -318,7 +318,9 @@
       "Bash(timeout 60 libreoffice --headless --convert-to pdf order_letter_fixed.docx)",
       "Bash(rm -rf ~/lo_check *)",
       "Bash(git checkout *)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(./.venv/bin/python -m PyInstaller --version)",
+      "Bash(git pull *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
