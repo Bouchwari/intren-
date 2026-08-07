@@ -10,8 +10,10 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_REPORT, get_daily_pipeline_status
-from core.models import DailyAbsence, DailyContact, DailyReport
+from core.document_pipeline import (
+    DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_REPORT, get_daily_pipeline_status,
+)
+from core.models import DailyAbsence, DailyContact, DailyReport, OrderLetter
 from data import database
 
 
@@ -26,9 +28,11 @@ class DocumentPipelineTests(unittest.TestCase):
         database.DB_PATH = self._original_db_path
         self._tmpdir.cleanup()
 
-    def test_all_three_documents_not_ready_for_a_blank_date(self) -> None:
+    def test_all_four_documents_not_ready_for_a_blank_date(self) -> None:
         items = get_daily_pipeline_status("2026-06-11")
-        self.assertEqual({item.key for item in items}, {DOC_CONTACT, DOC_ABSENCE, DOC_REPORT})
+        self.assertEqual(
+            {item.key for item in items}, {DOC_CONTACT, DOC_ABSENCE, DOC_REPORT, DOC_ORDER_LETTER},
+        )
         self.assertTrue(all(not item.ready for item in items))
 
     def test_contact_ready_once_saved(self) -> None:
@@ -58,6 +62,22 @@ class DocumentPipelineTests(unittest.TestCase):
         database.save_daily_report(DailyReport(date="2026-06-11"))
         items = {item.key: item for item in get_daily_pipeline_status("2026-06-11")}
         self.assertTrue(items[DOC_REPORT].ready)
+
+    def test_order_letter_ready_when_a_saved_letter_covers_the_date(self) -> None:
+        database.save_order_letter(
+            OrderLetter(letter_date="2026-06-09", period_start="2026-06-10", period_end="2026-06-14"),
+            [],
+        )
+        items = {item.key: item for item in get_daily_pipeline_status("2026-06-11")}
+        self.assertTrue(items[DOC_ORDER_LETTER].ready)
+
+    def test_order_letter_not_ready_when_date_is_outside_every_saved_period(self) -> None:
+        database.save_order_letter(
+            OrderLetter(letter_date="2026-06-09", period_start="2026-06-10", period_end="2026-06-14"),
+            [],
+        )
+        items = {item.key: item for item in get_daily_pipeline_status("2026-06-20")}
+        self.assertFalse(items[DOC_ORDER_LETTER].ready)
 
 
 if __name__ == "__main__":

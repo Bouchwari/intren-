@@ -285,6 +285,7 @@ class OrderLetter:
     period_start: str   # YYYY-MM-DD — start of the supply period
     period_end: str     # YYYY-MM-DD — end of the supply period
     notes: str = ""
+    document_number: Optional[int] = None  # assigned when first saved, never reassigned
     id: Optional[int] = None
 
 
