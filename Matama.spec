@@ -5,7 +5,7 @@ a = Analysis(
     ['src/main.py'],
     pathex=[SPECPATH],
     binaries=[],
-    datas=[('templets', 'templets'), ('assets/fonts', 'assets/fonts')],
+    datas=[('templets', 'templets'), ('assets/fonts', 'assets/fonts'), ('assets/icons', 'assets/icons')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
