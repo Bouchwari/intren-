@@ -8,6 +8,7 @@ import logging
 from PySide6.QtGui import QFontDatabase
 
 from config.settings import (
+    CHECK_ICON_PATH,
     COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_PANEL,
     COLOR_PANEL_ALT, COLOR_PAPER, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     FONT_BODY, FONTS_DIR, SPACE_MD, SPACE_SM,
@@ -172,6 +173,7 @@ def build_stylesheet() -> str:
         QCheckBox::indicator:checked {{
             background: {COLOR_ACCENT};
             border: 1px solid {COLOR_ACCENT};
+            image: url({CHECK_ICON_PATH.as_posix()});
         }}
 
         QTabWidget::pane {{
