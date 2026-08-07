@@ -22,7 +22,9 @@ from config.settings import (
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION, FONT_TITLE,
 )
 from core.contact_counts import count_students
-from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_REPORT, PipelineItem, get_daily_pipeline_status
+from core.document_pipeline import (
+    DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_REPORT, PipelineItem, get_daily_pipeline_status,
+)
 from data.database import (
     get_all_holidays, get_all_students, get_recent_absences, get_recent_contacts, get_school_settings,
 )
@@ -51,8 +53,8 @@ _TOAST_NO_CLASSIFIED_STUDENTS = (
 )
 
 # key -> (icon, screen index to jump to when not ready)
-_DOC_ICON = {DOC_CONTACT: "📋", DOC_ABSENCE: "📉", DOC_REPORT: "📄"}
-_DOC_TARGET_SCREEN = {DOC_CONTACT: 4, DOC_ABSENCE: 5, DOC_REPORT: 6}
+_DOC_ICON = {DOC_CONTACT: "📋", DOC_ABSENCE: "📉", DOC_REPORT: "📄", DOC_ORDER_LETTER: "✉️"}
+_DOC_TARGET_SCREEN = {DOC_CONTACT: 4, DOC_ABSENCE: 5, DOC_ORDER_LETTER: 6, DOC_REPORT: 7}
 _DOC_PDF_NAME = {
     DOC_CONTACT: "ورقة_الاتصال_اليومية",
     DOC_ABSENCE: "ورقة_الغياب_اليومية",
@@ -291,6 +293,13 @@ class WorkPipelineScreen(QWidget):
             item = self._cards_container.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # setParent(None) detaches (and hides) it immediately —
+                # deleteLater() alone leaves it painting at its old
+                # position until the event loop gets around to it, which
+                # ghosts stale cards for a frame when refresh() fires
+                # more than once in quick succession (e.g. clicking
+                # through dates fast).
+                widget.setParent(None)
                 widget.deleteLater()
 
         date_str = self._date_edit.date().toString("yyyy-MM-dd")

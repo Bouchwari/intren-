@@ -27,12 +27,11 @@ from config.settings import (
 )
 from core.models import DailyContact, DailyAbsence, DailyReport
 from data.database import (
-    get_all_holidays,
     get_day_contacts, get_day_absences,
     get_dates_with_data, get_daily_report, get_school_settings,
     save_daily_report,
 )
-from ui.batch_export import draw_placeholder_pdf_page, run_batch_combined_pdf
+from ui.batch_export import draw_placeholder_pdf_page
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
 from ui.widgets.date_input import DateInput
@@ -49,8 +48,6 @@ _BTN_NEXT_ICON  = "←"
 _BTN_TODAY      = "اليوم"
 _BTN_GENERATE      = "توليد التقرير"
 _BTN_GENERATE_ICON = "🔄"
-_BTN_BATCH_EXPORT      = "توليد لعدة أيام"
-_BTN_BATCH_EXPORT_ICON = "🗂"
 _BTN_SAVE_NOTES = "💾  حفظ الملاحظات"
 _LBL_DATE       = "التاريخ:"
 _LBL_NOTES      = "ملاحظات المسير"
@@ -539,10 +536,9 @@ def build_report_pdf_page(
     holiday_labels: Dict[str, str], settings,
 ) -> str:
     """Draw one date's page for a combined batch PDF — real data, a
-    holiday placeholder, or a no-data placeholder. Shared by
-    _on_batch_export and ui/work_pipeline_screen.py's "generate
-    everything" action. Returns "data" / "holiday" / "empty" for the
-    caller's summary."""
+    holiday placeholder, or a no-data placeholder. Used by
+    ui/work_pipeline_screen.py's "generate everything" action. Returns
+    "data" / "holiday" / "empty" for the caller's summary."""
     if date_str in holiday_labels:
         label = holiday_labels[date_str] or "بدون سبب محدد"
         draw_placeholder_pdf_page(
@@ -862,12 +858,8 @@ class DailyReportScreen(QWidget):
         export_btn = self._btn(_BTN_EXPORT, COLOR_TEXT_PRIMARY, icon=_BTN_EXPORT_ICON)
         export_btn.clicked.connect(self._on_export)
         export_btn.setMaximumWidth(160)
-        batch_btn = self._btn(_BTN_BATCH_EXPORT, COLOR_TEXT_PRIMARY, icon=_BTN_BATCH_EXPORT_ICON)
-        batch_btn.clicked.connect(self._on_batch_export)
-        batch_btn.setMaximumWidth(200)
         btn_row.addWidget(save_btn)
         btn_row.addWidget(export_btn)
-        btn_row.addWidget(batch_btn)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -1178,18 +1170,3 @@ class DailyReportScreen(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
 
-    def _on_batch_export(self) -> None:
-        """Export the daily report for a range of days as ONE combined
-        PDF — one page per day, like a mail merge, instead of a separate
-        file per day. A real holiday or a day with no contact/absence
-        data still gets its own page explaining why, instead of silently
-        vanishing. Read-only: unlike _on_export this never calls
-        save_daily_report — it exports whatever is already saved (or
-        freshly computed) for each date without changing it."""
-        settings = get_school_settings()
-        holiday_labels = {h.date: h.label for h in get_all_holidays()}
-
-        def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
-            return build_report_pdf_page(painter, page_w, page_h, date_str, holiday_labels, settings)
-
-        run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Landscape, build_page)

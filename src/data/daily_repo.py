@@ -92,6 +92,18 @@ def get_recent_contacts(limit: int = 60) -> List[DailyContact]:
     return [_row_to_contact(r) for r in rows]
 
 
+def get_contacts_between(start_date: str, end_date: str) -> List[DailyContact]:
+    """Return every saved meal row with date in [start_date, end_date]
+    (inclusive) — used to sum real attendance across a range, e.g. for
+    رسالة الطلبية's auto-fill."""
+    with _connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM daily_contact WHERE date BETWEEN ? AND ? ORDER BY date, meal_type",
+            (start_date, end_date),
+        ).fetchall()
+    return [_row_to_contact(r) for r in rows]
+
+
 def get_last_contacts_before(date: str) -> List[DailyContact]:
     """Return all meal rows for the most recent date before `date` that has
     any saved contact data — used by "copy from previous day" so a gap
@@ -366,13 +378,27 @@ def get_dates_with_data() -> List[str]:
 
 # ── Order letter CRUD ─────────────────────────────────────────────────────────
 
+def get_next_order_letter_number(fallback: int = 1) -> int:
+    """Return the suggested next رقم الوثيقة — shown as an editable default
+    on screen, not force-assigned, since the مسير may want to correct it."""
+    fallback = max(1, int(fallback or 1))
+    with _connection() as conn:
+        row = conn.execute("SELECT MAX(document_number) AS last_number FROM order_letters").fetchone()
+    last_number = row["last_number"] if row else None
+    if last_number is None:
+        return fallback
+    return max(fallback, int(last_number) + 1)
+
+
 def save_order_letter(letter: OrderLetter, items: List[OrderItem]) -> int:
-    """Insert a new order letter + its items. Returns the new letter id."""
+    """Insert a new order letter + its items using letter.document_number
+    as given (the screen pre-fills it from get_next_order_letter_number()
+    but the مسير can edit it first). Returns the new letter id."""
     with _connection() as conn:
         cur = conn.execute("""
-            INSERT INTO order_letters (letter_date, period_start, period_end, notes)
-            VALUES (?,?,?,?)
-        """, (letter.letter_date, letter.period_start, letter.period_end, letter.notes))
+            INSERT INTO order_letters (letter_date, period_start, period_end, notes, document_number)
+            VALUES (?,?,?,?,?)
+        """, (letter.letter_date, letter.period_start, letter.period_end, letter.notes, letter.document_number))
         letter_id = int(cur.lastrowid)  # type: ignore[arg-type]
         conn.executemany("""
             INSERT INTO order_items (letter_id, meal_type, collegial, qualifying, monitors)
@@ -392,7 +418,7 @@ def get_all_order_letters() -> List[OrderLetter]:
         OrderLetter(
             id=r["id"], letter_date=r["letter_date"],
             period_start=r["period_start"], period_end=r["period_end"],
-            notes=r["notes"],
+            notes=r["notes"], document_number=r["document_number"],
         )
         for r in rows
     ]

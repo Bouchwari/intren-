@@ -36,6 +36,13 @@ FONTS_DIR: Path = BASE_DIR / "assets" / "fonts"
 if getattr(sys, 'frozen', False) and not FONTS_DIR.exists():
     FONTS_DIR = BASE_DIR / "_internal" / "assets" / "fonts"
 
+# Checkbox checkmark glyph — QCheckBox::indicator loses Qt's native check
+# mark once ui/theme.py styles its background/border, so the stylesheet
+# draws this image back in for the checked state. Same onedir fallback.
+CHECK_ICON_PATH: Path = BASE_DIR / "assets" / "icons" / "check.svg"
+if getattr(sys, 'frozen', False) and not CHECK_ICON_PATH.exists():
+    CHECK_ICON_PATH = BASE_DIR / "_internal" / "assets" / "icons" / "check.svg"
+
 # ── App identity ─────────────────────────────────────────────────────────────
 
 APP_NAME: str = "نظام المطعمة"

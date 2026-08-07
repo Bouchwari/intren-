@@ -1,20 +1,19 @@
 """
 src/ui/batch_export.py
-Shared "do this for a range of days" flow. Entry points share the same
-من/إلى date picker and per-day loop:
+Shared "do this for a range of days" pieces used to build يوم العمل's
+"توليد شامل لعدة أيام" flow (see ui/work_pipeline_screen.py):
 
-- run_batch_combined_pdf(): pick a range, then ONE output PDF file, then
-  draw one page per date onto a single shared writer — like a mail merge:
-  one document to print, not a folder of separate files. Every date in
-  the range gets a page — build_page() decides whether that's real data,
-  a "holiday" placeholder, or a "no data entered" placeholder, so a gap
-  is explained instead of silently missing. Used by the "توليد لعدة أيام"
-  export buttons.
-- run_batch_generate_data(): pick a range, then call a callback once per
-  date that fills in and SAVES real numbers (e.g. the same estimator
-  behind "توليد تلقائي", just run over many days) — used by the
-  "توليد الأرقام لعدة أيام" buttons. No file step, since nothing is
-  written to disk, only saved to the database.
+- pick_date_range(): shows the shared من/إلى dialog, returns the chosen
+  (start, end) inclusive range or None if cancelled.
+- write_combined_pdf(): draw one page per date in a range onto a single
+  shared PDF writer — like a mail merge: one document, not a folder of
+  separate files. build_page() decides whether that's real data, a
+  "holiday" placeholder, or a "no data entered" placeholder, so a gap is
+  explained instead of silently missing.
+- draw_placeholder_pdf_page(): the shared placeholder-page drawer used by
+  each screen's own build_page() for a holiday or empty date.
+- _summarize_combined_pdf(): turns write_combined_pdf()'s (counts,
+  failed_dates) result into the Arabic summary message.
 """
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -22,7 +21,7 @@ from typing import Callable, Optional, Tuple
 from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QTextOption
 from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QDialog, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
@@ -36,11 +35,7 @@ _LBL_FROM = "من:"
 _LBL_TO = "إلى:"
 _BTN_NEXT = "التالي — اختيار الملف"
 _BTN_CANCEL = "إلغاء"
-_SAVE_DIALOG_TITLE = "حفظ المستند المجمّع"
-_PDF_FILTER = "PDF (*.pdf)"
 _RANGE_ORDER_ERR = "تاريخ \"إلى\" يجب أن يكون بعد تاريخ \"من\"."
-_RESULT_TITLE = "تم"
-_NO_DAYS_GENERATED_MSG = "لم يتم توليد أي يوم — كل الأيام في هذا النطاق إما بها بيانات مسبقًا أو أيام عطل."
 _PAGE_LABEL_HOLIDAY = "يوم عطلة"
 _PAGE_MSG_HOLIDAY = "📅 عطلة: {label}"
 _PAGE_MSG_HOLIDAY_NO_LABEL = "📅 يوم عطلة"
@@ -114,26 +109,6 @@ def pick_date_range(parent: QWidget) -> Optional[Tuple[QDate, QDate]]:
     return dialog.chosen_range()
 
 
-def _run_over_range(
-    start: QDate, end: QDate, process_day: Callable[[str], bool]
-) -> Tuple[int, list]:
-    """Call process_day(date_str) once per date in [start, end] inclusive.
-    Returns (done_count, failed_dates) — a date that raises counts as
-    failed but doesn't stop the rest."""
-    done = 0
-    failed_dates: list = []
-    date = start
-    while date <= end:
-        date_str = date.toString("yyyy-MM-dd")
-        try:
-            if process_day(date_str):
-                done += 1
-        except Exception:
-            failed_dates.append(date_str)
-        date = date.addDays(1)
-    return done, failed_dates
-
-
 def draw_placeholder_pdf_page(
     painter: QPainter, page_w: float, page_h: float, heading: str, message: str,
 ) -> None:
@@ -181,10 +156,10 @@ def write_combined_pdf(
     "holiday", or "empty". Every date gets a page; nothing is silently
     skipped. A date whose build_page raises gets a blank page but doesn't
     stop the rest. Returns (category -> count, failed_dates) for the
-    caller to build its own summary — see run_batch_combined_pdf for the
-    single-document dialog-driven version, or drive this directly (e.g.
-    ui/work_pipeline_screen.py's "generate everything", which already has
-    its own range and writes several documents into one chosen folder)."""
+    caller to build its own summary — see _summarize_combined_pdf, or
+    ui/work_pipeline_screen.py's "generate everything", which drives this
+    directly with its own range and writes several documents into one
+    chosen folder."""
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -227,59 +202,3 @@ def _summarize_combined_pdf(path: Path, counts: dict, failed_dates: list) -> str
     if failed_dates:
         lines.append(f"تعذر رسم {len(failed_dates)} يوم: " + "، ".join(failed_dates))
     return "\n".join(lines)
-
-
-def run_batch_combined_pdf(
-    parent: QWidget,
-    default_filename: str,
-    orientation: QPageLayout.Orientation,
-    build_page: Callable[[QPainter, float, float, str], str],
-) -> None:
-    """Ask for a date range, then ONE output PDF path, then write the
-    combined document there (see write_combined_pdf) and show a summary."""
-    date_range = pick_date_range(parent)
-    if date_range is None:
-        return
-    start, end = date_range
-
-    suggested = f"{default_filename}_{start.toString('yyyy-MM-dd')}_إلى_{end.toString('yyyy-MM-dd')}.pdf"
-    path_str, _ = QFileDialog.getSaveFileName(parent, _SAVE_DIALOG_TITLE, suggested, _PDF_FILTER)
-    if not path_str:
-        return
-    path = Path(path_str)
-    if path.suffix.lower() != ".pdf":
-        path = path.with_suffix(".pdf")
-
-    counts, failed_dates = write_combined_pdf(path, start, end, orientation, build_page)
-    QMessageBox.information(parent, _RESULT_TITLE, _summarize_combined_pdf(path, counts, failed_dates))
-
-
-def run_batch_generate_data(
-    parent: QWidget,
-    generate_day: Callable[[str], bool],
-) -> None:
-    """Ask for a date range, then call generate_day(date_str) once per date
-    (inclusive) — no folder step, since this saves numbers to the database
-    instead of writing files. generate_day must return True if it filled
-    in and saved that date, False if it was skipped (already has data, or
-    a real holiday) — it should not raise for a normal skip, only for a
-    real failure. Shows a summary at the end."""
-    date_range = pick_date_range(parent)
-    if date_range is None:
-        return
-    start, end = date_range
-
-    total_days = start.daysTo(end) + 1
-    done, failed_dates = _run_over_range(start, end, generate_day)
-
-    if done == 0 and not failed_dates:
-        QMessageBox.information(parent, _RESULT_TITLE, _NO_DAYS_GENERATED_MSG)
-        return
-
-    skipped = total_days - done - len(failed_dates)
-    lines = [f"تم توليد أرقام {done} يوم من أصل {total_days} يوم."]
-    if skipped:
-        lines.append(f"تم تجاوز {skipped} يوم (بيانات محفوظة مسبقًا أو يوم عطلة).")
-    if failed_dates:
-        lines.append(f"تعذر توليد {len(failed_dates)} يوم: " + "، ".join(failed_dates))
-    QMessageBox.information(parent, _RESULT_TITLE, "\n".join(lines))

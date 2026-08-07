@@ -42,9 +42,9 @@ _NAV_ITEMS: list[tuple[str, str, int]] = [
     ("🍽️", "البرنامج الغذائي",      3),
     ("📋", "ورقة الاتصال اليومية",  4),
     ("📉", "ورقة الغياب اليومي",    5),
-    ("📄", "التقرير اليومي",        6),
-    ("📊", "المحضر الشهري",         7),
-    ("✉️", "رسالة الطلبية",         8),
+    ("✉️", "رسالة الطلبية",         6),
+    ("📄", "التقرير اليومي",        7),
+    ("📊", "المحضر الشهري",         8),
     ("💰", "بيان المصاريف",         9),
     ("📕", "دفتر المخالفات",        10),
     ("⚙️", "الإعدادات",            11),
@@ -197,9 +197,9 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(MealProgramScreen())                          # 3 — built
         self._stack.addWidget(DailyContactScreen())                         # 4 — built
         self._stack.addWidget(DailyAbsenceScreen())                          # 5 — built
-        self._stack.addWidget(DailyReportScreen())                           # 6 — built
-        self._stack.addWidget(MonthlyReportScreen())                          # 7 — built
-        self._stack.addWidget(OrderLetterScreen())                            # 8 — built
+        self._stack.addWidget(OrderLetterScreen())                            # 6 — built
+        self._stack.addWidget(DailyReportScreen())                           # 7 — built
+        self._stack.addWidget(MonthlyReportScreen())                          # 8 — built
         self._stack.addWidget(ExpenseStatementScreen())                       # 9 — built
         self._stack.addWidget(IncidentLogScreen())                            # 10 — built
 

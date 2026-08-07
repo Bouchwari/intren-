@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
+    CHECK_ICON_PATH,
     COLOR_ACCENT, COLOR_DANGER, COLOR_PANEL_ALT,
     COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     GRANT_LABELS, SECTION_LABELS,
@@ -394,6 +395,7 @@ class _AddEditDialog(QDialog):
             QCheckBox#monitorCheck::indicator:checked {{
                 background: {_INK};
                 border-color: {_INK};
+                image: url({CHECK_ICON_PATH.as_posix()});
             }}
         """)
         if self._force_monitor:

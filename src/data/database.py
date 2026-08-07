@@ -115,6 +115,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE daily_reports ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
             pass
+    order_letter_cols = [
+        "document_number INTEGER",
+    ]
+    for col_def in order_letter_cols:
+        try:
+            conn.execute(f"ALTER TABLE order_letters ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
 
 
 def init_database() -> None:
@@ -287,6 +295,7 @@ from data.daily_repo import (  # noqa: E402
     get_contact,
     save_daily_contact,
     get_recent_contacts,
+    get_contacts_between,
     get_last_contacts_before,
     get_next_daily_contact_document_number,
     get_daily_contact_document_number_draft,
@@ -301,6 +310,7 @@ from data.daily_repo import (  # noqa: E402
     save_daily_report,
     get_dates_with_data,
     save_order_letter,
+    get_next_order_letter_number,
     get_all_order_letters,
     get_order_items,
     delete_order_letter,

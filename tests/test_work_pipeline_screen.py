@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT_DIR))
 from config.settings import EXPORT_FORMAT_PDF
 from core.models import DailyContact, Student
 from data import database
-from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_REPORT
+from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_REPORT
 from ui import work_pipeline_screen as wps
 
 
@@ -66,7 +66,7 @@ class WorkPipelineScreenTests(unittest.TestCase):
         screen._date_edit.setDate(QDate(2026, 6, 11))
         screen.refresh()
 
-        self.assertEqual(screen._cards_container.count(), 3)
+        self.assertEqual(screen._cards_container.count(), 4)
         screen.close()
 
     def test_fix_button_navigates_to_the_right_screen(self) -> None:
@@ -75,13 +75,28 @@ class WorkPipelineScreenTests(unittest.TestCase):
         seen = []
         screen = wps.WorkPipelineScreen(navigate_to=lambda i: seen.append(i))
         screen._date_edit.setDate(QDate(2026, 6, 11))
-        screen.refresh()  # nothing saved for this date -> all 3 cards show a fix button
+        screen.refresh()  # nothing saved for this date -> all 4 cards show a fix button
 
         first_card = screen._cards_container.itemAt(0).widget()
         fix_btn = first_card.findChildren(IconButton)[0]
         fix_btn.click()
 
         self.assertEqual(seen, [wps._DOC_TARGET_SCREEN[DOC_CONTACT]])
+        screen.close()
+
+    def test_order_letter_fix_button_navigates_to_the_right_screen(self) -> None:
+        from ui.widgets.icon_button import IconButton
+
+        seen = []
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: seen.append(i))
+        screen._date_edit.setDate(QDate(2026, 6, 11))
+        screen.refresh()  # nothing saved for this date -> all 4 cards show a fix button
+
+        order_letter_card = screen._cards_container.itemAt(3).widget()
+        fix_btn = order_letter_card.findChildren(IconButton)[0]
+        fix_btn.click()
+
+        self.assertEqual(seen, [wps._DOC_TARGET_SCREEN[DOC_ORDER_LETTER]])
         screen.close()
 
     def test_generate_everything_auto_fills_and_exports_selected_documents(self) -> None:
@@ -128,6 +143,40 @@ class WorkPipelineScreenTests(unittest.TestCase):
         self.assertEqual(len(contacts), 1)
         written = list(Path(self._out_tmpdir.name).glob("*.pdf"))
         self.assertEqual(len(written), 1)
+        screen.close()
+
+    def test_no_students_warns_and_auto_fills_nothing(self) -> None:
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        fake_dialog = _FakeGenerateDialog(
+            QDate(2026, 6, 11), QDate(2026, 6, 12), [DOC_CONTACT, DOC_ABSENCE], True,
+        )
+        with patch.object(wps, "_GenerateEverythingDialog", fake_dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+
+        # No students in the roster -> auto-fill must warn and save
+        # nothing, not silently create real-looking rows.
+        for day in ("2026-06-11", "2026-06-12"):
+            self.assertEqual(database.get_day_contacts(day), [])
+            self.assertEqual(database.get_day_absences(day), [])
+        screen.close()
+
+    def test_unclassified_students_warn_instead_of_saving_silent_zeros(self) -> None:
+        """Regression: a real student with no القسم (class) assigned makes
+        count_students() classify nobody, so auto-fill must warn and save
+        nothing instead of silently saving real-looking rows full of
+        zeros — indistinguishable from doing nothing."""
+        database.add_student(Student(full_name="تلميذ بدون قسم", student_class="", grant_type="full"))
+
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        fake_dialog = _FakeGenerateDialog(
+            QDate(2026, 6, 11), QDate(2026, 6, 11), [DOC_CONTACT], True,
+        )
+        with patch.object(wps, "_GenerateEverythingDialog", fake_dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+
+        self.assertEqual(database.get_day_contacts("2026-06-11"), [])
         screen.close()
 
 

@@ -37,13 +37,12 @@ from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
-from ui.batch_export import draw_placeholder_pdf_page, run_batch_combined_pdf, run_batch_generate_data
+from ui.batch_export import draw_placeholder_pdf_page
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 from data.database import (
     get_day_contacts,
-    get_all_holidays,
     get_all_students,
     get_daily_contact_document_number_draft,
     get_document_export_format,
@@ -90,11 +89,6 @@ _HDR_HISTORY    = ["رقم الوثيقة", "التاريخ", "العملية", 
 _SAVED_OK       = "تم حفظ ورقة الاتصال بنجاح."
 _BTN_EXPORT_DOC = "طباعة وتسجيل"
 _BTN_EXPORT_DOC_ICON = "🖨"
-_BTN_BATCH_EXPORT = "توليد لعدة أيام"
-_BTN_BATCH_EXPORT_ICON = "🗂"
-_BTN_BATCH_GENERATE = "توليد الأرقام لعدة أيام"
-_BTN_BATCH_GENERATE_ICON = "🎲"
-_TOAST_BATCH_NO_STUDENTS = "لا يوجد تلاميذ مسجلون — لا يمكن توليد أرقام تلقائية."
 _DOCX_DIALOG_TITLE = "تحميل ورقة الاتصال اليومية"
 _DOCX_DEFAULT_NAME = "ورقة_الاتصال_اليومية"
 _DOCX_SAVED_OK = "تم تحميل ورقة الاتصال اليومية بنجاح."
@@ -983,10 +977,9 @@ def build_contact_pdf_page(
 ) -> str:
     """Draw one date's page for a combined batch PDF — real data, a
     holiday placeholder, or a no-data placeholder — and assign/record a
-    real رقم الوثيقة for a date that never had one. Shared by
-    _on_batch_export and ui/work_pipeline_screen.py's "generate
-    everything" action. Returns "data" / "holiday" / "empty" for the
-    caller's summary."""
+    real رقم الوثيقة for a date that never had one. Used by
+    ui/work_pipeline_screen.py's "generate everything" action. Returns
+    "data" / "holiday" / "empty" for the caller's summary."""
     if date_str in holiday_labels:
         label = holiday_labels[date_str] or "بدون سبب محدد"
         draw_placeholder_pdf_page(
@@ -1095,14 +1088,8 @@ class DailyContactScreen(QWidget):
         save_btn.clicked.connect(self._on_save)
         export_btn = self._btn(_BTN_EXPORT_DOC, _INK, icon=_BTN_EXPORT_DOC_ICON)
         export_btn.clicked.connect(self._on_export)
-        batch_btn = self._btn(_BTN_BATCH_EXPORT, _INK, icon=_BTN_BATCH_EXPORT_ICON)
-        batch_btn.clicked.connect(self._on_batch_export)
-        batch_generate_btn = self._btn(_BTN_BATCH_GENERATE, _INK, icon=_BTN_BATCH_GENERATE_ICON)
-        batch_generate_btn.clicked.connect(self._on_batch_generate_data)
         actions_row.addWidget(save_btn)
         actions_row.addWidget(export_btn)
-        actions_row.addWidget(batch_btn)
-        actions_row.addWidget(batch_generate_btn)
         actions.layout().addLayout(actions_row)
 
         document = self._toolbar_group(_LBL_DOCUMENT)
@@ -1632,48 +1619,6 @@ class DailyContactScreen(QWidget):
         except Exception as exc:
             error_prefix = _PDF_SAVE_ERROR if is_pdf else _DOCX_SAVE_ERROR
             QMessageBox.critical(self, "خطأ", f"{error_prefix}\n{exc}")
-
-    def _on_batch_export(self) -> None:
-        """Export the contact sheet for a range of days as ONE combined
-        PDF — one page per day, like a mail merge, instead of a separate
-        file per day. A real holiday or a day with no saved data still
-        gets its own page explaining why, instead of silently vanishing.
-
-        Unlike _on_export this never touches saved contact numbers or the
-        منحة/غياب data — but a day that was never officially numbered
-        before (e.g. its numbers came from "توليد الأرقام لعدة أيام"
-        instead of the single-day طباعة وتسجيل) DOES get assigned and
-        permanently recorded a real رقم الوثيقة here, in date order, so
-        every page in the printed packet has a real number instead of
-        "....". A day that already has a recorded number keeps it."""
-        settings = get_school_settings()
-        holiday_labels = {h.date: h.label for h in get_all_holidays()}
-
-        def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
-            return build_contact_pdf_page(painter, page_w, page_h, date_str, holiday_labels, settings)
-
-        run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Portrait, build_page)
-
-    def _on_batch_generate_data(self) -> None:
-        """Auto-fill AND SAVE real contact numbers for every date in a
-        range that has none yet — the same estimator behind "توليد تلقائي"
-        (median of real historical same-weekday rates, not random), just
-        run over many days instead of one. Never overwrites a day that
-        already has saved data, and skips real holidays."""
-        students = get_all_students()
-        if not students:
-            QMessageBox.information(self, "تنبيه", _TOAST_BATCH_NO_STUDENTS)
-            return
-        active_roster = self._flatten_counts(count_students(students))
-        if sum(active_roster.values()) == 0:
-            QMessageBox.information(self, "تنبيه", _TOAST_NO_CLASSIFIED_STUDENTS)
-            return
-        history = get_recent_contacts(limit=_ESTIMATE_HISTORY_LIMIT)
-
-        def generate_day(date_str: str) -> bool:
-            return generate_and_save_contact_for_date(date_str, active_roster, history)
-
-        run_batch_generate_data(self, generate_day)
 
     def _on_save(self) -> None:
         date_str = self._selected_date_str()

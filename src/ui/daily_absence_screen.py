@@ -27,10 +27,10 @@ from core.attendance_estimate import EstimateResult, estimate_absence
 from core.contact_counts import count_students
 from core.models import DailyAbsence
 from data.database import (
-    get_all_holidays, get_all_students, get_day_absences, get_recent_absences, get_school_settings,
+    get_all_students, get_day_absences, get_recent_absences, get_school_settings,
     is_holiday, save_daily_absence,
 )
-from ui.batch_export import draw_placeholder_pdf_page, run_batch_combined_pdf, run_batch_generate_data
+from ui.batch_export import draw_placeholder_pdf_page
 from ui.daily_contact_screen import _draw_contact_pdf_cell, _draw_contact_pdf_text, _format_doc_date
 from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
 from ui.widgets.date_input import DateInput
@@ -69,8 +69,6 @@ _TOAST_NO_CLASSIFIED_STUDENTS = (
     "لم يتم التعرف على قسم أي تلميذ — تأكد من ملء حقل \"القسم\" في لائحة"
     " التلاميذ، وإلا فسيتم توليد أرقام صفرية."
 )
-_BTN_BATCH_GENERATE = "توليد الأرقام لعدة أيام"
-_BTN_BATCH_GENERATE_ICON = "🎲"
 _BTN_EXPORT      = "تصدير PDF"
 _BTN_EXPORT_ICON = "📄"
 _PDF_DIALOG_TITLE = "تصدير ورقة الغياب اليومي"
@@ -78,8 +76,6 @@ _PDF_DEFAULT_NAME = "ورقة_الغياب_اليومية"
 _PDF_FILTER      = "PDF (*.pdf)"
 _PDF_SAVED_OK    = "تم تصدير ورقة الغياب بنجاح."
 _PDF_SAVE_ERROR  = "تعذر تصدير ورقة الغياب:"
-_BTN_BATCH_EXPORT      = "توليد لعدة أيام"
-_BTN_BATCH_EXPORT_ICON = "🗂"
 _ESTIMATE_HISTORY_LIMIT = 900
 _CONFIDENCE_LABELS = {"low": "منخفضة", "medium": "متوسطة", "high": "عالية"}
 _ESTIMATE_NOTE_LOW = (
@@ -500,10 +496,9 @@ def build_absence_pdf_page(
     holiday_labels: Dict[str, str], settings,
 ) -> str:
     """Draw one date's page for a combined batch PDF — real data, a
-    holiday placeholder, or a no-data placeholder. Shared by
-    _on_batch_export and ui/work_pipeline_screen.py's "generate
-    everything" action. Returns "data" / "holiday" / "empty" for the
-    caller's summary."""
+    holiday placeholder, or a no-data placeholder. Used by
+    ui/work_pipeline_screen.py's "generate everything" action. Returns
+    "data" / "holiday" / "empty" for the caller's summary."""
     if date_str in holiday_labels:
         label = holiday_labels[date_str] or "بدون سبب محدد"
         draw_placeholder_pdf_page(
@@ -609,17 +604,9 @@ class DailyAbsenceScreen(QWidget):
 
         row.addStretch()
 
-        batch_generate_btn = self._btn(_BTN_BATCH_GENERATE, "#7c3aed", icon=_BTN_BATCH_GENERATE_ICON)
-        batch_generate_btn.clicked.connect(self._on_batch_generate_data)
-        row.addWidget(batch_generate_btn)
-
         export_btn = self._btn(_BTN_EXPORT, _INK, icon=_BTN_EXPORT_ICON)
         export_btn.clicked.connect(self._on_export)
         row.addWidget(export_btn)
-
-        batch_export_btn = self._btn(_BTN_BATCH_EXPORT, _INK, icon=_BTN_BATCH_EXPORT_ICON)
-        batch_export_btn.clicked.connect(self._on_batch_export)
-        row.addWidget(batch_export_btn)
 
         save_btn = self._btn(_BTN_SAVE, COLOR_SUCCESS, icon=_BTN_SAVE_ICON)
         save_btn.clicked.connect(self._on_save)
@@ -828,27 +815,6 @@ class DailyAbsenceScreen(QWidget):
             monitors.get("full", 0), 0,
         )
 
-    def _on_batch_generate_data(self) -> None:
-        """Auto-fill AND SAVE real absence numbers for every date in a
-        range that has none yet — the same estimator behind "توليد تلقائي"
-        (median of real historical same-weekday rates, not random), just
-        run over many days instead of one. Never overwrites a day that
-        already has saved data, and skips real holidays."""
-        students = get_all_students()
-        if not students:
-            QMessageBox.information(self, "تنبيه", _TOAST_NO_STUDENTS)
-            return
-        active_roster = self._flatten_counts(count_students(students))
-        if sum(active_roster.values()) == 0:
-            QMessageBox.information(self, "تنبيه", _TOAST_NO_CLASSIFIED_STUDENTS)
-            return
-        history = get_recent_absences(limit=_ESTIMATE_HISTORY_LIMIT)
-
-        def generate_day(date_str: str) -> bool:
-            return generate_and_save_absence_for_date(date_str, active_roster, history)
-
-        run_batch_generate_data(self, generate_day)
-
     def _on_history_click(self) -> None:
         row = self._history_table.currentRow()
         if row < 0:
@@ -889,17 +855,3 @@ class DailyAbsenceScreen(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
 
-    def _on_batch_export(self) -> None:
-        """Export the absence sheet for a range of days as ONE combined
-        PDF — one page per day, like a mail merge, instead of a separate
-        file per day. A real holiday or a day with no saved data still
-        gets its own page explaining why, instead of silently vanishing.
-        Read-only: never saves/records anything — it only exports what's
-        already in the database."""
-        settings = get_school_settings()
-        holiday_labels = {h.date: h.label for h in get_all_holidays()}
-
-        def build_page(painter, page_w: float, page_h: float, date_str: str) -> str:
-            return build_absence_pdf_page(painter, page_w, page_h, date_str, holiday_labels, settings)
-
-        run_batch_combined_pdf(self, _PDF_DEFAULT_NAME, QPageLayout.Orientation.Portrait, build_page)

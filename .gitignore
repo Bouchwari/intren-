@@ -37,6 +37,7 @@ new_ui_design/node_modules/
 
 # Generated exports and local AI notes
 exports/
+output/
 AI_HANDOFF.md
 
 # VS Code / IDE

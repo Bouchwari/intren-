@@ -11,30 +11,30 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
 from PySide6.QtGui import (
-    QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
+    QColor, QFont, QIntValidator, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
 )
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QFrame, QGroupBox, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QScrollArea,
-    QSizePolicy, QSpinBox, QSplitter, QTextBrowser,
+    QComboBox, QDialog, QFileDialog, QFrame, QGroupBox, QHBoxLayout,
+    QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
+    QSizePolicy, QSpinBox, QTextBrowser,
     QTextEdit, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
     COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
-    COLOR_SURFACE, COLOR_PANEL_ALT, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+    COLOR_SURFACE, COLOR_PANEL, COLOR_PANEL_ALT, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
-    EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
-    FONT_BODY, FONT_LABEL, FONT_SECTION,
+    EXPORT_FORMAT_PDF,
+    FONT_BODY, FONT_LABEL, FONT_SECTION, FONT_TITLE,
 )
 from core.models import OrderItem, OrderLetter
 from data.database import (
-    delete_order_letter, get_all_order_letters, get_document_export_format,
-    get_order_items, get_school_settings, get_student_counts, save_order_letter,
+    delete_order_letter, get_all_order_letters, get_contacts_between,
+    get_next_order_letter_number, get_order_items, get_school_settings, save_order_letter,
 )
 from ui.daily_contact_screen import (
     _normalize_template_name, _set_cell_text, _set_docx_text, _template_dirs,
-    _WORD_NS,
+    _WORD_NS, _W_NS,
 )
 from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
@@ -46,7 +46,7 @@ from ui.widgets.icon_button import IconButton
 # ── Arabic strings ────────────────────────────────────────────────────────────
 _TITLE         = "رسالة الطلبية"
 _SUBTITLE      = "طلبية المواد الغذائية الموجهة للمورد"
-_BTN_AUTOFILL  = "تعبئة تلقائية من لائحة التلاميذ"
+_BTN_AUTOFILL  = "تعبئة تلقائية من ورقة الاتصال"
 _BTN_AUTOFILL_ICON = "⚡"
 _BTN_PREVIEW   = "معاينة الرسالة"
 _BTN_PREVIEW_ICON = "👁"
@@ -68,6 +68,8 @@ _DOCX_DEFAULT_NAME = "رسالة_الطلبية"
 _WORD_FILTER = "Word (*.docx)"
 _DOCX_SAVED_OK = "تم تصدير رسالة الطلبية بنجاح."
 _DOCX_SAVE_ERROR = "تعذر تصدير رسالة الطلبية:"
+_LBL_NUMBER    = "رقم الوثيقة:"
+_NUMBER_HINT   = "رقم مقترح تلقائيًا — يمكن تعديله قبل الحفظ."
 _LBL_DATE      = "تاريخ الرسالة:"
 _LBL_FROM      = "من:"
 _LBL_TO        = "إلى:"
@@ -75,6 +77,10 @@ _LBL_HIST      = "الرسائل المحفوظة"
 _LBL_NOTES     = "ملاحظات إضافية (اختياري):"
 _SAVED_OK      = "تم حفظ الرسالة بنجاح."
 _DEL_CONFIRM   = "هل تريد حذف هذه الرسالة نهائياً؟"
+_TOAST_NO_CONTACT_DATA = (
+    "لا توجد بيانات محفوظة في ورقة الاتصال لهذه الفترة."
+    " يُرجى تسجيل ورقة الاتصال اليومية أولاً، أو تعديل الفترة."
+)
 
 _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_FTOUR, MEAL_LABELS[MEAL_FTOUR]),
@@ -86,10 +92,10 @@ _MEAL_COLORS = {
     MEAL_GHADA: COLOR_ACCENT,
     MEAL_ASHA:  "#7c3aed",
 }
-_PAGE_BG = "#f5f5f0"
-_PANEL_BG = "#ffffff"
-_PANEL_BORDER = "#dddccd"
-_INK = "#5A5A40"
+_PAGE_BG = COLOR_SURFACE
+_PANEL_BG = COLOR_PANEL
+_PANEL_BORDER = COLOR_BORDER
+_INK = COLOR_TEXT_PRIMARY
 
 
 def _spin(val: int = 0) -> QSpinBox:
@@ -391,27 +397,24 @@ def _write_order_letter_pdf(
     path: Path,
     settings,
     letter_date: str,
-    period_start: str,
-    period_end: str,
+    number: str,
     cards: Dict[str, "_MealQtyCard"],
-    notes: str,
 ) -> None:
-    """Render the order letter as an official PDF, using the same
-    header/footer helpers already proven on the meal program PDF export.
-    Mirrors _generate_letter_html's fields exactly, just on a printable page
-    instead of an HTML preview."""
+    """Render the order letter as an official PDF matching the real,
+    ministry-accepted templets/رسالة الطلبية.docx exactly — same fields,
+    same order, same single-date framing (no period_start/period_end,
+    no invented total row) — using the header/footer helpers already
+    proven on the other daily documents. See _write_order_letter_docx,
+    which fills the same fields into the actual template."""
     s = settings
-    supplier = (s.supplier_name if s else "") or "—"
-    company = (s.company_name if s else "") or "—"
-    supplier_addr = (s.supplier_address if s else "") or "—"
-    contract_num = (s.contract_number if s else "") or "—"
+    supplier = (s.supplier_name if s else "") or ""
+    company = (s.company_name if s else "") or ""
+    supplier_line = " — ".join(part for part in (supplier, company) if part) or "—"
     city = (s.city if s else "") or "—"
-    director = (s.director if s else "") or "—"
+    school_year = (s.school_year if s else "") or "—"
     # "-" gets visually reordered inside RTL text by Qt's bidi algorithm;
     # "/" does not (same workaround as daily_contact_screen._format_doc_date).
-    letter_date = letter_date.replace("-", "/")
-    period_start = period_start.replace("-", "/")
-    period_end = period_end.replace("-", "/")
+    display_date = letter_date.replace("-", "/")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
@@ -439,84 +442,72 @@ def _write_order_letter_pdf(
         )
 
         meta_lines = [
-            f"{city}، بتاريخ: {letter_date}",
-            f"إلى السيد/ة: {supplier} — {company}",
-            f"العنوان: {supplier_addr}",
-            f"الموضوع: طلبية المواد الغذائية للفترة من {period_start} إلى {period_end} "
-            f"— في إطار الصفقة رقم {contract_num}",
+            f"الموسم الدراسي : {school_year}",
+            f"رسالة الطلبية رقم: {number}",
+            f"ليوم : {display_date}",
+            f"صاحب الصفقة: {supplier_line}",
         ]
         for line in meta_lines:
             _draw_letter_pdf_text(
                 painter,
-                QRectF(margin, y, content_w, 18),
+                QRectF(margin, y, content_w, 24),
                 line,
-                size=10,
-                color=COLOR_TEXT_SECONDARY,
+                size=11,
+                color=COLOR_TEXT_PRIMARY,
                 align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
             )
-            y += 20
-        y += 10
+            y += 28
+        y += 12
 
         # Matches templets/رسالة الطلبية.docx — the real accepted form shows
         # one aggregate count per meal, not a collegial/qualifying/monitors
-        # breakdown. The on-screen cards still collect that breakdown for
-        # planning; only the generated document is aggregate.
+        # breakdown, and no total row. The on-screen cards still collect
+        # that breakdown for planning; only the generated document is
+        # aggregate.
         columns = ["الوجبة", "الأعداد", "ملاحظات"]
         col_widths = [content_w * 0.25, content_w * 0.20, content_w * 0.55]
         header_h = 32.0
         row_h = 40.0
-        n_rows = len(_MEAL_ORDER) + 1  # + total row
-        table_h = header_h + (row_h * n_rows)
+        table_h = header_h + (row_h * len(_MEAL_ORDER))
         right = margin + content_w
 
+        # Plain black-on-white, matching the real template's table exactly
+        # — no colored fills, just borders and bold header text.
         current_right = right
         for col_label, col_w in zip(columns, col_widths):
             rect = QRectF(current_right - col_w, y, col_w, header_h)
             _draw_letter_pdf_cell(
                 painter, rect,
-                background=COLOR_ACCENT, border=COLOR_ACCENT,
-                text=col_label, text_color="white", size=11, bold=True,
+                background="white", border="#000000",
+                text=col_label, text_color="#000000", size=11, bold=True,
             )
             current_right = rect.left()
 
         row_y = y + header_h
-        grand_total = 0
         for meal_key, meal_label in _MEAL_ORDER:
             card = cards[meal_key]
-            tot = card.total()
-            grand_total += tot
-            values = [meal_label, str(tot), ""]
+            values = [meal_label, str(card.total()), ""]
             current_right = right
             for index, (value, col_w) in enumerate(zip(values, col_widths)):
                 rect = QRectF(current_right - col_w, row_y, col_w, row_h)
                 _draw_letter_pdf_cell(
                     painter, rect,
-                    background="#F8F9FA" if index == 0 else "white",
-                    border=COLOR_BORDER,
-                    text=value,
-                    text_color=_MEAL_COLORS.get(meal_key, COLOR_TEXT_PRIMARY) if index == 0 else COLOR_TEXT_PRIMARY,
+                    background="white", border="#000000",
+                    text=value, text_color="#000000",
                     size=11, bold=(index == 0),
                 )
                 current_right = rect.left()
             row_y += row_h
+        y += table_h + 18
 
-        total_rect = QRectF(right - sum(col_widths), row_y, sum(col_widths), row_h)
-        _draw_letter_pdf_cell(
-            painter, total_rect,
-            background=COLOR_ACCENT_DEEP, border=COLOR_ACCENT_DEEP,
-            text=f"الإجمالي العام: {grand_total}", text_color="white", size=12, bold=True,
+        _draw_letter_pdf_text(
+            painter,
+            QRectF(margin, y, content_w, 24),
+            f"حرر ب{city} بتاريخ : {display_date}",
+            size=11,
+            color=COLOR_TEXT_SECONDARY,
+            align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
         )
-        y += table_h + 16
-
-        if notes.strip():
-            _draw_letter_pdf_text(
-                painter,
-                QRectF(margin, y, content_w, 18),
-                f"ملاحظات: {notes.strip()}",
-                size=10,
-                color=COLOR_TEXT_PRIMARY,
-                align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
-            )
 
         footer_h = 90.0
         footer_y = page_h - margin - footer_h + 6
@@ -545,6 +536,31 @@ def _find_order_letter_template() -> Path | None:
     return None
 
 
+_DOCX_BODY_FONT_SIZE = "32"  # half-points (16pt) — matches the template's other meta lines
+
+
+def _normalize_run_font_size(paragraph: ET.Element, size: str) -> None:
+    """Force every run in this paragraph to one font size.
+
+    The "حرر ب...بتاريخ" line in the real template opens with an
+    invisible run of leading spaces (used to right-align it) sized at
+    6pt, while the visible text after it is 16pt. _set_docx_text() always
+    writes replacement text into the FIRST <w:t> node — that tiny leading
+    run — so the whole line rendered at 6pt after filling. Normalizing
+    every run's size after filling sidesteps that regardless of which
+    run ends up holding the text."""
+    for run in paragraph.findall(".//w:r", _WORD_NS):
+        rpr = run.find("w:rPr", _WORD_NS)
+        if rpr is None:
+            rpr = ET.Element(f"{{{_W_NS}}}rPr")
+            run.insert(0, rpr)
+        for tag in ("w:sz", "w:szCs"):
+            el = rpr.find(tag, _WORD_NS)
+            if el is None:
+                el = ET.SubElement(rpr, f"{{{_W_NS}}}{tag.split(':')[1]}")
+            el.set(f"{{{_W_NS}}}val", size)
+
+
 def _fill_order_letter_document_xml(
     root: ET.Element,
     *,
@@ -568,6 +584,7 @@ def _fill_order_letter_document_xml(
             _set_docx_text(paragraph, f"صاحب الصفقة:   {supplier_line}")
         elif "حرر ب" in stripped:
             _set_docx_text(paragraph, f"حرر ب{place} بتاريخ : {display_date}")
+            _normalize_run_font_size(paragraph, _DOCX_BODY_FONT_SIZE)
 
     tables = root.findall(".//w:tbl", _WORD_NS)
     if not tables:
@@ -585,6 +602,7 @@ def _write_order_letter_docx(
     path: Path,
     settings,
     letter_date: str,
+    number: str,
     cards: Dict[str, "_MealQtyCard"],
 ) -> None:
     """Fill the real order-letter template (templets/رسالة الطلبية.docx) —
@@ -614,7 +632,7 @@ def _write_order_letter_docx(
                 _fill_order_letter_document_xml(
                     root,
                     school_year=school_year,
-                    number="....",
+                    number=number,
                     display_date=display_date,
                     supplier_line=supplier_line,
                     place=place,
@@ -627,13 +645,13 @@ def _write_order_letter_docx(
 # ── Main screen ───────────────────────────────────────────────────────────────
 
 class OrderLetterScreen(QWidget):
-    """Order letter screen — form + live preview + history."""
+    """Order letter screen — single-column form + on-demand preview dialog + history."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setStyleSheet(f"background:{_PAGE_BG};")
         self._cards: Dict[str, _MealQtyCard] = {}
-        self._notes_edit: Optional[QTextEdit] = None  # set during _build_form_panel
+        self._notes_edit: Optional[QTextEdit] = None  # set during _build_body
         self._build_ui()
 
     # ── Build ──────────────────────────────────────────────────────────────
@@ -645,7 +663,7 @@ class OrderLetterScreen(QWidget):
 
         # Title
         title = QLabel(_TITLE)
-        f = QFont(); f.setPointSize(17); f.setBold(True)
+        f = QFont(); f.setPointSize(FONT_TITLE); f.setBold(True)
         title.setFont(f)
         title.setStyleSheet(f"color:{_INK};")
         sub = QLabel(_SUBTITLE)
@@ -656,23 +674,14 @@ class OrderLetterScreen(QWidget):
         # Toolbar
         root.addLayout(self._build_toolbar())
 
-        # Splitter: form (right) | preview (left)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(8)
-        splitter.setStyleSheet(
-            "QSplitter::handle { background:#d6d6c8; border-radius:4px; }"
-        )
-
-        splitter.addWidget(self._build_preview_panel())   # left = preview
-        splitter.addWidget(self._build_form_panel())      # right = form
-        splitter.setSizes([520, 320])
-        root.addWidget(splitter, 1)
+        # Single-column body: date info, meal cards, notes.
+        root.addWidget(self._build_body(), 1)
 
     def _build_toolbar(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(8)
 
-        new_btn    = _btn(_BTN_NEW,     "#16a34a", icon=_BTN_NEW_ICON)
+        new_btn    = _btn(_BTN_NEW,     COLOR_SUCCESS, icon=_BTN_NEW_ICON)
         save_btn   = _btn(_BTN_SAVE,    COLOR_ACCENT, icon=_BTN_SAVE_ICON)
         delete_btn = _btn(_BTN_DELETE,  COLOR_DANGER, icon=_BTN_DELETE_ICON)
         preview_btn= _btn(_BTN_PREVIEW, _INK, icon=_BTN_PREVIEW_ICON)
@@ -681,7 +690,7 @@ class OrderLetterScreen(QWidget):
         new_btn.clicked.connect(self._on_new)
         save_btn.clicked.connect(self._on_save)
         delete_btn.clicked.connect(self._on_delete)
-        preview_btn.clicked.connect(self._update_preview)
+        preview_btn.clicked.connect(self._show_preview_dialog)
         export_btn.clicked.connect(self._on_export)
 
         row.addWidget(new_btn)
@@ -708,8 +717,8 @@ class OrderLetterScreen(QWidget):
 
         return row
 
-    def _build_form_panel(self) -> QWidget:
-        """Right panel: dates, auto-fill, meal cards, notes."""
+    def _build_body(self) -> QWidget:
+        """Single-column body: date info, meal cards side by side, notes."""
         panel = QScrollArea()
         panel.setWidgetResizable(True)
         panel.setFrameShape(QFrame.Shape.NoFrame)
@@ -717,10 +726,10 @@ class OrderLetterScreen(QWidget):
         content = QWidget()
         content.setStyleSheet("background:transparent;")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(10, 0, 4, 10)
-        layout.setSpacing(12)
+        layout.setContentsMargins(2, 0, 2, 10)
+        layout.setSpacing(14)
 
-        # Date inputs
+        # Date inputs — one row: تاريخ الرسالة / من / إلى / تعبئة تلقائية
         date_grp = QGroupBox("معلومات الرسالة")
         date_grp.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         date_grp.setStyleSheet(f"""
@@ -728,23 +737,24 @@ class OrderLetterScreen(QWidget):
                 font-size:{FONT_BODY}px; font-weight:bold; color:{COLOR_TEXT_PRIMARY};
                 background:{_PANEL_BG};
                 border:1px solid {_PANEL_BORDER}; border-radius:16px;
-                margin-top:10px; padding:10px;
+                margin-top:10px; padding:14px;
             }}
             QGroupBox::title {{
                 subcontrol-origin:margin; subcontrol-position:top right;
                 padding:0 8px; right:14px;
             }}
         """)
-        date_form = QVBoxLayout(date_grp)
+        date_row = QHBoxLayout(date_grp)
+        date_row.setSpacing(18)
 
-        def _date_row(label: str, edit: DateInput) -> QHBoxLayout:
-            h = QHBoxLayout()
+        def _date_field(label: str, edit: DateInput) -> QVBoxLayout:
+            v = QVBoxLayout()
+            v.setSpacing(4)
             lbl = QLabel(label)
-            lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_BODY}px;")
-            h.addWidget(lbl)
-            h.addStretch()
-            h.addWidget(edit)
-            return h
+            lbl.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
+            v.addWidget(lbl)
+            v.addWidget(edit)
+            return v
 
         def _date_edit() -> DateInput:
             d = DateInput(display_format="yyyy-MM-dd")
@@ -755,7 +765,6 @@ class OrderLetterScreen(QWidget):
                 f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
                 f"padding:4px 8px; font-size:{FONT_BODY}px;"
             )
-            d.dateChanged.connect(self._update_preview)
             return d
 
         self._letter_date  = _date_edit()
@@ -764,25 +773,46 @@ class OrderLetterScreen(QWidget):
         # Default period: today → 7 days
         self._period_end.setDate(QDate.currentDate().addDays(6))
 
-        date_form.addLayout(_date_row(_LBL_DATE, self._letter_date))
-        date_form.addLayout(_date_row(_LBL_FROM, self._period_start))
-        date_form.addLayout(_date_row(_LBL_TO,   self._period_end))
+        number_col = QVBoxLayout()
+        number_col.setSpacing(4)
+        number_lbl = QLabel(_LBL_NUMBER)
+        number_lbl.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
+        self._number_edit = QLineEdit()
+        self._number_edit.setValidator(QIntValidator(1, 999999, self))
+        self._number_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._number_edit.setMinimumHeight(34)
+        self._number_edit.setMaximumWidth(90)
+        self._number_edit.setToolTip(_NUMBER_HINT)
+        self._number_edit.setStyleSheet(
+            f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
+            f"padding:4px 8px; font-size:{FONT_BODY}px; font-weight:bold;"
+        )
+        self._number_edit.setText(str(get_next_order_letter_number()))
+        number_col.addWidget(number_lbl)
+        number_col.addWidget(self._number_edit)
+        date_row.addLayout(number_col)
+
+        date_row.addLayout(_date_field(_LBL_DATE, self._letter_date))
+        date_row.addLayout(_date_field(_LBL_FROM, self._period_start))
+        date_row.addLayout(_date_field(_LBL_TO,   self._period_end))
+        date_row.addStretch()
 
         autofill_btn = _btn(_BTN_AUTOFILL, "#0891b2", icon=_BTN_AUTOFILL_ICON)
         autofill_btn.clicked.connect(self._auto_fill)
-        date_form.addWidget(autofill_btn)
+        date_row.addWidget(autofill_btn)
 
         layout.addWidget(date_grp)
 
-        # Meal cards
+        # Meal cards — side by side (فطور | غداء | عشاء), matching the
+        # 3-meal-column convention used across the app's other screens.
+        meals_row = QHBoxLayout()
+        meals_row.setSpacing(14)
         for meal_key, meal_label in _MEAL_ORDER:
             card = _MealQtyCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            # Live update preview when any spin changes
-            for sp in (card._sp_coll, card._sp_qual, card._sp_mon):
-                sp.valueChanged.connect(self._update_preview)
             self._cards[meal_key] = card
-            layout.addWidget(card)
+            meals_row.addWidget(card)
+        layout.addLayout(meals_row)
 
         # Notes
         notes_lbl = QLabel(_LBL_NOTES)
@@ -796,62 +826,61 @@ class OrderLetterScreen(QWidget):
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:12px;"
             f"padding:6px; font-size:{FONT_BODY}px;"
         )
-        self._notes_edit.textChanged.connect(self._update_preview)
         layout.addWidget(self._notes_edit)
         layout.addStretch()
 
         panel.setWidget(content)
         return panel
 
-    def _build_preview_panel(self) -> QWidget:
-        """Left panel: HTML letter preview."""
-        panel = QFrame()
-        panel.setStyleSheet(
-            f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:16px;"
-        )
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        hdr = QLabel("معاينة الرسالة")
-        hdr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hdr.setStyleSheet(
-            f"background:{_INK}; color:white; font-size:{FONT_BODY}px;"
-            "font-weight:bold; padding:10px; border-radius:16px 16px 0 0;"
-        )
-        layout.addWidget(hdr)
-
-        self._preview = QTextBrowser()
-        self._preview.setOpenExternalLinks(False)
-        self._preview.setStyleSheet(
-            f"border:none; background:white; font-size:{FONT_BODY}px; padding:8px;"
-        )
-        layout.addWidget(self._preview)
-        return panel
-
     # ── Helpers ────────────────────────────────────────────────────────────
 
-    def _update_preview(self) -> None:
-        if self._notes_edit is None:
-            return
+    def _current_letter_html(self) -> str:
         settings = get_school_settings()
-        html = _generate_letter_html(
+        return _generate_letter_html(
             settings,
             letter_date=self._letter_date.date().toString("yyyy-MM-dd"),
             period_start=self._period_start.date().toString("yyyy-MM-dd"),
             period_end=self._period_end.date().toString("yyyy-MM-dd"),
             cards=self._cards,
-            notes=self._notes_edit.toPlainText(),
+            notes=self._notes_edit.toPlainText() if self._notes_edit else "",
         )
-        self._preview.setHtml(html)
+
+    def _show_preview_dialog(self) -> None:
+        """Opens the letter preview on demand instead of keeping a permanent
+        live-updating pane — the form is the working surface; the preview is
+        just a look-before-you-export check."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(_BTN_PREVIEW)
+        dialog.resize(680, 760)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(False)
+        browser.setStyleSheet(f"border:none; background:white; font-size:{FONT_BODY}px; padding:8px;")
+        browser.setHtml(self._current_letter_html())
+        layout.addWidget(browser, 1)
+
+        close_row = QHBoxLayout()
+        close_row.setContentsMargins(14, 10, 14, 14)
+        close_btn = _btn("إغلاق", _INK)
+        close_btn.clicked.connect(dialog.accept)
+        close_row.addStretch()
+        close_row.addWidget(close_btn)
+        layout.addLayout(close_row)
+
+        dialog.exec()
 
     def _on_export(self) -> None:
-        fmt = get_document_export_format()
-        if fmt == EXPORT_FORMAT_ASK:
-            fmt = ask_export_format(self)
-            if fmt is None:
-                return
+        # Always ask PDF-or-Word here, regardless of the app-wide export
+        # preference — a letter goes out to a supplier and the مسير wants
+        # to pick deliberately each time, not rely on a forgotten default.
+        fmt = ask_export_format(self)
+        if fmt is None:
+            return
         is_pdf = fmt == EXPORT_FORMAT_PDF
         letter_date = self._letter_date.date().toString("yyyy-MM-dd")
+        number = self._number_edit.text().strip() or "...."
 
         path_str, _ = QFileDialog.getSaveFileName(
             self,
@@ -875,33 +904,39 @@ class OrderLetterScreen(QWidget):
                     path,
                     settings,
                     letter_date=letter_date,
-                    period_start=self._period_start.date().toString("yyyy-MM-dd"),
-                    period_end=self._period_end.date().toString("yyyy-MM-dd"),
+                    number=number,
                     cards=self._cards,
-                    notes=self._notes_edit.toPlainText() if self._notes_edit else "",
                 )
             else:
-                _write_order_letter_docx(path, settings, letter_date, self._cards)
+                _write_order_letter_docx(path, settings, letter_date, number, self._cards)
             QMessageBox.information(self, "تم", _PDF_SAVED_OK if is_pdf else _DOCX_SAVED_OK)
         except Exception as exc:
             error_prefix = _PDF_SAVE_ERROR if is_pdf else _DOCX_SAVE_ERROR
             QMessageBox.critical(self, "خطأ", f"{error_prefix}\n{exc}")
 
     def _auto_fill(self) -> None:
-        """Fill all three cards with the current student counts."""
-        counts = get_student_counts()
-        if counts.get("total", 0) == 0:
-            QMessageBox.information(self, "تنبيه", "لا يوجد تلاميذ مسجلين في قاعدة البيانات. يُرجى إضافة تلاميذ أولاً.")
+        """Fill each meal card with the REAL beneficiary totals saved in
+        ورقة الاتصال for every date in [period_start, period_end] — not a
+        flat roster guess, since فطور/غداء/عشاء legitimately differ."""
+        start = self._period_start.date().toString("yyyy-MM-dd")
+        end = self._period_end.date().toString("yyyy-MM-dd")
+        contacts = get_contacts_between(start, end)
+        if not contacts:
+            QMessageBox.information(self, "تنبيه", _TOAST_NO_CONTACT_DATA)
             return
-            
-        # إعدادي = internat, تأهيلي = cantine − monitors, معلمون = monitors
-        internat = counts.get("internat", 0)
-        monitors = counts.get("monitors", 0)
-        cantine  = max(0, counts.get("cantine", 0) - monitors)
 
-        for card in self._cards.values():
-            card.set_values(internat, cantine, monitors)
-        self._update_preview()
+        sums = {meal_key: {"collegial": 0, "qualifying": 0, "monitors": 0} for meal_key, _ in _MEAL_ORDER}
+        for contact in contacts:
+            if contact.meal_type not in sums:
+                continue
+            totals = sums[contact.meal_type]
+            totals["collegial"]  += contact.collegial_total
+            totals["qualifying"] += contact.qualifying_total
+            totals["monitors"]   += contact.monitors_total
+
+        for meal_key, card in self._cards.items():
+            totals = sums[meal_key]
+            card.set_values(totals["collegial"], totals["qualifying"], totals["monitors"])
 
     def _refresh_history(self) -> None:
         letters = get_all_order_letters()
@@ -930,7 +965,9 @@ class OrderLetterScreen(QWidget):
                 card.set_values(it.collegial, it.qualifying, it.monitors)
             else:
                 card.set_values(0, 0, 0)
-        self._update_preview()
+        self._number_edit.setText(
+            str(lt.document_number) if lt.document_number is not None else str(get_next_order_letter_number())
+        )
 
     # ── Slots ──────────────────────────────────────────────────────────────
 
@@ -945,14 +982,20 @@ class OrderLetterScreen(QWidget):
         self._history_combo.blockSignals(True)
         self._history_combo.setCurrentIndex(-1)
         self._history_combo.blockSignals(False)
-        self._update_preview()
+        self._number_edit.setText(str(get_next_order_letter_number()))
 
     def _on_save(self) -> None:
+        try:
+            document_number = int(self._number_edit.text().strip())
+        except ValueError:
+            document_number = get_next_order_letter_number()
+            self._number_edit.setText(str(document_number))
         letter = OrderLetter(
             letter_date=self._letter_date.date().toString("yyyy-MM-dd"),
             period_start=self._period_start.date().toString("yyyy-MM-dd"),
             period_end=self._period_end.date().toString("yyyy-MM-dd"),
             notes=self._notes_edit.toPlainText().strip(),
+            document_number=document_number,
         )
         items = [card.to_item(0) for card in self._cards.values()]
         try:
@@ -982,7 +1025,6 @@ class OrderLetterScreen(QWidget):
                 QMessageBox.critical(self, "خطأ", str(exc))
 
     def showEvent(self, event) -> None:  # type: ignore[override]
-        """Refresh history and preview when the screen becomes visible."""
+        """Refresh the saved-letters history when the screen becomes visible."""
         super().showEvent(event)
         self._refresh_history()
-        self._update_preview()
