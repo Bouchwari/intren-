@@ -317,7 +317,8 @@
       "Bash(cp \"/tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/order_letter_fixed.docx\" ~/lo_check/)",
       "Bash(timeout 60 libreoffice --headless --convert-to pdf order_letter_fixed.docx)",
       "Bash(rm -rf ~/lo_check *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(gh pr *)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
