@@ -114,11 +114,11 @@ who signs each step) see `.claude/skills/matama/references/document_chain.md`
 - [x] Setup wizard (school identity: name, city, academy, director, school year)
 - [x] Main window with sidebar navigation
 - [x] **يوم العمل** (Work Day) — the app's landing screen. Status cards for
-      the day's 4 documents (contact/absence/report/order letter) + one
-      "توليد شامل لعدة أيام" button that batch-generates any combination of
-      them for a date range in one shot. Not in the original plan — added
-      this session, inspired by a reference UI the user shared, RTL/teal
-      styling native to this app.
+      the day's 5 documents (contact/absence/report/order letter/reception
+      record) + one "توليد شامل لعدة أيام" button that batch-generates any
+      combination of them for a date range in one shot. Not in the
+      original plan — added this session, inspired by a reference UI the
+      user shared, RTL/teal styling native to this app.
 - [x] **Student management** (لائحة التلاميذ) — Excel import, searchable/
       filterable table, add/edit/delete, monitors (معلمو الداخلية) as a tab
       within the same screen rather than a separate one.
@@ -157,7 +157,12 @@ who signs each step) see `.claude/skills/matama/references/document_chain.md`
 - [x] **Violations book** (دفتر المخالفات) — `incident_log_screen.py`
 - [x] **Document export** — PDF via `QPdfWriter`/`QPainter` (own drawing,
       not reportlab), Word via filling the real templates in `templets/`
-      directly, Excel via `openpyxl`. Every document screen has this.
+      directly, Excel via `openpyxl`. The 5 daily/per-date documents
+      (contact, absence, report, order letter, reception) all have full
+      PDF+Word export. `expense_statement_screen.py` is Excel-only.
+      `monthly_report_screen.py` and `incident_log_screen.py` have **no
+      export at all yet** — save/notes only. `daily_absence_screen.py`
+      has PDF only, no Word template wired up.
 - [x] **Build & package** — `Matama.spec` + PyInstaller. Builds and runs
       correctly on Linux for normal use (verified with a real, configured
       database). ⚠️ One unresolved finding: on a **completely fresh
