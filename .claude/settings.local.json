@@ -380,7 +380,13 @@
       "Bash(DISPLAY=:0 .venv/bin/python -m pytest tests/test_document_pipeline.py -q)",
       "Bash(DISPLAY=:0 .venv/bin/python -m pytest tests/test_work_pipeline_screen.py -q)",
       "Bash(DISPLAY=:0 .venv/bin/python -m pytest tests/test_daily_reception_screen.py -v)",
-      "Bash(DISPLAY=:0 /home/abbdo/Downloads/intren--main/.venv/bin/python /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/final_check.py)"
+      "Bash(DISPLAY=:0 /home/abbdo/Downloads/intren--main/.venv/bin/python /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/final_check.py)",
+      "Bash(git fetch *)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(echo \"---grep done, exit=$?\")",
+      "Bash(./.venv/bin/python /tmp/claude-1000/-home-abbdo-Downloads-intren--main/4a0db675-b718-47f6-8b7a-92a1e5c4961c/scratchpad/inspect_stack.py)",
+      "Bash(git -C /home/abbdo/Downloads/intren--main log -1 --format=%cd AI_HANDOFF.md)",
+      "Bash(git -C /home/abbdo/Downloads/intren--main status --short AI_HANDOFF.md CLAUDE.md)"
     ],
     "additionalDirectories": [
       "/home/abbdo/Downloads/intren--main/.claude/skills/matama"
