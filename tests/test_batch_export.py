@@ -17,7 +17,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
 from core.contact_counts import count_students
-from core.models import DailyAbsence, DailyContact, Holiday, Student
+from core.models import DailyAbsence, DailyContact, DailyReport, Holiday, Student
 from data import database
 from ui import batch_export as be
 from ui import daily_absence_screen as das
@@ -232,6 +232,42 @@ class BatchExportBuildPageTests(unittest.TestCase):
         )
 
         self.assertIsNone(database.get_daily_report("2026-06-01"))
+
+    def test_report_batch_suggests_checklist_for_every_day_not_just_the_first(self) -> None:
+        """يوم العمل's "توليد شامل لعدة أيام" must suggest real ratings for
+        EVERY day in the range, not just a day that happens to already have
+        a saved report — previously only _load_report_fields (the live
+        screen) filled unrated items, so a batch run over several unsaved
+        days left every one of them blank except a day someone had already
+        opened and saved on screen."""
+        database.save_daily_contact(DailyContact(date="2026-06-01", meal_type=drs.MEAL_GHADA, collegial_granted=5))
+        database.save_daily_contact(DailyContact(date="2026-06-02", meal_type=drs.MEAL_GHADA, collegial_granted=6))
+        database.save_daily_contact(DailyContact(date="2026-06-03", meal_type=drs.MEAL_GHADA, collegial_granted=7))
+
+        good_index = drs._THREE_SCALE.index("جيدة")
+        for date_str in ("2026-06-01", "2026-06-02", "2026-06-03"):
+            report = drs._report_for_date(date_str)
+            for field, _ in drs._HYGIENE_ITEMS:
+                self.assertNotEqual(getattr(report, field), -1, f"{date_str}/{field} was left unrated")
+            for field, _ in drs._QUALITY_ITEMS:
+                self.assertNotEqual(getattr(report, field), -1, f"{date_str}/{field} was left unrated")
+            for field, _ in drs._BUILDING_ITEMS:
+                self.assertEqual(getattr(report, field), good_index, f"{date_str}/{field} was not جيدة")
+            # still read-only — batch export must never persist (see above)
+            self.assertIsNone(database.get_daily_report(date_str))
+
+    def test_report_batch_preserves_already_saved_ratings(self) -> None:
+        """A day that already has a saved report with a real (even bad)
+        rating must keep it exactly — batch export only fills in items
+        that are still genuinely unrated, same rule as the live screen."""
+        database.save_daily_report(DailyReport(date="2026-06-01", hygiene_staff=0))  # ضعيفة, a real problem
+
+        report = drs._report_for_date("2026-06-01")
+
+        self.assertEqual(report.hygiene_staff, 0)  # untouched
+        for field, _ in drs._HYGIENE_ITEMS:
+            if field != "hygiene_staff":
+                self.assertNotEqual(getattr(report, field), -1, f"{field} was left unrated")
 
     @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
     def test_daily_absence_makes_one_combined_pdf(self) -> None:

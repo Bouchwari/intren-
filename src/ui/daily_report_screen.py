@@ -4,6 +4,7 @@ Daily report (التقرير اليومي) — auto-generated attendance/absence
 plus the مسير's inspection checklist (hygiene / meal quality / building) and
 notes, matching the real accepted form.
 """
+import dataclasses
 import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -26,6 +27,7 @@ from config.settings import (
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.models import DailyContact, DailyAbsence, DailyReport
+from core.report_defaults import suggest_rating_index
 from data.database import (
     get_day_contacts, get_day_absences,
     get_dates_with_data, get_daily_report, get_school_settings,
@@ -64,6 +66,11 @@ _PDF_FILTER     = "PDF (*.pdf)"
 _PDF_SAVED_OK   = "تم تصدير التقرير اليومي بنجاح."
 _PDF_SAVE_ERROR = "تعذر تصدير التقرير اليومي:"
 
+_BTN_SHOW_DETAILS = "عرض التفاصيل"
+_BTN_HIDE_DETAILS = "إخفاء التفاصيل"
+_ICON_SHOW_DETAILS = "🔽"
+_ICON_HIDE_DETAILS = "🔼"
+
 _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_FTOUR, MEAL_LABELS[MEAL_FTOUR]),
     (MEAL_GHADA, MEAL_LABELS[MEAL_GHADA]),
@@ -78,6 +85,19 @@ _MEAL_ORDER: List[Tuple[str, str]] = [
 _NOT_RATED = "—"
 _HYGIENE_SCALE = ["ضعيفة", "ناقصة", "متوسطة", "لا بأس بها", "حسنة", "جيدة"]
 _THREE_SCALE = ["ناقصة", "لابأس بها", "جيدة"]
+
+# Auto-fill weights for a fresh (never-saved) report — "توليد التقرير"
+# suggests a plausible day instead of leaving 16 items blank. ضعيفة/ناقصة
+# are excluded entirely (never auto-suggested, only ever set by hand when
+# something's actually wrong); لا بأس بها/لابأس بها gets a low weight so
+# it shows up only occasionally rather than dominating.
+_HYGIENE_EXCLUDED = [0, 1]              # ضعيفة, ناقصة
+_HYGIENE_WEIGHTS = {2: 15, 3: 8, 4: 35, 5: 42}   # متوسطة, لا بأس بها, حسنة, جيدة
+_QUALITY_EXCLUDED = [0]                 # ناقصة
+_QUALITY_WEIGHTS = {1: 20, 2: 80}       # لابأس بها, جيدة
+# مراقبة وصيانة التجهيزات والبنايات — always جيدة, per explicit request.
+_BUILDING_EXCLUDED = [0, 1]             # ناقصة, لابأس بها
+_BUILDING_WEIGHTS = {2: 100}            # جيدة
 
 _LBL_HYGIENE = "1 — تتبع النظافة"
 _HYGIENE_ITEMS: List[Tuple[str, str]] = [
@@ -507,28 +527,50 @@ def _draw_daily_report_pdf_page(
     )
 
 
+def _fill_unrated_items(report: DailyReport) -> DailyReport:
+    """Return a copy of `report` with every still-unrated (-1) checklist
+    item replaced by the same weighted-random suggestion the مسير would
+    see on screen — an item that already has a real answer is always left
+    exactly as it is. Shared by the live screen and batch export so a date
+    looks the same whichever path generated it."""
+    updates: Dict[str, int] = {}
+    for field, _ in _HYGIENE_ITEMS:
+        if getattr(report, field) == -1:
+            updates[field] = suggest_rating_index(len(_HYGIENE_SCALE), _HYGIENE_EXCLUDED, _HYGIENE_WEIGHTS)
+    for field, _ in _QUALITY_ITEMS:
+        if getattr(report, field) == -1:
+            updates[field] = suggest_rating_index(len(_THREE_SCALE), _QUALITY_EXCLUDED, _QUALITY_WEIGHTS)
+    for field, _ in _BUILDING_ITEMS:
+        if getattr(report, field) == -1:
+            updates[field] = suggest_rating_index(len(_THREE_SCALE), _BUILDING_EXCLUDED, _BUILDING_WEIGHTS)
+    return dataclasses.replace(report, **updates) if updates else report
+
+
 def _report_for_date(date_str: str) -> DailyReport:
     """The DailyReport for a date, independent of any live screen: the
     saved report if one exists (respecting a manual beneficiary override —
     see DailyReportScreen._load_report_fields), otherwise beneficiary
-    counts freshly computed from that date's contact/absence sheets with a
-    blank checklist. Used by batch export, which has no open screen to
-    read live widget state from."""
+    counts freshly computed from that date's contact/absence sheets. Any
+    still-unrated checklist item gets a fresh suggestion via
+    _fill_unrated_items — never persisted here (batch export must stay
+    read-only, see test_report_export_never_saves_report_to_database), so
+    it's re-rolled on every batch run just like an unsaved date would be
+    if opened on screen, until someone actually saves it. Used by batch
+    export, which has no open screen to read live widget state from."""
     report = get_daily_report(date_str) or DailyReport(date=date_str)
-    if report.id is not None:
-        return report
-
-    contacts = {c.meal_type: c for c in get_day_contacts(date_str)}
-    absences = {a.meal_type: a for a in get_day_absences(date_str)}
-    fields = {}
-    for meal_key, _ in _MEAL_ORDER:
-        contact = contacts.get(meal_key)
-        absence = absences.get(meal_key)
-        expected = contact.grand_total if contact else 0
-        absent = absence.grand_total if absence else 0
-        fields[f"{meal_key}_expected"] = expected
-        fields[f"{meal_key}_present"] = max(0, expected - absent)
-    return DailyReport(date=date_str, **fields)
+    if report.id is None:
+        contacts = {c.meal_type: c for c in get_day_contacts(date_str)}
+        absences = {a.meal_type: a for a in get_day_absences(date_str)}
+        fields = {}
+        for meal_key, _ in _MEAL_ORDER:
+            contact = contacts.get(meal_key)
+            absence = absences.get(meal_key)
+            expected = contact.grand_total if contact else 0
+            absent = absence.grand_total if absence else 0
+            fields[f"{meal_key}_expected"] = expected
+            fields[f"{meal_key}_present"] = max(0, expected - absent)
+        report = DailyReport(date=date_str, **fields)
+    return _fill_unrated_items(report)
 
 
 def build_report_pdf_page(
@@ -688,13 +730,59 @@ class DailyReportScreen(QWidget):
         self._no_data_lbl = EmptyState(_NO_DATA, icon="📄")
         self._report_card_layout.addWidget(self._no_data_lbl)
 
-        # Tables (created dynamically in _generate)
+        # Tables (created dynamically in _generate) — collapsed by default,
+        # each is 16 rows of mostly zeros most days; the مسير expands only
+        # the one they actually want to check. State survives regenerate
+        # (date navigation) since it's only ever flipped by an explicit click.
         self._contact_table: Optional[QTableWidget] = None
         self._absence_table: Optional[QTableWidget] = None
-        self._contact_title: Optional[QLabel] = None
-        self._absence_title: Optional[QLabel] = None
+        self._contact_header: Optional[QWidget] = None
+        self._absence_header: Optional[QWidget] = None
+        self._contact_toggle_btn: Optional[IconButton] = None
+        self._absence_toggle_btn: Optional[IconButton] = None
+        self._contact_expanded = False
+        self._absence_expanded = False
 
         return self._report_card
+
+    def _build_table_section_header(self, title: str, color: str, key: str) -> QWidget:
+        """Section title + a show/hide toggle for the table drawn right
+        below it in _generate()."""
+        wrap = QWidget()
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(_section_title(title, color))
+        row.addStretch()
+
+        expanded = self._contact_expanded if key == "contact" else self._absence_expanded
+        btn = IconButton(
+            _BTN_HIDE_DETAILS if expanded else _BTN_SHOW_DETAILS,
+            icon=_ICON_HIDE_DETAILS if expanded else _ICON_SHOW_DETAILS,
+            bg=COLOR_SURFACE, text_color=COLOR_TEXT_PRIMARY,
+            border_radius=6, padding_h=10, font_size=12, bold=False, min_height=28,
+        )
+        btn.clicked.connect(lambda: self._toggle_table_section(key))
+        row.addWidget(btn)
+        if key == "contact":
+            self._contact_toggle_btn = btn
+        else:
+            self._absence_toggle_btn = btn
+        return wrap
+
+    def _toggle_table_section(self, key: str) -> None:
+        table = self._contact_table if key == "contact" else self._absence_table
+        btn = self._contact_toggle_btn if key == "contact" else self._absence_toggle_btn
+        if table is None or btn is None:
+            return
+        if key == "contact":
+            self._contact_expanded = not self._contact_expanded
+            expanded = self._contact_expanded
+        else:
+            self._absence_expanded = not self._absence_expanded
+            expanded = self._absence_expanded
+        table.setVisible(expanded)
+        btn.setText(_BTN_HIDE_DETAILS if expanded else _BTN_SHOW_DETAILS)
+        btn.set_icon_emoji(_ICON_HIDE_DETAILS if expanded else _ICON_SHOW_DETAILS)
 
     # ── Inspection checklist ──────────────────────────────────────────────
 
@@ -1010,26 +1098,34 @@ class DailyReportScreen(QWidget):
             self._report_card_layout.removeWidget(self._absence_table)
             self._absence_table.deleteLater()
             self._absence_table = None
-        if self._contact_title:
-            self._report_card_layout.removeWidget(self._contact_title)
-            self._contact_title.deleteLater()
-            self._contact_title = None
-        if self._absence_title:
-            self._report_card_layout.removeWidget(self._absence_title)
-            self._absence_title.deleteLater()
-            self._absence_title = None
+        if self._contact_header:
+            self._report_card_layout.removeWidget(self._contact_header)
+            self._contact_header.deleteLater()
+            self._contact_header = None
+            self._contact_toggle_btn = None
+        if self._absence_header:
+            self._report_card_layout.removeWidget(self._absence_header)
+            self._absence_header.deleteLater()
+            self._absence_header = None
+            self._absence_toggle_btn = None
 
         if has_data:
-            # Contact table
-            self._contact_title = _section_title("أ — ورقة الاتصال (الحضور)", COLOR_ACCENT)
-            self._report_card_layout.addWidget(self._contact_title)
+            # Contact table — collapsed by default (see _contact_expanded)
+            self._contact_header = self._build_table_section_header(
+                "أ — ورقة الاتصال (الحضور)", COLOR_ACCENT, "contact",
+            )
+            self._report_card_layout.addWidget(self._contact_header)
             self._contact_table = self._make_report_table(contacts)  # type: ignore[arg-type]
+            self._contact_table.setVisible(self._contact_expanded)
             self._report_card_layout.addWidget(self._contact_table)
 
-            # Absence table
-            self._absence_title = _section_title("ب — ورقة الغياب", COLOR_DANGER)
-            self._report_card_layout.addWidget(self._absence_title)
+            # Absence table — collapsed by default (see _absence_expanded)
+            self._absence_header = self._build_table_section_header(
+                "ب — ورقة الغياب", COLOR_DANGER, "absence",
+            )
+            self._report_card_layout.addWidget(self._absence_header)
             self._absence_table = self._make_report_table(absences)  # type: ignore[arg-type]
+            self._absence_table.setVisible(self._absence_expanded)
             self._report_card_layout.addWidget(self._absence_table)
 
         # Load notes + checklist (beneficiary counts computed from contacts/absences)
@@ -1088,6 +1184,7 @@ class DailyReportScreen(QWidget):
         numbers on demand."""
         report = get_daily_report(date_str) or DailyReport(date=date_str)
         self._current_report_id = report.id
+        report = _fill_unrated_items(report)
 
         self._notes_edit.setPlainText(report.notes)
 
