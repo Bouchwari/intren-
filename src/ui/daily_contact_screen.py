@@ -64,9 +64,7 @@ _SUBTITLE       = "عدد المستفيدين من خدمة الإطعام ال
 _BTN_PREV       = "اليوم السابق"
 _BTN_NEXT       = "اليوم التالي"
 _BTN_TODAY      = "اليوم"
-_BTN_LOAD       = "تحميل اليوم"
-_BTN_COPY_PREV  = "نسخ من اليوم السابق"
-_BTN_COPY_PREV_ICON = "📋"
+_BTN_LOAD       = "تحميل"
 _TOAST_COPY_OK  = "تم نسخ بيانات {date} — يمكنك تعديلها قبل الحفظ"
 _TOAST_COPY_NONE = "لا توجد بيانات سابقة لنسخها"
 _BTN_SAVE       = "حفظ وتسجيل"
@@ -75,7 +73,7 @@ _LBL_DATE       = "التاريخ:"
 _LBL_NUMBER     = "رقم:"
 _LBL_ACTIONS    = "الإجراء"
 _LBL_DOCUMENT   = "بيانات الوثيقة"
-_LBL_NAVIGATION = "التنقل"
+_LBL_FILL_MODE  = "تعبئة الأرقام"
 _NUMBER_HINT    = "يتغير الرقم تلقائياً بعد الحفظ أو الطباعة، ويمكن تعديله يدوياً."
 _LBL_PRIMARY    = "الابتدائي"
 _LBL_COLLEGIAL  = "إعدادي"
@@ -131,6 +129,11 @@ _MODE_MANUAL = "إدخال يدوي"
 _MODE_AUTO = "توليد تلقائي"
 _MODE_MANUAL_LABEL = "وضع: إدخال يدوي 📝"
 _MODE_AUTO_LABEL = "وضع: توليد تلقائي 🤖"
+# Short forms for the 3-way segmented selector — the descriptive labels
+# above are too long to sit 3-across in one small pill row.
+_FILL_SEG_MANUAL = "يدوي"
+_FILL_SEG_AUTO = "تلقائي"
+_FILL_SEG_COPY = "نسخ الأمس"
 _TOAST_MANUAL = "تم التحويل إلى الإدخال اليدوي — يمكنك تعديل الأرقام"
 _TOAST_AUTO = "اضغط تحميل اليوم لتوليد الأرقام تلقائياً"
 _TOAST_NO_STUDENTS = "لا يوجد تلاميذ في اللائحة"
@@ -479,15 +482,6 @@ def _draw_daily_contact_pdf_page(
         title=title,
     )
     table_y += 4
-    _draw_contact_pdf_text(
-        painter,
-        QRectF(margin, table_y, content_w, 18),
-        f"حرر ب{place_text} بتاريخ {display_date}",
-        size=10,
-        color=COLOR_TEXT_SECONDARY,
-        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
-    )
-    table_y += 24
 
     rows_data = [
         (_LBL_PRIMARY, "primary_granted", "primary_complement"),
@@ -587,6 +581,18 @@ def _draw_daily_contact_pdf_page(
         )
         current_right = rect.left()
 
+    # Below the table, not above it — matches the real accepted template
+    # (templets/ورقة الاتصال  اليومية.docx has this line right before
+    # التوقيعات, not right after the title).
+    _draw_contact_pdf_text(
+        painter,
+        QRectF(margin, total_y + row_h + 18, content_w, 24),
+        f"حرر ب{place_text} بتاريخ {display_date}",
+        size=11,
+        color=COLOR_TEXT_SECONDARY,
+        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+    )
+
     footer_y = page_h - margin - footer_h + 6
     # HEADMASTER + STEWARD + WARDEN — matches the real accepted template
     # (templets/ورقة الاتصال  اليومية.docx has all 3 signature lines;
@@ -633,20 +639,25 @@ def _bold_label(text: str, size: int = 13) -> QLabel:
     return lbl
 
 
-class _ModeToggle(QFrame):
-    """Compact two-state switch for manual versus generated counts."""
+class _FillModeSelector(QFrame):
+    """Three-way pick for how a day's numbers get filled in: type them by
+    hand, auto-estimate from student history, or copy the last saved day
+    outright. Only يدوي/تلقائي are real persistent modes (is_auto/set_auto,
+    same API the old 2-state _ModeToggle exposed) — نسخ الأمس is a one-shot
+    action: picking it fires copyRequested immediately and the selector
+    settles back on يدوي right after, matching what actually happens to
+    the data (see DailyContactScreen._on_copy_previous_clicked)."""
 
     modeChanged = Signal(bool)
+    copyRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._auto = False
-        self.setObjectName("modeToggle")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(58)
-        self.setMinimumWidth(265)
+        self.setObjectName("fillModeSelector")
+        self.setMinimumWidth(210)
         self.setStyleSheet(f"""
-            QFrame#modeToggle {{
+            QFrame#fillModeSelector {{
                 background:#ffffff;
                 border:1px solid {_PANEL_BORDER};
                 border-radius:16px;
@@ -667,19 +678,24 @@ class _ModeToggle(QFrame):
         root.addWidget(self._state_label)
 
         row = QHBoxLayout()
-        row.setDirection(QBoxLayout.Direction.LeftToRight)
-        row.setSpacing(6)
-        self._manual_label = QLabel(_MODE_MANUAL)
-        self._track_label = QLabel()
-        self._auto_label = QLabel(_MODE_AUTO)
-        for label in (self._manual_label, self._track_label, self._auto_label):
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        row.addWidget(self._manual_label)
-        row.addWidget(self._track_label)
-        row.addWidget(self._auto_label)
+        row.setSpacing(4)
+        self._manual_btn = self._segment(_FILL_SEG_MANUAL)
+        self._auto_btn = self._segment(_FILL_SEG_AUTO)
+        self._copy_btn = self._segment(_FILL_SEG_COPY)
+        self._manual_btn.clicked.connect(lambda: self.set_auto(False))
+        self._auto_btn.clicked.connect(lambda: self.set_auto(True))
+        self._copy_btn.clicked.connect(self.copyRequested.emit)
+        row.addWidget(self._manual_btn)
+        row.addWidget(self._auto_btn)
+        row.addWidget(self._copy_btn)
         root.addLayout(row)
         self._update_style()
+
+    def _segment(self, text: str) -> QPushButton:
+        btn = QPushButton(text)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFlat(True)
+        return btn
 
     def is_auto(self) -> bool:
         return self._auto
@@ -691,19 +707,14 @@ class _ModeToggle(QFrame):
         self._update_style()
         self.modeChanged.emit(auto)
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        self.set_auto(not self._auto)
-        super().mousePressEvent(event)
-
     def _update_style(self) -> None:
-        pill = f"border-radius:10px; padding:3px 8px; font-size:{FONT_CAPTION}px; font-weight:bold;"
+        pill = f"border:none; border-radius:10px; padding:4px 8px; font-size:{FONT_CAPTION}px; font-weight:bold;"
         active = "background:#1fa37a; color:white;"
         inactive = "background:#eef7f2; color:#5A5A40;"
         self._state_label.setText(_MODE_AUTO_LABEL if self._auto else _MODE_MANUAL_LABEL)
-        self._manual_label.setStyleSheet(pill + (inactive if self._auto else active))
-        self._auto_label.setStyleSheet(pill + (active if self._auto else inactive))
-        self._track_label.setText("────●" if self._auto else "●────")
-        self._track_label.setStyleSheet(f"color:#5A5A40; font-size:{FONT_BODY}px; font-weight:bold;")
+        self._manual_btn.setStyleSheet(pill + (inactive if self._auto else active))
+        self._auto_btn.setStyleSheet(pill + (active if self._auto else inactive))
+        self._copy_btn.setStyleSheet(pill + inactive)  # a one-shot action, never "active"
 
 
 # ── Meal card widget ──────────────────────────────────────────────────────────
@@ -1093,14 +1104,13 @@ class DailyContactScreen(QWidget):
         actions.layout().addLayout(actions_row)
 
         document = self._toolbar_group(_LBL_DOCUMENT)
-        document.setMinimumWidth(390)
         fields = QHBoxLayout()
-        fields.setSpacing(8)
+        fields.setSpacing(4)
 
         self._date_edit = DateInput()
         self._date_edit.setDate(QDate.currentDate())
         self._date_edit.setMinimumHeight(36)
-        self._date_edit.setMinimumWidth(170)
+        self._date_edit.setFixedWidth(132)
         self._date_edit.setStyleSheet(
             f"background:white; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
             f"padding:4px 10px; font-size:{FONT_BODY}px;"
@@ -1121,49 +1131,49 @@ class DailyContactScreen(QWidget):
         separator.setFrameShape(QFrame.Shape.VLine)
         separator.setFixedHeight(28)
         separator.setStyleSheet(f"color:{_PANEL_BORDER};")
+
+        # → / ← step the date field itself instead of being 2 more full
+        # buttons — reads as one control (like a calendar's own stepper),
+        # not 2 more decisions. اليوم stays a small standalone link since
+        # it's a jump, not a step, right after the stepper.
+        prev_step_btn = self._step_btn("→", _BTN_PREV, self._go_prev)
+        next_step_btn = self._step_btn("←", _BTN_NEXT, self._go_next)
+        today_btn = self._btn_outline(_BTN_TODAY, compact=True, accent=True)
+        today_btn.setMinimumWidth(56)
+        today_btn.clicked.connect(self._load_today)
+
         fields.addWidget(QLabel(_LBL_DATE, styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
+        fields.addWidget(prev_step_btn)
         fields.addWidget(self._date_edit)
+        fields.addWidget(next_step_btn)
+        fields.addWidget(today_btn)
         fields.addWidget(separator)
         fields.addWidget(QLabel(_LBL_NUMBER, styleSheet=f"font-size:{FONT_BODY}px; color:{COLOR_TEXT_PRIMARY};"))
         fields.addWidget(self._number_edit)
         document.layout().addLayout(fields)
 
-        navigation = self._toolbar_group(_LBL_NAVIGATION)
-        automation_row = QHBoxLayout()
-        automation_row.setSpacing(8)
-        load_btn = self._btn(_BTN_LOAD, COLOR_ACCENT, compact=True)
-        load_btn.setMinimumWidth(112)
-        copy_prev_btn = self._btn(_BTN_COPY_PREV, _INK, compact=True, icon=_BTN_COPY_PREV_ICON)
-        copy_prev_btn.setMinimumWidth(150)
-        self._mode_toggle = _ModeToggle()
-        automation_row.addWidget(load_btn)
-        automation_row.addWidget(copy_prev_btn)
-        automation_row.addWidget(self._mode_toggle)
+        # تعبئة الأرقام: one 3-way selector (يدوي / تلقائي / نسخ الأمس) plus
+        # one action button that only makes sense — and only shows — in
+        # تلقائي mode. Used to be 2 separate always-visible buttons
+        # (تحميل اليوم, نسخ من اليوم السابق) plus a 2-state switch, all
+        # sitting next to 3 more navigation buttons — 6 controls to scan
+        # before doing anything. يدوي mode now shows *zero* buttons here,
+        # matching that there's genuinely nothing to click in that mode.
+        navigation = self._toolbar_group(_LBL_FILL_MODE)
+        fill_row = QHBoxLayout()
+        fill_row.setSpacing(6)
+        self._mode_toggle = _FillModeSelector()
+        self._load_btn = self._btn(_BTN_LOAD, COLOR_ACCENT, compact=True)
+        self._load_btn.setMinimumWidth(76)
+        self._load_btn.setVisible(False)
+        fill_row.addWidget(self._mode_toggle)
+        fill_row.addWidget(self._load_btn)
+        navigation.layout().addLayout(fill_row)
 
-        nav_row = QHBoxLayout()
-        nav_row.setSpacing(10)
-        today_btn = self._btn(_BTN_TODAY, _INK, compact=True)
-        prev_btn = self._btn(_BTN_PREV, _INK, compact=True)
-        next_btn = self._btn(_BTN_NEXT, _INK, compact=True)
-        for button, width in (
-            (next_btn, 112),
-            (prev_btn, 122),
-            (today_btn, 72),
-        ):
-            button.setMinimumWidth(width)
-
-        today_btn.clicked.connect(self._load_today)
-        prev_btn.clicked.connect(self._go_prev)
-        next_btn.clicked.connect(self._go_next)
-        load_btn.clicked.connect(self._on_load_today_clicked)
-        copy_prev_btn.clicked.connect(self._on_copy_previous_clicked)
+        self._load_btn.clicked.connect(self._on_load_today_clicked)
         self._mode_toggle.modeChanged.connect(self._on_mode_changed)
-
-        nav_row.addWidget(prev_btn)
-        nav_row.addWidget(today_btn)
-        nav_row.addWidget(next_btn)
-        navigation.layout().addLayout(automation_row)
-        navigation.layout().addLayout(nav_row)
+        self._mode_toggle.modeChanged.connect(self._load_btn.setVisible)
+        self._mode_toggle.copyRequested.connect(self._on_copy_previous_clicked)
 
         # RTL reading order: pick the day first (rightmost), then its
         # document info, then act on it (leftmost) — the natural right-to-
@@ -1227,6 +1237,41 @@ class DailyContactScreen(QWidget):
             border_radius=12, padding_h=(10 if compact else 14),
             font_size=13, bold=False, min_height=36,
         )
+
+    def _btn_outline(
+        self, label: str, *, compact: bool = False, icon: str | None = None, accent: bool = False,
+    ) -> QPushButton:
+        """Light, bordered button for an action that shouldn't visually
+        compete with a solid-fill primary action nearby — used for اليوم,
+        the one still-standalone control worth calling out as a jump
+        rather than a step (`accent=True` tints its border/text)."""
+        color = COLOR_ACCENT if accent else _INK
+        return IconButton(
+            label, icon=icon, bg="white", text_color=color,
+            border=color, hover_bg=COLOR_PANEL_ALT,
+            border_radius=10, padding_h=(10 if compact else 14),
+            font_size=13, bold=False, min_height=36,
+        )
+
+    def _step_btn(self, glyph: str, tooltip: str, on_click) -> QPushButton:
+        """Tiny icon-only ← → button meant to sit directly against the
+        date field, read as part of that one control rather than as its
+        own separate decision — the well-worn date-stepper pattern, not a
+        standalone action needing its own label (see IconButton for that
+        default; a tooltip keeps the action discoverable without one)."""
+        btn = QPushButton(glyph)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(32, 32)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background:white; color:{_INK}; border:1px solid {_PANEL_BORDER};
+                border-radius:8px; font-size:14px; font-weight:bold;
+            }}
+            QPushButton:hover {{ background:{COLOR_PANEL_ALT}; }}
+        """)
+        btn.clicked.connect(on_click)
+        return btn
 
     def _build_cards_row(self) -> QGridLayout:
         row = QGridLayout()

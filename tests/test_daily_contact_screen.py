@@ -163,6 +163,54 @@ class DailyContactDocumentTests(unittest.TestCase):
         self.assertEqual(screen._toast.text(), daily_contact_screen._TOAST_COPY_NONE)
         screen.close()
 
+    def test_load_button_hidden_until_auto_mode_selected(self) -> None:
+        """تحميل اليوم only makes sense in تلقائي mode — showing it in
+        يدوي mode would be a dead click with no data-driven reason to
+        exist (there's nothing to load, the مسير types the numbers)."""
+        screen = daily_contact_screen.DailyContactScreen()
+        self.assertTrue(screen._load_btn.isHidden())
+
+        screen._mode_toggle.set_auto(True)
+        self.assertFalse(screen._load_btn.isHidden())
+
+        screen._mode_toggle.set_auto(False)
+        self.assertTrue(screen._load_btn.isHidden())
+        screen.close()
+
+    def test_copy_segment_click_triggers_the_same_copy_action(self) -> None:
+        """نسخ الأمس is one segment of the 3-way selector, not a separate
+        standalone button anymore — it must still fire the same copy
+        logic the old dedicated button called directly."""
+        database.save_daily_contact(DailyContact(
+            date="2026-06-09", meal_type=daily_contact_screen.MEAL_GHADA,
+            primary_granted=9,
+        ))
+        screen = daily_contact_screen.DailyContactScreen()
+        screen._date_edit.setDate(QDate(2026, 6, 11))
+
+        screen._mode_toggle._copy_btn.click()
+
+        ghada = screen._cards[daily_contact_screen.MEAL_GHADA]
+        self.assertEqual(ghada._pg.value(), 9)
+        screen.close()
+
+    def test_copy_segment_settles_selector_back_on_manual(self) -> None:
+        """Picking نسخ الأمس while in تلقائي mode must leave the selector
+        showing يدوي afterward — matches the data, which becomes freely
+        editable once copied in, not still "auto"."""
+        database.save_daily_contact(DailyContact(
+            date="2026-06-09", meal_type=daily_contact_screen.MEAL_GHADA,
+            primary_granted=5,
+        ))
+        screen = daily_contact_screen.DailyContactScreen()
+        screen._date_edit.setDate(QDate(2026, 6, 11))
+        screen._mode_toggle.set_auto(True)
+
+        screen._mode_toggle._copy_btn.click()
+
+        self.assertFalse(screen._mode_toggle.is_auto())
+        screen.close()
+
     def test_history_shows_saved_and_printed_documents(self) -> None:
         database.record_daily_contact_document(
             "2026-06-11",
