@@ -23,7 +23,8 @@ from config.settings import (
 )
 from core.contact_counts import count_students
 from core.document_pipeline import (
-    DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_REPORT, PipelineItem, get_daily_pipeline_status,
+    DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_RECEPTION, DOC_REPORT,
+    PipelineItem, get_daily_pipeline_status,
 )
 from data.database import (
     get_all_holidays, get_all_students, get_recent_absences, get_recent_contacts, get_school_settings,
@@ -31,7 +32,9 @@ from data.database import (
 from ui.batch_export import _summarize_combined_pdf, pick_date_range, write_combined_pdf
 from ui.daily_absence_screen import build_absence_pdf_page, generate_and_save_absence_for_date
 from ui.daily_contact_screen import build_contact_pdf_page, generate_and_save_contact_for_date
+from ui.daily_reception_screen import build_reception_pdf_page
 from ui.daily_report_screen import build_report_pdf_page
+from ui.order_letter_screen import build_order_letter_pdf_page
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -53,17 +56,26 @@ _TOAST_NO_CLASSIFIED_STUDENTS = (
 )
 
 # key -> (icon, screen index to jump to when not ready)
-_DOC_ICON = {DOC_CONTACT: "📋", DOC_ABSENCE: "📉", DOC_REPORT: "📄", DOC_ORDER_LETTER: "✉️"}
-_DOC_TARGET_SCREEN = {DOC_CONTACT: 4, DOC_ABSENCE: 5, DOC_ORDER_LETTER: 6, DOC_REPORT: 7}
+_DOC_ICON = {
+    DOC_CONTACT: "📋", DOC_ABSENCE: "📉", DOC_REPORT: "📄",
+    DOC_ORDER_LETTER: "✉️", DOC_RECEPTION: "🧾",
+}
+_DOC_TARGET_SCREEN = {
+    DOC_CONTACT: 4, DOC_ABSENCE: 5, DOC_ORDER_LETTER: 6, DOC_REPORT: 7, DOC_RECEPTION: 8,
+}
 _DOC_PDF_NAME = {
     DOC_CONTACT: "ورقة_الاتصال_اليومية",
     DOC_ABSENCE: "ورقة_الغياب_اليومية",
     DOC_REPORT: "التقرير_اليومي",
+    DOC_ORDER_LETTER: "رسالة_الطلبية",
+    DOC_RECEPTION: "محضر_تسليم_الخدمة_اليومي",
 }
 _DOC_ORIENTATION = {
     DOC_CONTACT: QPageLayout.Orientation.Portrait,
     DOC_ABSENCE: QPageLayout.Orientation.Portrait,
     DOC_REPORT: QPageLayout.Orientation.Landscape,
+    DOC_ORDER_LETTER: QPageLayout.Orientation.Portrait,
+    DOC_RECEPTION: QPageLayout.Orientation.Portrait,
 }
 
 
@@ -163,6 +175,8 @@ class _GenerateEverythingDialog(QDialog):
             (DOC_CONTACT, "ورقة الاتصال اليومية"),
             (DOC_ABSENCE, "ورقة الغياب اليومي"),
             (DOC_REPORT, "التقرير اليومي"),
+            (DOC_ORDER_LETTER, "رسالة الطلبية — رسالة جديدة مرقّمة لكل يوم"),
+            (DOC_RECEPTION, "محضر التسلم اليومي"),
         ):
             check = QCheckBox(label)
             check.setChecked(True)
@@ -347,6 +361,10 @@ class WorkPipelineScreen(QWidget):
             return lambda painter, w, h, d: build_contact_pdf_page(painter, w, h, d, holiday_labels, settings)
         if key == DOC_ABSENCE:
             return lambda painter, w, h, d: build_absence_pdf_page(painter, w, h, d, holiday_labels, settings)
+        if key == DOC_ORDER_LETTER:
+            return lambda painter, w, h, d: build_order_letter_pdf_page(painter, w, h, d, holiday_labels, settings)
+        if key == DOC_RECEPTION:
+            return lambda painter, w, h, d: build_reception_pdf_page(painter, w, h, d, holiday_labels, settings)
         return lambda painter, w, h, d: build_report_pdf_page(painter, w, h, d, holiday_labels, settings)
 
     def _auto_fill_range(self, start: QDate, end: QDate, doc_keys: List[str]) -> None:

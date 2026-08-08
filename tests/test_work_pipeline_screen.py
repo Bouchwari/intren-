@@ -15,9 +15,9 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
 from config.settings import EXPORT_FORMAT_PDF
-from core.models import DailyContact, Student
+from core.models import DailyContact, DailyReceptionRecord, Holiday, Student
 from data import database
-from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_REPORT
+from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_RECEPTION, DOC_REPORT
 from ui import work_pipeline_screen as wps
 
 
@@ -66,7 +66,7 @@ class WorkPipelineScreenTests(unittest.TestCase):
         screen._date_edit.setDate(QDate(2026, 6, 11))
         screen.refresh()
 
-        self.assertEqual(screen._cards_container.count(), 4)
+        self.assertEqual(screen._cards_container.count(), 5)
         screen.close()
 
     def test_fix_button_navigates_to_the_right_screen(self) -> None:
@@ -177,6 +177,96 @@ class WorkPipelineScreenTests(unittest.TestCase):
             screen._on_generate_everything()
 
         self.assertEqual(database.get_day_contacts("2026-06-11"), [])
+        screen.close()
+
+    def test_order_letter_generates_one_numbered_letter_per_day(self) -> None:
+        """The point of this whole feature: a multi-day range produces a
+        SEPARATE, independently-numbered رسالة الطلبية for every day that
+        has real ورقة الاتصال data — not one letter covering the range."""
+        for day in ("2026-06-11", "2026-06-12", "2026-06-13"):
+            database.save_daily_contact(DailyContact(
+                date=day, meal_type="ghada", collegial_granted=10,
+            ))
+
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        fake_dialog = _FakeGenerateDialog(
+            QDate(2026, 6, 11), QDate(2026, 6, 13), [DOC_ORDER_LETTER], False,
+        )
+        with patch.object(wps, "_GenerateEverythingDialog", fake_dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+
+        letters = database.get_all_order_letters()
+        self.assertEqual(len(letters), 3)
+        self.assertEqual({lt.letter_date for lt in letters}, {"2026-06-11", "2026-06-12", "2026-06-13"})
+        numbers = sorted(lt.document_number for lt in letters)
+        self.assertEqual(numbers, sorted(set(numbers)))  # every number is unique
+        self.assertEqual(len(numbers), 3)
+
+        written = list(Path(self._out_tmpdir.name).glob("*.pdf"))
+        self.assertEqual(len(written), 1)
+        self.assertIn("الطلبية", written[0].name)
+        screen.close()
+
+    def test_order_letter_skips_days_with_no_contact_data_and_holidays(self) -> None:
+        database.save_daily_contact(DailyContact(date="2026-06-11", meal_type="ghada", collegial_granted=10))
+        database.add_holiday(Holiday(date="2026-06-12", label="عطلة تجريبية"))
+        # 2026-06-13 intentionally left with no data at all.
+
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        fake_dialog = _FakeGenerateDialog(
+            QDate(2026, 6, 11), QDate(2026, 6, 13), [DOC_ORDER_LETTER], False,
+        )
+        with patch.object(wps, "_GenerateEverythingDialog", fake_dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+
+        letters = database.get_all_order_letters()
+        self.assertEqual(len(letters), 1)
+        self.assertEqual(letters[0].letter_date, "2026-06-11")
+        screen.close()
+
+    def test_reception_saves_one_record_per_day_matching_contact_totals(self) -> None:
+        for day, qty in (("2026-06-11", 5), ("2026-06-12", 8)):
+            database.save_daily_contact(DailyContact(date=day, meal_type="ghada", collegial_granted=qty))
+
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        fake_dialog = _FakeGenerateDialog(
+            QDate(2026, 6, 11), QDate(2026, 6, 12), [DOC_RECEPTION], False,
+        )
+        with patch.object(wps, "_GenerateEverythingDialog", fake_dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+
+        rec11 = database.get_daily_reception_record("2026-06-11")
+        rec12 = database.get_daily_reception_record("2026-06-12")
+        self.assertIsNotNone(rec11)
+        self.assertIsNotNone(rec12)
+        self.assertEqual(rec11.ghada_qty, 5)
+        self.assertEqual(rec12.ghada_qty, 8)
+
+        written = list(Path(self._out_tmpdir.name).glob("*.pdf"))
+        self.assertEqual(len(written), 1)
+        self.assertIn("تسليم", written[0].name)
+        screen.close()
+
+    def test_reception_batch_preserves_an_already_saved_record(self) -> None:
+        """A day already confirmed keeps its saved quantities exactly,
+        even if ورقة الاتصال changed afterward — matches build_reception_pdf_page's
+        own "never silently overwrite" contract."""
+        database.save_daily_contact(DailyContact(date="2026-06-11", meal_type="ghada", collegial_granted=99))
+        database.save_daily_reception_record(DailyReceptionRecord(date="2026-06-11", ghada_qty=5))
+
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        fake_dialog = _FakeGenerateDialog(
+            QDate(2026, 6, 11), QDate(2026, 6, 11), [DOC_RECEPTION], False,
+        )
+        with patch.object(wps, "_GenerateEverythingDialog", fake_dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+
+        record = database.get_daily_reception_record("2026-06-11")
+        self.assertEqual(record.ghada_qty, 5)  # untouched, not recomputed to 99
         screen.close()
 
 

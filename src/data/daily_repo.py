@@ -6,7 +6,7 @@ from typing import List, Optional
 from config.settings import MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA
 from core.models import (
     DailyAbsence, DailyContact, DailyContactDocumentLog,
-    DailyReport, OrderItem, OrderLetter, Violation,
+    DailyReceptionRecord, DailyReport, OrderItem, OrderLetter, Violation,
 )
 from data.database import _connection
 
@@ -361,6 +361,41 @@ def save_daily_report(report: DailyReport) -> None:
             INSERT INTO daily_reports ({",".join(columns)}) VALUES ({placeholders})
             ON CONFLICT(date) DO UPDATE SET {update_clause}
         """, values)
+
+
+def _row_to_reception_record(r: sqlite3.Row) -> DailyReceptionRecord:
+    return DailyReceptionRecord(
+        id=r["id"],
+        date=r["date"],
+        ftour_qty=r["ftour_qty"],
+        ghada_qty=r["ghada_qty"],
+        asha_qty=r["asha_qty"],
+        remarks=r["remarks"],
+    )
+
+
+def get_daily_reception_record(date: str) -> Optional[DailyReceptionRecord]:
+    """Return the saved محضر تسليم الخدمة اليومي (quantities + remarks) for
+    a date, or None."""
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM daily_reception_records WHERE date=?", (date,)
+        ).fetchone()
+    return _row_to_reception_record(row) if row else None
+
+
+def save_daily_reception_record(record: DailyReceptionRecord) -> None:
+    """Upsert the daily reception record (delivered quantities + remarks)."""
+    with _connection() as conn:
+        conn.execute("""
+            INSERT INTO daily_reception_records (date, ftour_qty, ghada_qty, asha_qty, remarks)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(date) DO UPDATE SET
+                ftour_qty=excluded.ftour_qty,
+                ghada_qty=excluded.ghada_qty,
+                asha_qty=excluded.asha_qty,
+                remarks=excluded.remarks
+        """, (record.date, record.ftour_qty, record.ghada_qty, record.asha_qty, record.remarks))
 
 
 def get_dates_with_data() -> List[str]:

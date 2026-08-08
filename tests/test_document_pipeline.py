@@ -11,9 +11,9 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
 from core.document_pipeline import (
-    DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_REPORT, get_daily_pipeline_status,
+    DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_RECEPTION, DOC_REPORT, get_daily_pipeline_status,
 )
-from core.models import DailyAbsence, DailyContact, DailyReport, OrderLetter
+from core.models import DailyAbsence, DailyContact, DailyReceptionRecord, DailyReport, OrderLetter
 from data import database
 
 
@@ -28,10 +28,11 @@ class DocumentPipelineTests(unittest.TestCase):
         database.DB_PATH = self._original_db_path
         self._tmpdir.cleanup()
 
-    def test_all_four_documents_not_ready_for_a_blank_date(self) -> None:
+    def test_all_five_documents_not_ready_for_a_blank_date(self) -> None:
         items = get_daily_pipeline_status("2026-06-11")
         self.assertEqual(
-            {item.key for item in items}, {DOC_CONTACT, DOC_ABSENCE, DOC_REPORT, DOC_ORDER_LETTER},
+            {item.key for item in items},
+            {DOC_CONTACT, DOC_ABSENCE, DOC_REPORT, DOC_ORDER_LETTER, DOC_RECEPTION},
         )
         self.assertTrue(all(not item.ready for item in items))
 
@@ -78,6 +79,11 @@ class DocumentPipelineTests(unittest.TestCase):
         )
         items = {item.key: item for item in get_daily_pipeline_status("2026-06-20")}
         self.assertFalse(items[DOC_ORDER_LETTER].ready)
+
+    def test_reception_ready_once_saved(self) -> None:
+        database.save_daily_reception_record(DailyReceptionRecord(date="2026-06-11", ftour_qty=5))
+        items = {item.key: item for item in get_daily_pipeline_status("2026-06-11")}
+        self.assertTrue(items[DOC_RECEPTION].ready)
 
 
 if __name__ == "__main__":

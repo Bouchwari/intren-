@@ -215,6 +215,15 @@ def init_database() -> None:
                 notes      TEXT    NOT NULL DEFAULT '',
                 created_at TEXT    NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS daily_reception_records (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                date       TEXT    NOT NULL UNIQUE,
+                ftour_qty  INTEGER NOT NULL DEFAULT 0,
+                ghada_qty  INTEGER NOT NULL DEFAULT 0,
+                asha_qty   INTEGER NOT NULL DEFAULT 0,
+                remarks    TEXT    NOT NULL DEFAULT '',
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            );
             CREATE TABLE IF NOT EXISTS monthly_reports (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 month      TEXT    NOT NULL UNIQUE,
@@ -308,6 +317,8 @@ from data.daily_repo import (  # noqa: E402
     get_recent_absences,
     get_daily_report,
     save_daily_report,
+    get_daily_reception_record,
+    save_daily_reception_record,
     get_dates_with_data,
     save_order_letter,
     get_next_order_letter_number,

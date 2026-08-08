@@ -239,6 +239,28 @@ class DailyReport:
 
 
 @dataclass
+class DailyReceptionRecord:
+    """محضر تسليم الخدمة اليومي — confirms a day's delivered meals were
+    received and accepted, signed by STEWARD/HEADMASTER/CONTRACTOR. One per
+    date, covering all 3 meals on a single form (unlike contact_sheet /
+    absence_sheet, which are one row per date+meal).
+
+    Quantities default from that date's contact_sheet totals but are their
+    own stored, independently-editable snapshot — not just a live read of
+    contact_sheet — because this document is meant to confirm what was
+    *actually* delivered, which occasionally differs from what was ordered.
+    monthly_expense_statement cross-checks against this record and must
+    flag any day where the two disagree rather than silently picking one
+    (see matama skill documents.md §8)."""
+    date: str
+    ftour_qty: int = 0
+    ghada_qty: int = 0
+    asha_qty: int = 0
+    remarks: str = ""
+    id: Optional[int] = None
+
+
+@dataclass
 class MonthlyMealSummary:
     """Aggregated totals for one meal type across a full month.
     Computed on the fly — never stored in DB."""

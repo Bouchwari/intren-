@@ -9,13 +9,15 @@ from dataclasses import dataclass
 from typing import List
 
 from data.database import (
-    get_all_order_letters, get_day_absences, get_day_contacts, get_daily_report,
+    get_all_order_letters, get_day_absences, get_day_contacts,
+    get_daily_reception_record, get_daily_report,
 )
 
 DOC_CONTACT = "contact"
 DOC_ABSENCE = "absence"
 DOC_REPORT = "report"
 DOC_ORDER_LETTER = "order_letter"
+DOC_RECEPTION = "reception"
 
 
 @dataclass
@@ -28,7 +30,7 @@ class PipelineItem:
 
 
 def get_daily_pipeline_status(date_str: str) -> List[PipelineItem]:
-    """Status of the 4 daily documents for date_str (YYYY-MM-DD)."""
+    """Status of the 5 daily documents for date_str (YYYY-MM-DD)."""
     has_contact = bool(get_day_contacts(date_str))
     has_absence = bool(get_day_absences(date_str))
     report = get_daily_report(date_str)
@@ -37,6 +39,7 @@ def get_daily_pipeline_status(date_str: str) -> List[PipelineItem]:
         letter.period_start <= date_str <= letter.period_end
         for letter in get_all_order_letters()
     )
+    has_reception = get_daily_reception_record(date_str) is not None
 
     if report_saved:
         report_detail = "تم حفظ التقرير"
@@ -70,5 +73,12 @@ def get_daily_pipeline_status(date_str: str) -> List[PipelineItem]:
             ready=has_order_letter,
             detail="هذا اليوم مشمول برسالة طلبية محفوظة" if has_order_letter
                    else "لا توجد رسالة طلبية تغطي هذا اليوم بعد",
+        ),
+        PipelineItem(
+            key=DOC_RECEPTION,
+            label="محضر التسلم اليومي",
+            ready=has_reception,
+            detail="تم حفظ محضر التسليم" if has_reception
+                   else "لم يتم إنشاء محضر التسليم بعد",
         ),
     ]

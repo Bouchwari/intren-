@@ -21,6 +21,7 @@ from config.settings import (
 )
 from ui.daily_absence_screen import DailyAbsenceScreen
 from ui.daily_contact_screen import DailyContactScreen
+from ui.daily_reception_screen import DailyReceptionScreen
 from ui.daily_report_screen import DailyReportScreen
 from ui.dashboard_screen import DashboardScreen
 from ui.expense_statement_screen import ExpenseStatementScreen
@@ -44,10 +45,11 @@ _NAV_ITEMS: list[tuple[str, str, int]] = [
     ("📉", "ورقة الغياب اليومي",    5),
     ("✉️", "رسالة الطلبية",         6),
     ("📄", "التقرير اليومي",        7),
-    ("📊", "المحضر الشهري",         8),
-    ("💰", "بيان المصاريف",         9),
-    ("📕", "دفتر المخالفات",        10),
-    ("⚙️", "الإعدادات",            11),
+    ("🧾", "محضر التسلم اليومي",    8),
+    ("📊", "المحضر الشهري",         9),
+    ("💰", "بيان المصاريف",         10),
+    ("📕", "دفتر المخالفات",        11),
+    ("⚙️", "الإعدادات",            12),
 ]
 
 _SIDEBAR_WIDTH = 235
@@ -193,18 +195,19 @@ class MainWindow(QMainWindow):
         # Index 2 — Students
         self._stack.addWidget(StudentsScreen())                         # 2
 
-        # Indices 3-10 — mix of built and placeholder screens
+        # Indices 3-11 — mix of built and placeholder screens
         self._stack.addWidget(MealProgramScreen())                          # 3 — built
         self._stack.addWidget(DailyContactScreen())                         # 4 — built
         self._stack.addWidget(DailyAbsenceScreen())                          # 5 — built
         self._stack.addWidget(OrderLetterScreen())                            # 6 — built
         self._stack.addWidget(DailyReportScreen())                           # 7 — built
-        self._stack.addWidget(MonthlyReportScreen())                          # 8 — built
-        self._stack.addWidget(ExpenseStatementScreen())                       # 9 — built
-        self._stack.addWidget(IncidentLogScreen())                            # 10 — built
+        self._stack.addWidget(DailyReceptionScreen())                         # 8 — built
+        self._stack.addWidget(MonthlyReportScreen())                          # 9 — built
+        self._stack.addWidget(ExpenseStatementScreen())                       # 10 — built
+        self._stack.addWidget(IncidentLogScreen())                            # 11 — built
 
-        # Index 11 — Settings
-        self._stack.addWidget(SettingsScreen())                         # 11
+        # Index 12 — Settings
+        self._stack.addWidget(SettingsScreen())                         # 12
 
         return self._stack
 
