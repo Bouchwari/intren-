@@ -39,7 +39,8 @@ Use **only** these libraries. Never suggest alternatives unless the user explici
 | Database     | `sqlite3` (Python stdlib)          |
 | Excel I/O    | `openpyxl`                         |
 | Heavy data   | `pandas` — only if openpyxl can't  |
-| PDF export   | `reportlab` (when we get there)    |
+| PDF export   | `QPdfWriter` + `QPainter` (PySide6 native — not reportlab; reportlab was the original plan but every document screen ended up hand-drawing PDF pages directly with Qt instead, and it's never been added to `requirements.txt`) |
+| Word export  | Fill real `.docx` templates in `templets/` via raw XML (zipfile + `xml.etree`) — not `python-docx` |
 | Final build  | PyInstaller                        |
 
 **Forbidden:** Flask, Django, Tkinter, PyQt5, SQLAlchemy, Electron, any web framework, any other UI toolkit.
@@ -102,66 +103,82 @@ The user wants a **clean, modern, professional** look — not basic gray Qt defa
 
 ## 7. FEATURES — THE FULL APP
 
-Build these **one at a time, in this order**. Do not work on multiple at once.
+Status as of 2026-08-08. See `AI_HANDOFF.md` for session-by-session detail —
+this list is the standing "what exists" summary, updated whenever a feature's
+status changes. For the full document dependency chain (what triggers what,
+who signs each step) see `.claude/skills/matama/references/document_chain.md`
+— read it before touching any document-generation code.
 
 ### ✅ Done
 - [x] Project skeleton (folders, main entry, DB init)
 - [x] Setup wizard (school identity: name, city, academy, director, school year)
 - [x] Main window with sidebar navigation
+- [x] **يوم العمل** (Work Day) — the app's landing screen. Status cards for
+      the day's 4 documents (contact/absence/report/order letter) + one
+      "توليد شامل لعدة أيام" button that batch-generates any combination of
+      them for a date range in one shot. Not in the original plan — added
+      this session, inspired by a reference UI the user shared, RTL/teal
+      styling native to this app.
+- [x] **Student management** (لائحة التلاميذ) — Excel import, searchable/
+      filterable table, add/edit/delete, monitors (معلمو الداخلية) as a tab
+      within the same screen rather than a separate one.
+- [x] **Weekly meal program** (البرنامج الغذائي الأسبوعي) — grid entry,
+      Ramadan variant, multiple saved programs.
+- [x] **Daily contact sheet** (ورقة الاتصال اليومية) — full ممنوح/مؤدي/متمم
+      breakdown per cycle, auto-fill from historical estimator, official
+      رقم الوثيقة numbering, PDF/Word export, batch combined-PDF export.
+- [x] **Daily absence sheet** (ورقة الغياب اليومي) — same shape as contact.
+- [x] **Daily report** (التقرير اليومي) — auto-computed from contact +
+      absence, preserves manual overrides once saved, hygiene checklist.
+- [x] **Monthly summary** (المحضر الشهري) — `monthly_report_screen.py`,
+      aggregates net meals served + total cost for the month. Confirmed
+      by the user this is a **different document** from محضر التسلم
+      الشهري below, not an overlap.
+- [x] **Order letter** (رسالة الطلبية) — reworked this session into a real
+      daily document per the ministry process (was period-based before):
+      auto-fills from that day's real ورقة الاتصال numbers, own sequential
+      رقم الوثيقة per letter (editable before saving), PDF matches the real
+      templets/رسالة الطلبية.docx exactly (plain black-and-white table, no
+      invented fields), and يوم العمل's "توليد شامل" can now generate one
+      independently-numbered letter per day across a whole range.
+- [x] **Daily reception record** (محضر التسلم اليومي) — `daily_reception_screen.py`,
+      built 2026-08-08. Confirms a day's delivered meals, quantities
+      prefilled from that day's ورقة الاتصال (editable if reality
+      differed, never silently recomputed once saved — same guarantee as
+      the other daily screens). Fills the real bilingual FR/AR
+      `templets/المحضر اليومي لتسلم الخدمة.docx` (3 separate `<w:tbl>`
+      elements — signers/items/remarks — and real Word MERGEFIELD codes,
+      not plain placeholder text; see `_set_mergefield_value`'s docstring
+      for why a naive "first `<w:t>` in the paragraph" approach silently
+      clobbers the closing "FAIT A TAGLEFT. LE" label). PDF is hand-drawn
+      as usual. Wired into يوم العمل (status card + batch generation) and
+      the sidebar (index 8, right after التقرير اليومي).
+- [x] **Expense statement** (بيان المصاريف)
+- [x] **Violations book** (دفتر المخالفات) — `incident_log_screen.py`
+- [x] **Document export** — PDF via `QPdfWriter`/`QPainter` (own drawing,
+      not reportlab), Word via filling the real templates in `templets/`
+      directly, Excel via `openpyxl`. Every document screen has this.
+- [x] **Build & package** — `Matama.spec` + PyInstaller. Builds and runs
+      correctly on Linux for normal use (verified with a real, configured
+      database). ⚠️ One unresolved finding: on a **completely fresh
+      install** (empty database, so the first-run setup wizard shows), the
+      packaged Linux binary exits right after the wizard appears instead of
+      waiting for input — reproduced twice, isolated to the packaged build
+      specifically (dev-mode `python src/main.py` handles the exact same
+      empty-database case correctly). Very likely a Qt/Wayland platform-
+      plugin quirk specific to this Linux dev machine, not the app's code —
+      **needs verifying on an actual Windows machine**, which is the real
+      target and wasn't available to test this from. See `AI_HANDOFF.md`
+      for the full diagnosis.
 
-### 📋 To Build
-1. **Student management** (لائحة التلاميذ)
-   - Import from Excel (mapping common formats from مسار / Massar)
-   - Fields: full name, class, birth date, birth place, grant number, section (internat / cantine), grant type (full / half)
-   - View as a searchable, filterable table
-   - Add / edit / delete individual students
-   - Sample Excel templates the user can download
-
-2. **Internal teachers** (معلمو الداخلية)
-   - Add / edit / delete teachers who eat at the school
-   they are also student
-
-3. **Weekly meal program** (البرنامج الغذائي الأسبوعي)
-   - 7 days × 3 meals (فطور / غداء / عشاء) grid
-   - Manual entry OR auto-generate from CPC meal templates
-   - Separate program for Ramadan (السحور / الإفطار)
-   - Save multiple programs and switch between them
-
-4. **Daily contact sheet** (ورقة الاتصال اليومية للولوج للمطعم)
-   - For each meal, count beneficiaries:
-     - إعدادي → ممنوح / مؤد / متمم
-     - تأهيلي → ممنوح / مؤد / متمم
-     - معلمو الداخلية
-   - Auto-compute totals
-   - One row per (date, meal) — enforce uniqueness
-
-5. **Daily absence sheet** (ورقة الغياب اليومي)
-   - Same structure as the contact sheet but for absences
-
-6. **Daily report** (التقرير اليومي)
-   - Auto-generated from the day's contact + absence data
-   - Notes field for the مسير
-
-7. **Monthly summary** (المحضر الشهري / المدخر الشهري)
-   - Aggregate counts per meal across the month
-   - Export as the official "Procès-verbal de réception mensuel" form
-
-8. **Order letter** (رسالة الطلبية)
-   - Generated from the meal program + expected attendance
-
-9. **Expense statement** (بيان المصاريف)
-   - Per-meal unit prices × quantities → totals
-
-10. **Violations book** (دفتر المخالفات)
-    - Date, description, who reported, who signed off
-
-11. **Document export**
-    - PDF (using reportlab) — for official forms with the proper headers
-    - Excel — for raw data
-    - All output documents must include school header + signatures section
-
-12. **Build & package**
-    - `build.bat` script that runs PyInstaller to produce `matama.exe`
+### 📋 Not started
+- **محضر التسلم الشهري** (`monthly_reception_record`) — real template at
+  `templets/المحضر الشهري لتسلم الخدمة.docx`. Same shape as the daily one
+  but for a whole month, 3 signers (HEADMASTER + STEWARD + CONTRACTOR).
+  Confirmed a genuinely separate document from the existing المحضر الشهري
+  screen — see `document_chain.md` for the full breakdown. Not built yet.
+- Otherwise nothing major — remaining work is fixes/polish on the above, or
+  whatever the user asks for next. Update this list as that changes.
 
 ---
 
@@ -220,6 +237,8 @@ These rules exist because past mistakes made the codebase break. Follow them str
 
 🚫 **Never use `print()` for errors** in production code. Use logging or QMessageBox.
 
+🚫 **Never add a new folder under `assets/` without adding it to `Matama.spec`'s `datas` list too.** The packaged build only bundles what's listed there — a new asset folder works fine in dev mode (`python src/main.py`) but silently goes missing from the built `.exe`/binary. This exact bug happened with `assets/icons/`.
+
 ✅ **Always read the existing file first** before editing it, to preserve what's already there.
 
 ✅ **Always run a mental test:** "If a teacher with no programming knowledge clicks this, what happens?"
@@ -260,5 +279,13 @@ Before sending a response, verify:
 ## 12. CURRENT HANDOFF
 
 Before continuing recent UI/UX work, read `AI_HANDOFF.md`.
+
+**Keep both files current — every session, not just when asked.** When a
+feature's status changes, update its line in §7 above. When a session ends
+(or context is about to run out), update `AI_HANDOFF.md` with what was done,
+where things were left, and any new rule/convention established along the
+way (add it to §9 too if it's a standing rule, not just this-session context).
+The user relies on these files to pick up work across sessions without
+re-explaining everything each time.
 
 **End of file. When in doubt → ASK.**
