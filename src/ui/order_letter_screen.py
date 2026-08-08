@@ -27,11 +27,12 @@ from config.settings import (
     EXPORT_FORMAT_PDF,
     FONT_BODY, FONT_LABEL, FONT_SECTION, FONT_TITLE,
 )
-from core.models import OrderItem, OrderLetter
+from core.models import DailyContact, OrderItem, OrderLetter
 from data.database import (
-    delete_order_letter, get_all_order_letters, get_contacts_between,
+    delete_order_letter, get_all_order_letters, get_contacts_between, get_day_contacts,
     get_next_order_letter_number, get_order_items, get_school_settings, save_order_letter,
 )
+from ui.batch_export import draw_placeholder_pdf_page
 from ui.daily_contact_screen import (
     _normalize_template_name, _set_cell_text, _set_docx_text, _template_dirs,
     _WORD_NS, _W_NS,
@@ -207,6 +208,22 @@ class _MealQtyCard(QGroupBox):
     def collegial(self) -> int: return self._sp_coll.value()
     def qualifying(self) -> int: return self._sp_qual.value()
     def monitors(self) -> int: return self._sp_mon.value()
+
+
+def _order_items_from_contacts(contacts: List[DailyContact]) -> Dict[str, OrderItem]:
+    """Sum real ورقة الاتصال beneficiary totals per meal, across whatever
+    dates/rows are given — one day's 3 rows or a whole range's worth.
+    Shared by the screen's من/إلى auto-fill and the per-day batch
+    generator on يوم العمل."""
+    items = {meal_key: OrderItem(letter_id=0, meal_type=meal_key) for meal_key, _ in _MEAL_ORDER}
+    for contact in contacts:
+        item = items.get(contact.meal_type)
+        if item is None:
+            continue
+        item.collegial += contact.collegial_total
+        item.qualifying += contact.qualifying_total
+        item.monitors += contact.monitors_total
+    return items
 
 
 # ── Letter preview generator ──────────────────────────────────────────────────
@@ -393,19 +410,23 @@ def _draw_letter_pdf_cell(
     )
 
 
-def _write_order_letter_pdf(
-    path: Path,
+def _draw_order_letter_pdf_page(
+    painter: QPainter,
+    page_w: float,
+    page_h: float,
     settings,
     letter_date: str,
     number: str,
-    cards: Dict[str, "_MealQtyCard"],
+    items: Dict[str, OrderItem],
 ) -> None:
-    """Render the order letter as an official PDF matching the real,
-    ministry-accepted templets/رسالة الطلبية.docx exactly — same fields,
-    same order, same single-date framing (no period_start/period_end,
-    no invented total row) — using the header/footer helpers already
-    proven on the other daily documents. See _write_order_letter_docx,
-    which fills the same fields into the actual template."""
+    """Draw one order letter onto an already-open page — matching the
+    real, ministry-accepted templets/رسالة الطلبية.docx exactly: same
+    fields, same order, same single-date framing (no period_start/
+    period_end, no invented total row). Shared by _write_order_letter_pdf
+    (one standalone file) and ui/work_pipeline_screen.py's "generate
+    everything" (one page per date in a combined batch PDF). See
+    _write_order_letter_docx, which fills the same fields into the
+    actual template."""
     s = settings
     supplier = (s.supplier_name if s else "") or ""
     company = (s.company_name if s else "") or ""
@@ -416,6 +437,122 @@ def _write_order_letter_pdf(
     # "/" does not (same workaround as daily_contact_screen._format_doc_date).
     display_date = letter_date.replace("-", "/")
 
+    margin = 38.0
+    content_w = page_w - (margin * 2)
+
+    # رقم goes inline in the title itself (matches the real template — the
+    # title line there literally reads "رسالة الطلبية رقم:"), not repeated
+    # again as a separate line below it.
+    y = draw_official_pdf_header(
+        painter,
+        page_width=page_w,
+        margin=margin,
+        top=18.0,
+        settings=settings,
+        title=f"{_TITLE}  رقم: {number}",
+    )
+
+    # الموسم الدراسي sits on its own line, left-aligned — distinct from the
+    # rest of the meta block below, which stays right-aligned like the
+    # template.
+    _draw_letter_pdf_text(
+        painter,
+        QRectF(margin, y, content_w, 24),
+        f"الموسم الدراسي : {school_year}",
+        size=11,
+        color=COLOR_TEXT_PRIMARY,
+        align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute,
+    )
+    y += 28
+
+    meta_lines = [
+        f"ليوم : {display_date}",
+        f"صاحب الصفقة: {supplier_line}",
+    ]
+    for line in meta_lines:
+        _draw_letter_pdf_text(
+            painter,
+            QRectF(margin, y, content_w, 24),
+            line,
+            size=11,
+            color=COLOR_TEXT_PRIMARY,
+            align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+        )
+        y += 28
+    y += 12
+
+    # Matches templets/رسالة الطلبية.docx — the real accepted form shows
+    # one aggregate count per meal, not a collegial/qualifying/monitors
+    # breakdown, and no total row. The on-screen cards still collect
+    # that breakdown for planning; only the generated document is
+    # aggregate.
+    columns = ["الوجبة", "الأعداد", "ملاحظات"]
+    col_widths = [content_w * 0.25, content_w * 0.20, content_w * 0.55]
+    header_h = 32.0
+    row_h = 40.0
+    table_h = header_h + (row_h * len(_MEAL_ORDER))
+    right = margin + content_w
+
+    # Plain black-on-white, matching the real template's table exactly
+    # — no colored fills, just borders and bold header text.
+    current_right = right
+    for col_label, col_w in zip(columns, col_widths):
+        rect = QRectF(current_right - col_w, y, col_w, header_h)
+        _draw_letter_pdf_cell(
+            painter, rect,
+            background="white", border="#000000",
+            text=col_label, text_color="#000000", size=11, bold=True,
+        )
+        current_right = rect.left()
+
+    row_y = y + header_h
+    for meal_key, meal_label in _MEAL_ORDER:
+        values = [meal_label, str(items[meal_key].total), ""]
+        current_right = right
+        for index, (value, col_w) in enumerate(zip(values, col_widths)):
+            rect = QRectF(current_right - col_w, row_y, col_w, row_h)
+            _draw_letter_pdf_cell(
+                painter, rect,
+                background="white", border="#000000",
+                text=value, text_color="#000000",
+                size=11, bold=(index == 0),
+            )
+            current_right = rect.left()
+        row_y += row_h
+    y += table_h + 18
+
+    _draw_letter_pdf_text(
+        painter,
+        QRectF(margin, y, content_w, 24),
+        f"حرر ب{city} بتاريخ : {display_date}",
+        size=11,
+        color=COLOR_TEXT_SECONDARY,
+        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+    )
+
+    footer_h = 90.0
+    footer_y = page_h - margin - footer_h + 6
+    # STEWARD + HEADMASTER + CONTRACTOR — matches the signature line in
+    # the real templets/رسالة الطلبية.docx form (templets/ wins over
+    # documents.md's shorter STEWARD+HEADMASTER list where they differ).
+    draw_official_pdf_footer(
+        painter,
+        page_width=page_w,
+        margin=margin,
+        top=footer_y,
+        settings=settings,
+        roles=["مسير المصالح المادية والمالية", "مدير المؤسسة", "ممثل الشركة النائلة"],
+    )
+
+
+def _write_order_letter_pdf(
+    path: Path,
+    settings,
+    letter_date: str,
+    number: str,
+    items: Dict[str, OrderItem],
+) -> None:
+    """Render a single order letter as its own standalone PDF file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -427,103 +564,55 @@ def _write_order_letter_pdf(
     painter = QPainter(writer)
     try:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        page_w = float(writer.width())
-        page_h = float(writer.height())
-        margin = 38.0
-        content_w = page_w - (margin * 2)
-
-        y = draw_official_pdf_header(
-            painter,
-            page_width=page_w,
-            margin=margin,
-            top=18.0,
-            settings=settings,
-            title=_TITLE,
-        )
-
-        meta_lines = [
-            f"الموسم الدراسي : {school_year}",
-            f"رسالة الطلبية رقم: {number}",
-            f"ليوم : {display_date}",
-            f"صاحب الصفقة: {supplier_line}",
-        ]
-        for line in meta_lines:
-            _draw_letter_pdf_text(
-                painter,
-                QRectF(margin, y, content_w, 24),
-                line,
-                size=11,
-                color=COLOR_TEXT_PRIMARY,
-                align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
-            )
-            y += 28
-        y += 12
-
-        # Matches templets/رسالة الطلبية.docx — the real accepted form shows
-        # one aggregate count per meal, not a collegial/qualifying/monitors
-        # breakdown, and no total row. The on-screen cards still collect
-        # that breakdown for planning; only the generated document is
-        # aggregate.
-        columns = ["الوجبة", "الأعداد", "ملاحظات"]
-        col_widths = [content_w * 0.25, content_w * 0.20, content_w * 0.55]
-        header_h = 32.0
-        row_h = 40.0
-        table_h = header_h + (row_h * len(_MEAL_ORDER))
-        right = margin + content_w
-
-        # Plain black-on-white, matching the real template's table exactly
-        # — no colored fills, just borders and bold header text.
-        current_right = right
-        for col_label, col_w in zip(columns, col_widths):
-            rect = QRectF(current_right - col_w, y, col_w, header_h)
-            _draw_letter_pdf_cell(
-                painter, rect,
-                background="white", border="#000000",
-                text=col_label, text_color="#000000", size=11, bold=True,
-            )
-            current_right = rect.left()
-
-        row_y = y + header_h
-        for meal_key, meal_label in _MEAL_ORDER:
-            card = cards[meal_key]
-            values = [meal_label, str(card.total()), ""]
-            current_right = right
-            for index, (value, col_w) in enumerate(zip(values, col_widths)):
-                rect = QRectF(current_right - col_w, row_y, col_w, row_h)
-                _draw_letter_pdf_cell(
-                    painter, rect,
-                    background="white", border="#000000",
-                    text=value, text_color="#000000",
-                    size=11, bold=(index == 0),
-                )
-                current_right = rect.left()
-            row_y += row_h
-        y += table_h + 18
-
-        _draw_letter_pdf_text(
-            painter,
-            QRectF(margin, y, content_w, 24),
-            f"حرر ب{city} بتاريخ : {display_date}",
-            size=11,
-            color=COLOR_TEXT_SECONDARY,
-            align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
-        )
-
-        footer_h = 90.0
-        footer_y = page_h - margin - footer_h + 6
-        # STEWARD + HEADMASTER + CONTRACTOR — matches the signature line in
-        # the real templets/رسالة الطلبية.docx form (templets/ wins over
-        # documents.md's shorter STEWARD+HEADMASTER list where they differ).
-        draw_official_pdf_footer(
-            painter,
-            page_width=page_w,
-            margin=margin,
-            top=footer_y,
-            settings=settings,
-            roles=["مسير المصالح المادية والمالية", "مدير المؤسسة", "ممثل الشركة النائلة"],
+        _draw_order_letter_pdf_page(
+            painter, float(writer.width()), float(writer.height()),
+            settings, letter_date, number, items,
         )
     finally:
         painter.end()
+
+
+def build_order_letter_pdf_page(
+    painter: QPainter,
+    page_w: float,
+    page_h: float,
+    date_str: str,
+    holiday_labels: Dict[str, str],
+    settings,
+) -> str:
+    """Draw one date's page for a combined batch PDF — real data, a
+    holiday placeholder, or a no-data placeholder. Unlike the other 3
+    daily documents, a "ready" day here means creating and permanently
+    saving a brand-new numbered letter for that date — letters are never
+    silently overwritten, so re-running the same range assigns fresh
+    numbers again rather than reusing the old ones. Used by
+    ui/work_pipeline_screen.py's "generate everything" action. Returns
+    "data" / "holiday" / "empty" for the caller's summary."""
+    if date_str in holiday_labels:
+        label = holiday_labels[date_str] or "بدون سبب محدد"
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — يوم عطلة", f"📅 عطلة: {label}",
+        )
+        return "holiday"
+    contacts = get_day_contacts(date_str)
+    if not contacts:
+        draw_placeholder_pdf_page(
+            painter, page_w, page_h, f"{date_str} — لا توجد بيانات",
+            "لم يتم تسجيل بيانات ورقة الاتصال لهذا اليوم بعد.",
+        )
+        return "empty"
+
+    items = _order_items_from_contacts(contacts)
+    document_number = get_next_order_letter_number()
+    letter = OrderLetter(
+        letter_date=date_str, period_start=date_str, period_end=date_str,
+        document_number=document_number,
+    )
+    save_order_letter(letter, list(items.values()))
+    _draw_order_letter_pdf_page(
+        painter, page_w, page_h, settings, date_str, str(document_number), items,
+    )
+    return "data"
 
 
 def _find_order_letter_template() -> Path | None:
@@ -569,7 +658,7 @@ def _fill_order_letter_document_xml(
     display_date: str,
     supplier_line: str,
     place: str,
-    cards: Dict[str, "_MealQtyCard"],
+    items: Dict[str, OrderItem],
 ) -> None:
     for paragraph in root.findall(".//w:p", _WORD_NS):
         text = "".join(node.text or "" for node in paragraph.findall(".//w:t", _WORD_NS))
@@ -595,7 +684,7 @@ def _fill_order_letter_document_xml(
             break
         cells = rows[row_index].findall("./w:tc", _WORD_NS)
         if len(cells) >= 2:
-            _set_cell_text(cells[1], cards[meal_key].total())
+            _set_cell_text(cells[1], items[meal_key].total)
 
 
 def _write_order_letter_docx(
@@ -603,7 +692,7 @@ def _write_order_letter_docx(
     settings,
     letter_date: str,
     number: str,
-    cards: Dict[str, "_MealQtyCard"],
+    items: Dict[str, OrderItem],
 ) -> None:
     """Fill the real order-letter template (templets/رسالة الطلبية.docx) —
     the form the directorate actually accepts. Unlike the PDF/HTML preview,
@@ -636,7 +725,7 @@ def _write_order_letter_docx(
                     display_date=display_date,
                     supplier_line=supplier_line,
                     place=place,
-                    cards=cards,
+                    items=items,
                 )
                 data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
             target.writestr(item, data)
@@ -899,16 +988,17 @@ class OrderLetterScreen(QWidget):
 
         try:
             settings = get_school_settings()
+            items = {key: card.to_item(0) for key, card in self._cards.items()}
             if is_pdf:
                 _write_order_letter_pdf(
                     path,
                     settings,
                     letter_date=letter_date,
                     number=number,
-                    cards=self._cards,
+                    items=items,
                 )
             else:
-                _write_order_letter_docx(path, settings, letter_date, number, self._cards)
+                _write_order_letter_docx(path, settings, letter_date, number, items)
             QMessageBox.information(self, "تم", _PDF_SAVED_OK if is_pdf else _DOCX_SAVED_OK)
         except Exception as exc:
             error_prefix = _PDF_SAVE_ERROR if is_pdf else _DOCX_SAVE_ERROR
@@ -925,18 +1015,10 @@ class OrderLetterScreen(QWidget):
             QMessageBox.information(self, "تنبيه", _TOAST_NO_CONTACT_DATA)
             return
 
-        sums = {meal_key: {"collegial": 0, "qualifying": 0, "monitors": 0} for meal_key, _ in _MEAL_ORDER}
-        for contact in contacts:
-            if contact.meal_type not in sums:
-                continue
-            totals = sums[contact.meal_type]
-            totals["collegial"]  += contact.collegial_total
-            totals["qualifying"] += contact.qualifying_total
-            totals["monitors"]   += contact.monitors_total
-
+        items = _order_items_from_contacts(contacts)
         for meal_key, card in self._cards.items():
-            totals = sums[meal_key]
-            card.set_values(totals["collegial"], totals["qualifying"], totals["monitors"])
+            item = items[meal_key]
+            card.set_values(item.collegial, item.qualifying, item.monitors)
 
     def _refresh_history(self) -> None:
         letters = get_all_order_letters()

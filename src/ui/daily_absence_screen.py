@@ -325,13 +325,6 @@ def _draw_daily_absence_pdf_page(
         painter, page_width=page_w, margin=margin, top=18.0, settings=settings, title=title,
     )
     table_y += 4
-    _draw_contact_pdf_text(
-        painter, QRectF(margin, table_y, content_w, 18),
-        f"حرر ب{place_text} بتاريخ {display_date}",
-        size=10, color=COLOR_TEXT_SECONDARY,
-        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
-    )
-    table_y += 24
 
     rows_data = [
         (_LBL_PRIMARY, "primary_granted", "primary_complement"),
@@ -423,6 +416,18 @@ def _draw_daily_absence_pdf_page(
             text=str(absence.grand_total), text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
         )
         current_right = rect.left()
+
+    # Below the table, not above it — matches the real accepted template
+    # layout (this line belongs right before التوقيعات, not right after
+    # the title).
+    _draw_contact_pdf_text(
+        painter,
+        QRectF(margin, total_y + row_h + 18, content_w, 24),
+        f"حرر ب{place_text} بتاريخ {display_date}",
+        size=11,
+        color=COLOR_TEXT_SECONDARY,
+        align=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute,
+    )
 
     footer_y = page_h - margin - footer_h + 6
     draw_official_pdf_footer(
