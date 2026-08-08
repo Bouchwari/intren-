@@ -116,13 +116,20 @@ Signatures: STEWARD, HEADMASTER.
 ---
 
 ## 6. daily_reception_record
-**ÙØ­Ø¶Ø± ØªØ³ÙÙ Ø§ÙØ®Ø¯ÙØ© Ø§ÙÙÙÙÙ**
+**محضر تسليم الخدمة اليومي**
 
-Confirms the meals were delivered and accepted. One per `(date, meal)`.
-**Printed in two identical copies (ÙÙ ÙØ¸ÙØ±ÙÙ)** â the PDF export must produce
-two pages, or two copies on one page.
+Confirms the meals were delivered and accepted. One per date (all three
+meals on one form, not split per-meal like contact_sheet/absence_sheet).
+**Printed in two identical copies (في نظيرين)** — the PDF export must
+produce two pages, or two copies on one page.
 
-Holds: date, meal, delivered quantity, accepted quantity, remarks.
+Real template now at `templets/المحضر اليومي لتسلم الخدمة.docx` (added
+2026-08-08), bilingual FR/AR "PROCES VERBAL DE RECEPTION JOURNALIER".
+Holds: date, per-meal quantity for breakfast/lunch/dinner (the template's
+mergefields for breakfast/lunch pull the same totals already computed for
+that date's `contact_sheet` — this is a restatement of existing data in an
+official signed format, not a new count to collect), remarks. See
+`document_chain.md` for the full field breakdown.
 
 Signatures: STEWARD, HEADMASTER, CONTRACTOR.
 
@@ -155,13 +162,17 @@ Signatures: WARDEN, STEWARD.
 ---
 
 ## 9. monthly_reception_record
-**ÙØ­Ø¶Ø± ØªØ³ÙÙ Ø§ÙØ®Ø¯ÙØ© Ø§ÙØ´ÙØ±Ù** (ProcÃ¨s-verbal de rÃ©ception mensuel)
+**محضر تسليم الخدمة الشهري** (Procès-verbal de réception mensuel)
 
 The final official form sent to the provincial directorate / AREF, together
 with the expense statement, the daily records and any infraction records.
 
 **Printed in two copies.** The layout must match the official ministry form.
-`CONFIRM:` the user should supply a scan or blank copy of the official form so
-the PDF layout matches exactly.
+Real template now at `templets/المحضر الشهري لتسلم الخدمة.docx` (added
+2026-08-08) — the earlier CONFIRM asking the user to supply one is resolved,
+build against this file directly. Bilingual FR/AR "PROCES VERBAL DE
+RECEPTION MENSUEL". See `document_chain.md` for the full field breakdown.
 
-Signatures: STEWARD, HEADMASTER.
+Signatures: STEWARD, HEADMASTER, CONTRACTOR — corrected after reading the
+real template, which has a third "Le prestataire de service" signature line
+this section previously missed.
