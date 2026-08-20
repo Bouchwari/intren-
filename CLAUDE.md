@@ -103,7 +103,7 @@ The user wants a **clean, modern, professional** look — not basic gray Qt defa
 
 ## 7. FEATURES — THE FULL APP
 
-Status as of 2026-08-08. See `AI_HANDOFF.md` for session-by-session detail —
+Status as of 2026-08-20. See `AI_HANDOFF.md` for session-by-session detail —
 this list is the standing "what exists" summary, updated whenever a feature's
 status changes. For the full document dependency chain (what triggers what,
 who signs each step) see `.claude/skills/matama/references/document_chain.md`
@@ -142,17 +142,39 @@ who signs each step) see `.claude/skills/matama/references/document_chain.md`
       invented fields), and يوم العمل's "توليد شامل" can now generate one
       independently-numbered letter per day across a whole range.
 - [x] **Daily reception record** (محضر التسلم اليومي) — `daily_reception_screen.py`,
-      built 2026-08-08. Confirms a day's delivered meals, quantities
-      prefilled from that day's ورقة الاتصال (editable if reality
-      differed, never silently recomputed once saved — same guarantee as
-      the other daily screens). Fills the real bilingual FR/AR
+      built 2026-08-08, output rebuilt 2026-08-20 after the user reported
+      the exported docs "not like the template at all" — true: the first
+      pass only filled 3 MERGEFIELDs and left the .docx's header + several
+      French legal paragraphs (contract number, contractor, school name)
+      as the *template author's own* hardcoded text, and the hand-drawn
+      PDF was a simplified Arabic layout that never matched the template's
+      real structure at all. Now: quantities prefilled from that day's
+      ورقة الاتصال (editable if reality differed, never silently
+      recomputed once saved — same guarantee as the other daily screens).
+      `.docx` fills the real bilingual FR/AR
       `templets/المحضر اليومي لتسلم الخدمة.docx` (3 separate `<w:tbl>`
-      elements — signers/items/remarks — and real Word MERGEFIELD codes,
-      not plain placeholder text; see `_set_mergefield_value`'s docstring
-      for why a naive "first `<w:t>` in the paragraph" approach silently
-      clobbers the closing "FAIT A TAGLEFT. LE" label). PDF is hand-drawn
-      as usual. Wired into يوم العمل (status card + batch generation) and
-      the sidebar (index 8, right after التقرير اليومي).
+      elements — signers/items/remarks — real Word MERGEFIELD codes, not
+      plain placeholder text; see `_set_mergefield_value`'s docstring for
+      why a naive "first `<w:t>` in the paragraph" approach silently
+      clobbers the closing "FAIT A [place]. LE" label) — header and legal
+      paragraphs are now dynamic from `SchoolSettings` too (`_fill_contact_
+      header_xml` reused from daily_contact_screen.py, plus a new
+      `_fill_reception_legal_paragraphs`), and dates print day/month/year
+      matching the template's own convention (`_reception_date_format`),
+      not the year-first bug from before. PDF is hand-drawn but rebuilt to
+      mirror the template's actual layout — bilingual title, signer-ID
+      table, 4-column items table, closing declaration line, French
+      footer order — which surfaced a real Qt bug worth remembering:
+      forcing `Qt.LayoutDirection.RightToLeft` on French/Latin text (this
+      app's default, correct for Arabic) visually mangles it — a short
+      "N°" flips to "°N", and long wrapped sentences relocate punctuation
+      to the wrong line. Fixed by adding an explicit `direction` param to
+      `_draw_reception_pdf_text`/`_draw_reception_pdf_cell`, defaulting to
+      RTL (unchanged for every existing Arabic caller) with the new French
+      elements passing `LeftToRight` explicitly. Same fix would apply
+      anywhere else French/Latin text gets hand-drawn in an RTL document.
+      Wired into يوم العمل (status card + batch generation) and the
+      sidebar (index 8, right after التقرير اليومي).
 - [x] **Expense statement** (بيان المصاريف)
 - [x] **Violations book** (دفتر المخالفات) — `incident_log_screen.py`
 - [x] **Document export** — PDF via `QPdfWriter`/`QPainter` (own drawing,
