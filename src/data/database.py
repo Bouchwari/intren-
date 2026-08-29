@@ -6,11 +6,14 @@ daily_repo.py, program_repo.py, monthly_repo.py and settings_repo.py
 (Stage 1.5, Prompt 6) — this module re-exports all of them so existing
 imports in src/ui/ keep working unchanged.
 """
+import logging
 import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
 from config.settings import DB_PATH
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -151,12 +154,94 @@ def _migrate(conn: sqlite3.Connection) -> None:
         except sqlite3.OperationalError:
             pass
 
+    # Who gave a week's opinions. Rows saved before the grouping existed keep
+    # blank cycle/gender and are reported as غير محدد.
+    for col_def in ["cycle TEXT NOT NULL DEFAULT ''",
+                    "gender TEXT NOT NULL DEFAULT ''"]:
+        try:
+            conn.execute(f"ALTER TABLE week_feedback ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
+    _widen_week_feedback_unique(conn)
+
+    # Per-level response counts on meal feedback. Rows saved before these
+    # existed keep their single `rating`, which core.feedback reads as one
+    # response at that level.
+    feedback_cols = [
+        "count_excellent INTEGER NOT NULL DEFAULT 0",
+        "count_good INTEGER NOT NULL DEFAULT 0",
+        "count_average INTEGER NOT NULL DEFAULT 0",
+        "count_poor INTEGER NOT NULL DEFAULT 0",
+        "count_bad INTEGER NOT NULL DEFAULT 0",
+    ]
+    for col_def in feedback_cols:
+        try:
+            conn.execute(f"ALTER TABLE meal_feedback ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
+
     # "primary" is a reserved word in newer SQLite, hence primary_count.
     for col_def in ["primary_count INTEGER NOT NULL DEFAULT 0"]:
         try:
             conn.execute(f"ALTER TABLE order_items ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
             pass
+
+
+def _widen_week_feedback_unique(conn: sqlite3.Connection) -> None:
+    """Grow UNIQUE(week_start, dish) into (week_start, dish, cycle, gender).
+
+    ALTER TABLE can add the two columns but cannot touch a constraint, so a
+    database created before the grouping keeps the old two-column UNIQUE — and
+    every save would then fail on a conflict target that matches nothing, or
+    refuse a second group's row for the same dish. SQLite's only way to change
+    a constraint is to rebuild the table, so that is what this does, copying
+    every existing row across (their cycle/gender stay blank).
+    """
+    try:
+        indexes = conn.execute("PRAGMA index_list(week_feedback)").fetchall()
+    except sqlite3.OperationalError:
+        return                      # table not created yet — nothing to widen
+    stale = None
+    for index in indexes:
+        name, unique = index[1], index[2]
+        if not unique:
+            continue
+        columns = [row[2] for row in
+                   conn.execute(f"PRAGMA index_info({name!r})").fetchall()]
+        if columns == ["week_start", "dish"]:
+            stale = name
+            break
+    if stale is None:
+        return
+
+    conn.executescript("""
+        CREATE TABLE week_feedback_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            week_start  TEXT NOT NULL,
+            dish        TEXT NOT NULL,
+            cycle       TEXT NOT NULL DEFAULT '',
+            gender      TEXT NOT NULL DEFAULT '',
+            count_excellent INTEGER NOT NULL DEFAULT 0,
+            count_good      INTEGER NOT NULL DEFAULT 0,
+            count_average   INTEGER NOT NULL DEFAULT 0,
+            count_poor      INTEGER NOT NULL DEFAULT 0,
+            count_bad       INTEGER NOT NULL DEFAULT 0,
+            note        TEXT NOT NULL DEFAULT '',
+            recorded_by TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(week_start, dish, cycle, gender)
+        );
+        INSERT INTO week_feedback_new
+            (id, week_start, dish, cycle, gender, count_excellent, count_good,
+             count_average, count_poor, count_bad, note, recorded_by, created_at)
+        SELECT id, week_start, dish, cycle, gender, count_excellent, count_good,
+               count_average, count_poor, count_bad, note, recorded_by, created_at
+        FROM week_feedback;
+        DROP TABLE week_feedback;
+        ALTER TABLE week_feedback_new RENAME TO week_feedback;
+    """)
+    _LOGGER.info("week_feedback rebuilt with the (week, dish, cycle, gender) key")
 
 
 def init_database() -> None:
@@ -315,6 +400,81 @@ def init_database() -> None:
             -- محضر المخالفة: one PV per contractual breach by the caterer.
             -- Numbered per year (UNIQUE), so two records can never print the
             -- same reference on a signed document.
+            CREATE TABLE IF NOT EXISTS week_feedback (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                -- the week's MONDAY, ISO; one row per dish per week
+                week_start  TEXT NOT NULL,
+                dish        TEXT NOT NULL,
+                -- who gave them; blank = recorded before the grouping existed
+                cycle       TEXT NOT NULL DEFAULT '',
+                gender      TEXT NOT NULL DEFAULT '',
+                count_excellent INTEGER NOT NULL DEFAULT 0,
+                count_good      INTEGER NOT NULL DEFAULT 0,
+                count_average   INTEGER NOT NULL DEFAULT 0,
+                count_poor      INTEGER NOT NULL DEFAULT 0,
+                count_bad       INTEGER NOT NULL DEFAULT 0,
+                note        TEXT NOT NULL DEFAULT '',
+                recorded_by TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(week_start, dish, cycle, gender)
+            );
+            CREATE TABLE IF NOT EXISTS meal_feedback (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                date        TEXT NOT NULL,
+                meal_type   TEXT NOT NULL,
+                dish        TEXT NOT NULL DEFAULT '',
+                -- how many pupils gave each level
+                count_excellent INTEGER NOT NULL DEFAULT 0,
+                count_good      INTEGER NOT NULL DEFAULT 0,
+                count_average   INTEGER NOT NULL DEFAULT 0,
+                count_poor      INTEGER NOT NULL DEFAULT 0,
+                count_bad       INTEGER NOT NULL DEFAULT 0,
+                -- legacy single rating; read as one response at that level
+                rating      INTEGER NOT NULL DEFAULT 0,
+                note        TEXT NOT NULL DEFAULT '',
+                recorded_by TEXT NOT NULL DEFAULT '',
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS food_products (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                unit_basis TEXT NOT NULL DEFAULT '100g',
+                calories   INTEGER NOT NULL DEFAULT 0,
+                protein    INTEGER NOT NULL DEFAULT 0,
+                carbs      INTEGER NOT NULL DEFAULT 0,
+                fats       INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS meal_components (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                -- the menu line, stored already normalised (core.nutrition)
+                dish_name  TEXT NOT NULL,
+                product_id INTEGER NOT NULL REFERENCES food_products(id) ON DELETE CASCADE,
+                quantity   REAL NOT NULL DEFAULT 0,
+                UNIQUE(dish_name, product_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_meal_components_dish
+                ON meal_components(dish_name);
+            CREATE TABLE IF NOT EXISTS dish_nutrition (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                -- UNIQUE so a menu line can only carry one set of values; the
+                -- name is stored already normalised (see core.nutrition).
+                dish_name TEXT NOT NULL UNIQUE,
+                calories  INTEGER NOT NULL DEFAULT 0,
+                protein   INTEGER NOT NULL DEFAULT 0,
+                carbs     INTEGER NOT NULL DEFAULT 0,
+                fats      INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS staff_members (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name          TEXT NOT NULL,
+                role               TEXT NOT NULL DEFAULT '',
+                shift              TEXT NOT NULL DEFAULT '',
+                phone              TEXT NOT NULL DEFAULT '',
+                health_cert_expiry TEXT NOT NULL DEFAULT '',
+                status             TEXT NOT NULL DEFAULT '',
+                notes              TEXT NOT NULL DEFAULT '',
+                created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             CREATE TABLE IF NOT EXISTS infraction_records (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 date            TEXT    NOT NULL,
@@ -352,6 +512,8 @@ from data.settings_repo import (  # noqa: E402
     get_school_settings,
     get_document_export_format,
     save_document_export_format,
+    get_nutrition_reference_calories,
+    save_nutrition_reference_calories,
 )
 from data.students_repo import (  # noqa: E402
     get_all_students,
@@ -410,6 +572,36 @@ from data.monthly_repo import (  # noqa: E402
     sum_daily_reception_for_month,
     get_monthly_reception_record,
     save_monthly_reception_record,
+)
+from data.feedback_repo import (  # noqa: E402
+    get_week_feedback,
+    get_all_week_feedback,
+    save_week_feedback,
+    delete_week_feedback,
+    get_all_feedback,
+    get_feedback_for_month,
+    get_feedback_for,
+    save_feedback,
+    delete_feedback,
+)
+from data.nutrition_repo import (  # noqa: E402
+    get_all_food_products,
+    save_food_product,
+    delete_food_product,
+    get_meal_components,
+    get_all_meal_components,
+    save_meal_component,
+    delete_meal_component,
+    get_all_dish_nutrition,
+    get_dish_nutrition,
+    save_dish_nutrition,
+    delete_dish_nutrition,
+)
+from data.staff_repo import (  # noqa: E402
+    get_all_staff,
+    get_staff_member,
+    save_staff_member,
+    delete_staff_member,
 )
 from data.infraction_repo import (  # noqa: E402
     delete_infraction,

@@ -34,7 +34,8 @@ from config.settings import (
 from core.models import (
     DailyAbsence, DailyContact, DailyReceptionRecord, DailyReport, Holiday,
     InfractionRecord, MealEntry, MonthlyReceptionRecord, OrderItem, OrderLetter,
-    SchoolSettings, Student,
+    DishNutrition, FoodProduct, MealComponent, MealFeedback,
+    SchoolSettings, StaffMember, Student, WeekFeedback,
 )
 from core.ramadan import meals_for_date
 from data import database
@@ -130,12 +131,18 @@ def _build_students(rng: random.Random) -> List[Student]:
             # Primary pupils are lunch-only far more often; the older cycles
             # are mostly full boarders.
             full_grant = rng.random() < (0.35 if cycle == "ابتدائي" else 0.75)
+            # A plausible age for the cycle, so the report's age chart has
+            # something real to show.
+            base_age = {"ابتدائي": 11, "إعدادي": 13, "تأهيلي": 16}[cycle]
+            born = date.today().replace(
+                year=date.today().year - base_age - rng.randint(0, 2))
             students.append(Student(
                 full_name=unique_name(female),
                 massar_number=f"J{massar}",
                 gender="female" if female else "male",
                 cycle=cycle,
                 student_class=student_class,
+                birth_date=born.isoformat(),
                 grant_number=f"{massar}",
                 section="internat" if full_grant else "cantine",
                 grant_type="full" if full_grant else "half",
@@ -344,6 +351,168 @@ def _seed_monthly_records(monthly: Dict[str, Dict[str, int]]) -> None:
         ))
 
 
+# Nutrition values for MOST of the demo menu lines. A few are deliberately
+# left out so التحليل الغذائي's "غير محدد" path is visible without having to
+# break something first.
+_DISH_NUTRITION = [
+    ("خبز وزبدة وشاي", 320, 8, 46, 11),
+    ("حليب وخبز وعسل", 380, 12, 58, 9),
+    ("قهوة بالحليب وخبز", 300, 9, 44, 8),
+    ("طاجين لحم بالخضر", 620, 34, 52, 26),
+    ("كسكس بالخضر", 540, 18, 82, 14),
+    ("دجاج محمر وأرز", 610, 36, 66, 18),
+    ("عدس وخبز", 430, 22, 68, 6),
+    ("حريرة وخبز", 350, 14, 52, 9),
+    ("شوربة خضر", 210, 7, 32, 5),
+    ("حريرة وتمر وشباكية", 520, 13, 84, 15),
+    ("حليب وخبز وتمر", 400, 13, 62, 9),
+]
+
+
+# A small product library plus recipes for a few dishes, so the component
+# workflow and the التوزيع الكمي export both have real data. The remaining
+# dishes keep only their whole-line values, and a few have neither — that mix
+# is deliberate: it shows all three states the screen can report.
+_PRODUCTS = [
+    ("لحم بقري", "100g", 250, 26, 0, 15),
+    ("دجاج", "100g", 165, 31, 0, 4),
+    ("سمك", "100g", 140, 22, 0, 5),
+    ("أرز", "100g", 130, 3, 28, 0),
+    ("خضر مشكلة", "100g", 40, 2, 8, 0),
+    ("عدس", "100g", 115, 9, 20, 0),
+    ("خبز", "unit", 250, 8, 48, 2),
+    ("زيت الزيتون", "100ml", 884, 0, 0, 100),
+    ("حليب", "100ml", 61, 3, 5, 3),
+    ("تمر", "100g", 282, 2, 75, 0),
+]
+_RECIPES = {
+    "طاجين لحم بالخضر": [("لحم بقري", 80), ("خضر مشكلة", 150), ("زيت الزيتون", 10)],
+    "دجاج محمر وأرز": [("دجاج", 90), ("أرز", 120), ("زيت الزيتون", 8)],
+    "عدس وخبز": [("عدس", 90), ("خبز", 1), ("زيت الزيتون", 5)],
+    "حليب وخبز وعسل": [("حليب", 200), ("خبز", 1)],
+}
+
+
+def _seed_food_products() -> None:
+    ids = {}
+    for name, basis, calories, protein, carbs, fats in _PRODUCTS:
+        ids[name] = database.save_food_product(FoodProduct(
+            name=name, unit_basis=basis, calories=calories,
+            protein=protein, carbs=carbs, fats=fats))
+    for dish, components in _RECIPES.items():
+        for product_name, quantity in components:
+            database.save_meal_component(MealComponent(
+                dish_name=dish, product_id=ids[product_name], quantity=quantity))
+
+
+def _seed_dish_nutrition() -> None:
+    for name, calories, protein, carbs, fats in _DISH_NUTRITION:
+        database.save_dish_nutrition(DishNutrition(
+            dish_name=name, calories=calories, protein=protein,
+            carbs=carbs, fats=fats))
+
+
+def _seed_feedback(rng: random.Random) -> None:
+    """Ratings across recent weekdays, weighted so some dishes clearly do
+    better than others and the ranking panels have something real to show."""
+    liked = {"كسكس بالخضر": (4, 5), "دجاج محمر وأرز": (4, 5),
+             "طاجين لحم بالخضر": (3, 5)}
+    disliked = {"عدس وخبز": (1, 3), "شوربة خضر": (2, 3)}
+    recorders = ["الحارس العام للداخلية", "مسير المصالح المادية والمالية"]
+
+    day = date.today() - timedelta(days=30)
+    while day <= date.today():
+        if day.weekday() >= 5:
+            day += timedelta(days=1)
+            continue
+        for meal in (MEAL_GHADA, MEAL_ASHA):
+            dish = _MENUS[meal][day.day % len(_MENUS[meal])]
+            low, high = liked.get(dish, disliked.get(dish, (3, 5)))
+            # A distribution, not one opinion: roughly 90 pupils express a
+            # view, clustered around the dish's own standing.
+            responses = rng.randint(70, 110)
+            weights = {5: 1, 4: 1, 3: 1, 2: 1, 1: 1}
+            for level in (5, 4, 3, 2, 1):
+                weights[level] = 6 if low <= level <= high else 1
+            counts = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0}
+            for _ in range(responses):
+                level = rng.choices(list(weights), weights=list(weights.values()))[0]
+                counts[level] += 1
+            database.save_feedback(MealFeedback(
+                date=day.isoformat(), meal_type=meal, dish=dish,
+                count_excellent=counts[5], count_good=counts[4],
+                count_average=counts[3], count_poor=counts[2],
+                count_bad=counts[1],
+                note="" if rng.random() < 0.7 else "ملاحظة تجريبية من التلاميذ.",
+                recorded_by=rng.choice(recorders),
+            ))
+        day += timedelta(days=1)
+
+
+def _seed_week_feedback(rng: random.Random) -> None:
+    """Ratings for the last few WEEKS' menus — the current shape. The older
+    per-day rows above are kept on purpose so the legacy section has content."""
+    from core.feedback import CYCLES, GENDERS, week_start_of
+    from ui.feedback_collect import dishes_for_week
+
+    liked = {"كسكس بالخضر": (4, 5), "دجاج محمر وأرز": (4, 5),
+             "طاجين لحم بالخضر": (3, 5)}
+    disliked = {"عدس وخبز": (1, 3), "شوربة خضر": (2, 3)}
+    recorder = "الحارس العام للداخلية"
+
+    # A real difference of taste between the groups, so the report's patterns
+    # page has something true to find instead of six identical bars: the
+    # youngest pupils dislike عدس and love كسكس, the oldest are the reverse.
+    by_cycle = {"primary": {"عدس وخبز": -2, "كسكس بالخضر": +1},
+                "collegial": {"عدس وخبز": -1},
+                "qualifying": {"عدس وخبز": +1, "كسكس بالخضر": -1}}
+
+    for weeks_back in range(1, 5):
+        monday = week_start_of(
+            (date.today() - timedelta(days=7 * weeks_back)).isoformat())
+        for dish in dishes_for_week(monday):
+            low, high = liked.get(dish, disliked.get(dish, (3, 5)))
+            for cycle in CYCLES:
+                for gender in GENDERS:
+                    shift = by_cycle.get(cycle, {}).get(dish, 0)
+                    shift += 1 if gender == "female" else 0
+                    counts = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0}
+                    weights = {
+                        level: (6 if low + shift <= level <= high + shift
+                                else 1)
+                        for level in (5, 4, 3, 2, 1)}
+                    for _ in range(rng.randint(14, 26)):
+                        level = rng.choices(
+                            list(weights), weights=list(weights.values()))[0]
+                        counts[level] += 1
+                    database.save_week_feedback(WeekFeedback(
+                        week_start=monday, dish=dish,
+                        cycle=cycle, gender=gender,
+                        count_excellent=counts[5], count_good=counts[4],
+                        count_average=counts[3], count_poor=counts[2],
+                        count_bad=counts[1], recorded_by=recorder))
+
+
+def _seed_staff() -> None:
+    """A kitchen team covering every certificate state, so the expiry
+    warnings on طاقم المطبخ actually have something to show."""
+    today = date.today()
+    team = [
+        ("مصطفى بوعزة", "رئيس الطباخين", "صباحي", "0661234501", 210, "حاضر"),
+        ("خديجة الرامي", "مساعد طباخ", "صباحي", "0661234502", 45, "حاضر"),
+        ("عبد الله أمزيل", "مساعد طباخ", "مسائي", "0661234503", 12, "حاضر"),
+        ("سناء الحسني", "عامل نظافة", "تناوب", "0661234504", -20, "غائب"),
+        ("يوسف بومهدي", "حارس المخزن", "صباحي", "0661234505", None, "في عطلة"),
+        ("أمينة الطاهري", "نادل", "مسائي", "0661234506", 120, "حاضر"),
+    ]
+    for name, role, shift, phone, offset, status in team:
+        expiry = "" if offset is None else (today + timedelta(days=offset)).isoformat()
+        database.save_staff_member(StaffMember(
+            full_name=name, role=role, shift=shift, phone=phone,
+            health_cert_expiry=expiry, status=status,
+        ))
+
+
 def _seed_infractions() -> None:
     database.save_infraction(InfractionRecord(
         date="2026-04-14", document_number=1, year=2026, meal_type=MEAL_GHADA,
@@ -412,6 +581,11 @@ def seed() -> None:
 
     monthly = _seed_daily_data(rng, settings)
     _seed_monthly_records(monthly)
+    _seed_food_products()
+    _seed_dish_nutrition()
+    _seed_feedback(rng)
+    _seed_week_feedback(rng)
+    _seed_staff()
     _seed_infractions()
 
     print(f"Seeded a full fake school into: {database.DB_PATH}")

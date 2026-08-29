@@ -103,6 +103,34 @@ def get_school_settings() -> Optional[SchoolSettings]:
     )
 
 
+_NUTRITION_REFERENCE_KEY = "nutrition_reference_calories"
+
+
+def get_nutrition_reference_calories(default: int) -> int:
+    """The daily calorie figure التحليل الغذائي compares against.
+
+    Editable by the user and shown only as a comparison — it is a reference
+    figure, not dietary advice, and nothing else in the app derives from it.
+    """
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_preferences WHERE key=?",
+            (_NUTRITION_REFERENCE_KEY,),
+        ).fetchone()
+    try:
+        return int(row["value"]) if row else default
+    except (TypeError, ValueError):
+        return default
+
+
+def save_nutrition_reference_calories(value: int) -> None:
+    with _connection() as conn:
+        conn.execute("""
+            INSERT INTO app_preferences (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, (_NUTRITION_REFERENCE_KEY, str(int(value))))
+
+
 def get_document_export_format() -> str:
     """Return the saved export-format preference (EXPORT_FORMAT_ASK/PDF/DOCX),
     defaulting to asking every time when nothing has been saved yet."""

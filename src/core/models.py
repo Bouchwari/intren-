@@ -367,6 +367,158 @@ class OrderItem:
 
 
 @dataclass
+class MealFeedback:
+    """One recorded opinion about a meal that was served (تقييم التلاميذ).
+
+    ENTERED IN THE APP by the مسير or الحارس العام after a meal. The prototype
+    this came from collected ratings by QR code from pupils' phones; that needs
+    a web server and this app is offline on a single PC, so the flow is a
+    person typing what they were told rather than a pretend online form.
+
+    `rating` is 1..5. There is no anonymous-submission concept here and no
+    pupil is identified — it is feedback about the FOOD.
+    """
+    date: str                   # YYYY-MM-DD
+    meal_type: str              # ftour / ghada / asha / ftour_ramadan / shour
+    dish: str = ""              # the menu line this rating is about
+
+    # HOW MANY pupils gave each level. A meal is eaten by a whole school, so
+    # one opinion per meal was never a measurement — these counts are.
+    count_excellent: int = 0    # ممتاز (5)
+    count_good: int = 0         # جيد (4)
+    count_average: int = 0      # متوسط (3)
+    count_poor: int = 0         # ضعيف (2)
+    count_bad: int = 0          # سيء (1)
+
+    # LEGACY: the single 1..5 rating recorded before the counts existed. Rows
+    # that still carry it are read as exactly one response at that level, so
+    # nothing entered earlier is lost or double-counted.
+    rating: int = 0
+
+    note: str = ""
+    recorded_by: str = ""
+    created_at: str = ""
+    id: Optional[int] = None
+
+
+@dataclass
+class FoodProduct:
+    """One raw foodstuff in the school's product library (مادة غذائية).
+
+    Values are recorded against a BASIS (per 100g, per 100ml, or per unit for
+    things counted rather than weighed — an egg, a loaf), because that is how
+    food labels and composition tables state them.
+    """
+    name: str
+    unit_basis: str = "100g"    # 100g / 100ml / unit — see core.nutrition
+    calories: int = 0
+    protein: int = 0
+    carbs: int = 0
+    fats: int = 0
+    id: Optional[int] = None
+
+
+@dataclass
+class MealComponent:
+    """One line of a meal's recipe: how much of a product goes into it.
+
+    The guide requires the approved weekly program to be submitted with
+    "التوزيع الكمي لمكونات الوجبات الغذائية" (p.5), so these quantities are
+    not just an app convenience — they are the content of an official
+    attachment.
+    """
+    dish_name: str              # the menu line this belongs to, normalised
+    product_id: int
+    quantity: float = 0.0       # in the product's own basis unit (g / ml / unit)
+    id: Optional[int] = None
+
+
+@dataclass
+class WeekFeedback:
+    """What the pupils thought of ONE DISH over a whole week.
+
+    The unit is the week's MENU, not a day: a week serves ~12 distinct dishes
+    against 21 day-slots, a dish served twice is asked about once, and the
+    collecting happens once a week instead of after every meal. The user asked
+    for this on 2026-08-29 after finding the day-by-day version too much work.
+
+    Deliberately carries the same count fields and `dish` as MealFeedback, so
+    core.feedback's aggregation works on either without special-casing.
+    """
+    week_start: str             # the week's MONDAY, ISO
+    dish: str = ""
+
+    # WHO gave these opinions. One row per (week, dish, cycle, gender), so the
+    # report can say "تأهيلي rate it 3.9 where ابتدائي rate it 2.1" from real
+    # counts instead of inferring it. Both blank on rows recorded before the
+    # grouping existed — those are reported as غير محدد, never assigned to a
+    # group that may not have given them.
+    cycle: str = ""             # primary / collegial / qualifying — or blank
+    gender: str = ""            # male / female — or blank
+
+    count_excellent: int = 0    # ممتاز (5)
+    count_good: int = 0         # جيد (4)
+    count_average: int = 0      # متوسط (3)
+    count_poor: int = 0         # ضعيف (2)
+    count_bad: int = 0          # سيء (1)
+
+    # Never set here; present so the shared aggregation can read it uniformly.
+    rating: int = 0
+
+    note: str = ""
+    recorded_by: str = ""
+    created_at: str = ""
+    id: Optional[int] = None
+
+
+@dataclass
+class DishNutrition:
+    """The nutrition values of ONE menu line, as the user recorded them.
+
+    The unit is the whole menu line ("طاجين لحم بالخضر"), not an individual
+    food: that is how the weekly program stores a meal, and trying to split a
+    free-text line into ingredients would mean guessing at quantities.
+
+    Every number here is entered or confirmed by the user. Nothing is derived
+    from the dish NAME — the prototype this screen came from computed
+    `calories = 300 + len(name) * 10`, so a longer name scored more calories.
+    A menu line with no row in this table is reported as unknown, never
+    estimated.
+    """
+    dish_name: str
+    calories: int = 0       # per portion, kcal
+    protein: int = 0        # grams
+    carbs: int = 0          # grams
+    fats: int = 0           # grams
+    id: Optional[int] = None
+
+
+@dataclass
+class StaffMember:
+    """One member of the catering company's kitchen team (طاقم المطبخ).
+
+    An INTERNAL tracking record, not an official document: the ministry guide
+    has no staff form. It exists so the school can identify who works in its
+    kitchen and — the real reason — see when someone's شهادة طبية is about to
+    expire, since a valid medical certificate is a contractual requirement for
+    anyone handling food.
+
+    No attendance history by design (the user asked for identification only);
+    `status` is the current situation, not a log.
+    """
+    full_name: str
+    role: str = ""              # المهمة — see ui/staff_screen._ROLES
+    shift: str = ""             # فترة العمل — صباحي / مسائي / تناوب
+    phone: str = ""
+    # ISO YYYY-MM-DD, or blank when the certificate has not been provided.
+    health_cert_expiry: str = ""
+    status: str = ""            # الحالة — حاضر / غائب / في عطلة
+    notes: str = ""
+    created_at: str = ""
+    id: Optional[int] = None
+
+
+@dataclass
 class InfractionRecord:
     """محضر المخالفة — the official PV raised against the catering company
     when a contractual breach is observed (annex 5 of the ministry's

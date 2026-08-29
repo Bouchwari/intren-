@@ -25,6 +25,9 @@ from ui.daily_reception_screen import DailyReceptionScreen
 from ui.daily_report_screen import DailyReportScreen
 from ui.dashboard_screen import DashboardScreen
 from ui.infraction_record_screen import InfractionRecordScreen
+from ui.feedback_screen import FeedbackScreen
+from ui.nutrition_screen import NutritionScreen
+from ui.staff_screen import StaffScreen
 from ui.meal_program_screen import MealProgramScreen
 from ui.monthly_reception_screen import MonthlyReceptionScreen
 from ui.monthly_report_screen import MonthlyReportScreen
@@ -51,7 +54,10 @@ _NAV_ITEMS: list[tuple[str, str, int]] = [
     ("📜", "الوثائق الفصلية",       10),
     ("📊", "الملخص الشهري",         11),
     ("⚖️", "محضر المخالفة",         12),
-    ("⚙️", "الإعدادات",            13),
+    ("👨‍🍳", "طاقم المطبخ",           13),
+    ("🥗", "التحليل الغذائي",       14),
+    ("💬", "تقييم التلاميذ",        15),
+    ("⚙️", "الإعدادات",            16),
 ]
 
 _SIDEBAR_WIDTH = 235
@@ -213,9 +219,12 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(QuarterlyReceptionScreen())                     # 10 — built
         self._stack.addWidget(MonthlyReportScreen())                          # 11 — built
         self._stack.addWidget(InfractionRecordScreen())                       # 12 — built
+        self._stack.addWidget(StaffScreen())                                  # 13 — built
+        self._stack.addWidget(NutritionScreen())                              # 14 — built
+        self._stack.addWidget(FeedbackScreen())                               # 15 — built
 
-        # Index 13 — Settings
-        self._stack.addWidget(SettingsScreen())                         # 13
+        # Index 16 — Settings
+        self._stack.addWidget(SettingsScreen())                         # 16
 
         return self._stack
 
