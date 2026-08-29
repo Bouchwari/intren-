@@ -13,7 +13,9 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from core.models import DailyAbsence, DailyContact, Holiday, Student, Violation
+from core.models import (
+    DailyAbsence, DailyContact, Holiday, InfractionRecord, Student,
+)
 from data import database, stats_repository
 
 
@@ -32,25 +34,27 @@ class DatabaseIntegrityTests(unittest.TestCase):
         stats_repository.DB_PATH = self._original_stats_path
         self._tmpdir.cleanup()
 
-    def test_deleting_student_nulls_linked_violation_student_id(self) -> None:
-        student_id = database.add_student(Student(full_name="Test Student"))
-        database.add_violation(
-            Violation(
-                date="2026-05-20",
-                student_id=student_id,
-                student_name="Test Student",
-                violation_type="Late",
-            )
-        )
+    def test_dashboard_violation_card_counts_this_months_infractions(self) -> None:
+        """The dashboard's "المخالفات" card counts محضر المخالفة — the PV against
+        the CATERING COMPANY. It used to count the student-discipline log, a
+        document that never existed in the user's job; that screen and its
+        table were retired 2026-08-28 and the card was repointed here."""
+        from data.infraction_repo import save_infraction
 
-        database.delete_student(student_id)
+        today = date.today()
+        for number in (1, 2):
+            save_infraction(InfractionRecord(
+                date=today.replace(day=5).isoformat(), document_number=number,
+                year=today.year, infraction_type="تأخر في تقديم الوجبة",
+                description="x", written_date=today.isoformat()))
+        # A PV from another month must not leak into this month's card.
+        save_infraction(InfractionRecord(
+            date="2020-01-09", document_number=1, year=2020,
+            infraction_type="تأخر في تقديم الوجبة", description="x",
+            written_date="2020-01-09"))
 
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            row = conn.execute(
-                "SELECT student_id FROM violations LIMIT 1"
-            ).fetchone()
-        self.assertIsNotNone(row)
-        self.assertIsNone(row[0])
+        summary = stats_repository.fetch_month_summary(today.year, today.month)
+        self.assertEqual(summary.infractions_count, 2)
 
     def test_dashboard_stats_use_full_meal_totals(self) -> None:
         today = date.today().isoformat()

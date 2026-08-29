@@ -41,6 +41,7 @@ _DOCX_NAMESPACES = {
     "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
     "o": "urn:schemas-microsoft-com:office:office",
     "oel": "http://schemas.microsoft.com/office/2019/extlst",
+    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
     "v": "urn:schemas-microsoft-com:vml",
     "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -195,8 +196,15 @@ def draw_official_pdf_header(
     top: float,
     settings: SchoolSettings | None,
     title: str,
+    title_color: str = "#085041",
 ) -> float:
-    """Draw the ministry-style header and return the Y position for document body."""
+    """Draw the ministry-style header and return the Y position for document body.
+
+    `title_color` defaults to the app's green so every existing caller keeps
+    its current look; محضر المخالفة passes black, because that document is a
+    formal legal notice served on the contractor and the user asked for it
+    to print in plain black ink.
+    """
     content_width = page_width - (margin * 2)
     y = top
 
@@ -235,7 +243,7 @@ def draw_official_pdf_header(
         title_rect,
         title,
         size=22,
-        color="#085041",
+        color=title_color,
         bold=True,
         align=Qt.AlignmentFlag.AlignCenter,
         font_family=official_font_family(),
@@ -269,7 +277,14 @@ def draw_official_pdf_footer(
         rect = QRectF(right - ((index + 1) * col_w), y, col_w, footer_h)
         _text(
             painter,
-            QRectF(rect.left() + 8, rect.top(), rect.width() - 16, 18),
+            # 32pt tall (not 18) — a short role label like "Directeur"
+            # still centers fine in the extra room, but a longer one like
+            # "Gestionnaire des services matériels et financiers" wraps to
+            # 2 lines and was getting its 2nd line clipped by the old
+            # fixed 18pt-tall rect (Qt's drawText(QRectF, ...) clips word-
+            # wrapped text to the rect's own height, not just its width).
+            # Still comfortably clear of the signature line at rect.bottom()-12.
+            QRectF(rect.left() + 8, rect.top(), rect.width() - 16, 32),
             role,
             size=10,
             color="#085041",

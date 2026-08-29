@@ -23,14 +23,16 @@ from PySide6.QtWidgets import (
 from config.settings import (
     COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_PANEL, COLOR_PANEL_ALT, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
-    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_IFTAR, MEAL_SHOUR, MEAL_LABELS,
     EXPORT_FORMAT_PDF,
     FONT_BODY, FONT_LABEL, FONT_SECTION, FONT_TITLE,
 )
 from core.models import DailyContact, OrderItem, OrderLetter
+from core.ramadan import meals_for_date
 from data.database import (
     delete_order_letter, get_all_order_letters, get_contacts_between, get_day_contacts,
-    get_next_order_letter_number, get_order_items, get_school_settings, save_order_letter,
+    get_next_order_letter_number, get_order_items, get_ramadan_overrides,
+    get_school_settings, save_order_letter,
 )
 from ui.batch_export import draw_placeholder_pdf_page
 from ui.daily_contact_screen import (
@@ -88,7 +90,24 @@ _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_GHADA, MEAL_LABELS[MEAL_GHADA]),
     (MEAL_ASHA,  MEAL_LABELS[MEAL_ASHA]),
 ]
+
+_RAMADAN_MEAL_ORDER: List[Tuple[str, str]] = [
+    (MEAL_IFTAR, MEAL_LABELS[MEAL_IFTAR]),
+    (MEAL_SHOUR, MEAL_LABELS[MEAL_SHOUR]),
+]
+
+_ALL_MEAL_ORDER: List[Tuple[str, str]] = _MEAL_ORDER + _RAMADAN_MEAL_ORDER
+
+
+def _meals_for_document(date_str: str) -> List[Tuple[str, str]]:
+    """The meals ordered for a given date — Ramadan's two or the normal
+    three — so the letter asks the caterer for what that day actually needs."""
+    active = meals_for_date(date_str, get_school_settings(), get_ramadan_overrides())
+    labels = dict(_ALL_MEAL_ORDER)
+    return [(key, labels.get(key, key)) for key in active]
 _MEAL_COLORS = {
+    MEAL_IFTAR: "#C2703D",
+    MEAL_SHOUR: COLOR_ACCENT,
     MEAL_FTOUR: "#f59e0b",
     MEAL_GHADA: COLOR_ACCENT,
     MEAL_ASHA:  "#7c3aed",
@@ -122,7 +141,7 @@ def _btn(label: str, color: str, *, icon: str | None = None) -> QPushButton:
 # ── Meal quantity card ────────────────────────────────────────────────────────
 
 class _MealQtyCard(QGroupBox):
-    """Input card for one meal's quantity breakdown (إعدادي/تأهيلي/معلمون)."""
+    """Input card for one meal's quantity breakdown (ابتدائي/إعدادي/تأهيلي/معلمون)."""
 
     def __init__(self, meal_key: str, meal_label: str, color: str) -> None:
         super().__init__(meal_label)
@@ -155,6 +174,7 @@ class _MealQtyCard(QGroupBox):
             h.addWidget(spin)
             return h
 
+        self._sp_prim = _spin()
         self._sp_coll = _spin()
         self._sp_qual = _spin()
         self._sp_mon  = _spin()
@@ -167,6 +187,7 @@ class _MealQtyCard(QGroupBox):
             "border-radius:6px; padding:4px 10px;"
         )
 
+        layout.addLayout(row("الابتدائي",        self._sp_prim))
         layout.addLayout(row("إعدادي",           self._sp_coll))
         layout.addLayout(row("تأهيلي",           self._sp_qual))
         layout.addLayout(row("معلمو الداخلية",   self._sp_mon))
@@ -181,13 +202,15 @@ class _MealQtyCard(QGroupBox):
         tot_row.addWidget(self._total_lbl)
         layout.addLayout(tot_row)
 
-        for sp in (self._sp_coll, self._sp_qual, self._sp_mon):
+        for sp in (self._sp_prim, self._sp_coll, self._sp_qual, self._sp_mon):
             sp.valueChanged.connect(self._update)
 
     def _update(self) -> None:
-        self._total_lbl.setText(str(self._sp_coll.value() + self._sp_qual.value() + self._sp_mon.value()))
+        self._total_lbl.setText(str(self.total()))
 
-    def set_values(self, collegial: int, qualifying: int, monitors: int) -> None:
+    def set_values(self, collegial: int, qualifying: int, monitors: int,
+                   primary: int = 0) -> None:
+        self._sp_prim.setValue(primary)
         self._sp_coll.setValue(collegial)
         self._sp_qual.setValue(qualifying)
         self._sp_mon.setValue(monitors)
@@ -200,11 +223,14 @@ class _MealQtyCard(QGroupBox):
             collegial=self._sp_coll.value(),
             qualifying=self._sp_qual.value(),
             monitors=self._sp_mon.value(),
+            primary=self._sp_prim.value(),
         )
 
     def total(self) -> int:
-        return self._sp_coll.value() + self._sp_qual.value() + self._sp_mon.value()
+        return (self._sp_prim.value() + self._sp_coll.value()
+                + self._sp_qual.value() + self._sp_mon.value())
 
+    def primary(self) -> int: return self._sp_prim.value()
     def collegial(self) -> int: return self._sp_coll.value()
     def qualifying(self) -> int: return self._sp_qual.value()
     def monitors(self) -> int: return self._sp_mon.value()
@@ -215,11 +241,13 @@ def _order_items_from_contacts(contacts: List[DailyContact]) -> Dict[str, OrderI
     dates/rows are given — one day's 3 rows or a whole range's worth.
     Shared by the screen's من/إلى auto-fill and the per-day batch
     generator on يوم العمل."""
-    items = {meal_key: OrderItem(letter_id=0, meal_type=meal_key) for meal_key, _ in _MEAL_ORDER}
+    items = {meal_key: OrderItem(letter_id=0, meal_type=meal_key)
+             for meal_key, _ in _ALL_MEAL_ORDER}
     for contact in contacts:
         item = items.get(contact.meal_type)
         if item is None:
             continue
+        item.primary += contact.primary_total
         item.collegial += contact.collegial_total
         item.qualifying += contact.qualifying_total
         item.monitors += contact.monitors_total
@@ -251,7 +279,7 @@ def _generate_letter_html(
     # screen (useful for planning); only the generated document is aggregate.
     meal_rows = ""
     grand_total = 0
-    for meal_key, meal_label in _MEAL_ORDER:
+    for meal_key, meal_label in _meals_for_document(letter_date):
         card = cards[meal_key]
         tot = card.total()
         grand_total += tot
@@ -490,7 +518,8 @@ def _draw_order_letter_pdf_page(
     col_widths = [content_w * 0.25, content_w * 0.20, content_w * 0.55]
     header_h = 32.0
     row_h = 40.0
-    table_h = header_h + (row_h * len(_MEAL_ORDER))
+    meals = _meals_for_document(letter_date)
+    table_h = header_h + (row_h * len(meals))
     right = margin + content_w
 
     # Plain black-on-white, matching the real template's table exactly
@@ -506,7 +535,7 @@ def _draw_order_letter_pdf_page(
         current_right = rect.left()
 
     row_y = y + header_h
-    for meal_key, meal_label in _MEAL_ORDER:
+    for meal_key, meal_label in meals:
         values = [meal_label, str(items[meal_key].total), ""]
         current_right = right
         for index, (value, col_w) in enumerate(zip(values, col_widths)):
@@ -659,6 +688,7 @@ def _fill_order_letter_document_xml(
     supplier_line: str,
     place: str,
     items: Dict[str, OrderItem],
+    meals: Optional[List[Tuple[str, str]]] = None,
 ) -> None:
     for paragraph in root.findall(".//w:p", _WORD_NS):
         text = "".join(node.text or "" for node in paragraph.findall(".//w:t", _WORD_NS))
@@ -678,13 +708,24 @@ def _fill_order_letter_document_xml(
     tables = root.findall(".//w:tbl", _WORD_NS)
     if not tables:
         return
-    rows = tables[0].findall("./w:tr", _WORD_NS)
-    for row_index, (meal_key, _) in enumerate(_MEAL_ORDER, start=1):
-        if row_index >= len(rows):
-            break
+    # Row 0 is the header; rows 1..3 are the template's three meal rows.
+    # A Ramadan day orders two meals, so those rows are relabelled to
+    # إفطار/سحور and the surplus row removed — the same "same document,
+    # fewer rows" rule the user gave for ورقة الاتصال.
+    table = tables[0]
+    rows = table.findall("./w:tr", _WORD_NS)
+    meals = meals or _MEAL_ORDER
+    for row_index in range(1, len(rows)):
         cells = rows[row_index].findall("./w:tc", _WORD_NS)
-        if len(cells) >= 2:
-            _set_cell_text(cells[1], items[meal_key].total)
+        position = row_index - 1
+        if position < len(meals):
+            meal_key, meal_label = meals[position]
+            if cells:
+                _set_cell_text(cells[0], meal_label)
+            if len(cells) >= 2:
+                _set_cell_text(cells[1], items[meal_key].total)
+        else:
+            table.remove(rows[row_index])
 
 
 def _write_order_letter_docx(
@@ -726,6 +767,7 @@ def _write_order_letter_docx(
                     supplier_line=supplier_line,
                     place=place,
                     items=items,
+                    meals=_meals_for_document(letter_date),
                 )
                 data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
             target.writestr(item, data)
@@ -896,7 +938,7 @@ class OrderLetterScreen(QWidget):
         # 3-meal-column convention used across the app's other screens.
         meals_row = QHBoxLayout()
         meals_row.setSpacing(14)
-        for meal_key, meal_label in _MEAL_ORDER:
+        for meal_key, meal_label in _ALL_MEAL_ORDER:
             card = _MealQtyCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self._cards[meal_key] = card
@@ -1018,7 +1060,7 @@ class OrderLetterScreen(QWidget):
         items = _order_items_from_contacts(contacts)
         for meal_key, card in self._cards.items():
             item = items[meal_key]
-            card.set_values(item.collegial, item.qualifying, item.monitors)
+            card.set_values(item.collegial, item.qualifying, item.monitors, item.primary)
 
     def _refresh_history(self) -> None:
         letters = get_all_order_letters()
@@ -1044,7 +1086,7 @@ class OrderLetterScreen(QWidget):
         for meal_key, card in self._cards.items():
             it = items.get(meal_key)
             if it:
-                card.set_values(it.collegial, it.qualifying, it.monitors)
+                card.set_values(it.collegial, it.qualifying, it.monitors, it.primary)
             else:
                 card.set_values(0, 0, 0)
         self._number_edit.setText(

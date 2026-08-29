@@ -84,9 +84,10 @@ signed off on field-by-field.
   (ورقة الاتصال اليومية), `order_letter` (رسالة الطلبية — generated from
   the day's `contact_sheet`, per step 3 above), `absence_sheet` (ورقة
   الغياب اليومي), `daily_report` (التقرير اليومي), `infraction_record`
-  (دفتر المخالفات / `incident_log_screen.py` — the sidebar and this skill's
-  own `documents.md` use two different Arabic names, دفتر vs محضر, for what
-  looks like the same feature), `monthly_expense_statement` (بيان
+  (محضر المخالفة / `infraction_record_screen.py` — the PV against the
+  CATERING COMPANY. A separate دفتر المخالفات student-discipline screen used
+  to exist; the user confirmed 2026-08-28 that no such document exists in
+  their job and it was deleted), `monthly_expense_statement` (بيان
   المصاريف).
 - **Not built yet — genuinely missing, not just renamed**: confirmed by
   checking `src/core/models.py`'s class list, `src/ui/main_window.py`'s

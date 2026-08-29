@@ -23,14 +23,16 @@ from PySide6.QtWidgets import (
 from config.settings import (
     COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
-    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_IFTAR, MEAL_SHOUR, MEAL_LABELS,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.models import DailyContact, DailyAbsence, DailyReport
 from core.report_defaults import suggest_rating_index
+from core.ramadan import meals_for_date
 from data.database import (
     get_day_contacts, get_day_absences,
-    get_dates_with_data, get_daily_report, get_school_settings,
+    get_dates_with_data, get_daily_report, get_ramadan_overrides,
+    get_school_settings,
     save_daily_report,
 )
 from ui.batch_export import draw_placeholder_pdf_page
@@ -76,6 +78,21 @@ _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_GHADA, MEAL_LABELS[MEAL_GHADA]),
     (MEAL_ASHA,  MEAL_LABELS[MEAL_ASHA]),
 ]
+
+_RAMADAN_MEAL_ORDER: List[Tuple[str, str]] = [
+    (MEAL_IFTAR, MEAL_LABELS[MEAL_IFTAR]),
+    (MEAL_SHOUR, MEAL_LABELS[MEAL_SHOUR]),
+]
+
+_ALL_MEAL_ORDER: List[Tuple[str, str]] = _MEAL_ORDER + _RAMADAN_MEAL_ORDER
+
+
+def _meals_for_document(date_str: str) -> List[Tuple[str, str]]:
+    """The meals this date actually served — the report tracks expected vs
+    present per meal, so a Ramadan day must list إفطار/سحور instead."""
+    active = meals_for_date(date_str, get_school_settings(), get_ramadan_overrides())
+    labels = dict(_ALL_MEAL_ORDER)
+    return [(key, labels.get(key, key)) for key in active]
 
 # ── Inspection checklist — item order and exact wording match the real
 # accepted form (templets/التقرير اليومي للمصالح المادية والمالية.docx),
@@ -337,7 +354,7 @@ def _draw_beneficiary_grid(
         cur -= col_w
     y += header_h
 
-    for key, meal_label in _MEAL_ORDER:
+    for key, meal_label in _meals_for_document(report.date):
         label_rect = QRectF(right - label_w, y, label_w, row_h)
         painter.setPen(QPen(QColor(COLOR_BORDER), 0.6))
         painter.setBrush(QColor("#F8F9FA"))
@@ -562,7 +579,7 @@ def _report_for_date(date_str: str) -> DailyReport:
         contacts = {c.meal_type: c for c in get_day_contacts(date_str)}
         absences = {a.meal_type: a for a in get_day_absences(date_str)}
         fields = {}
-        for meal_key, _ in _MEAL_ORDER:
+        for meal_key, _ in _meals_for_document(date_str):
             contact = contacts.get(meal_key)
             absence = absences.get(meal_key)
             expected = contact.grand_total if contact else 0
@@ -594,6 +611,12 @@ def build_report_pdf_page(
         )
         return "empty"
     report = _report_for_date(date_str)
+    # Batch generation saves what it prints, so a day produced from يوم العمل
+    # ends up in the database exactly as if it had been opened and saved on
+    # screen. Only a date with no report yet is written — a day the user
+    # already saved keeps their own numbers and ratings untouched.
+    if get_daily_report(date_str) is None:
+        save_daily_report(report)
     _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report)
     return "data"
 
@@ -606,6 +629,12 @@ class DailyReportScreen(QWidget):
         self.setStyleSheet(f"background:{COLOR_SURFACE};")
         self._build_ui()
         self._load_today()
+        # Picking a date from the calendar must load THAT date. Without this
+        # the numbers stayed on whatever day was loaded before, and an
+        # export then produced a document stamped with the new date but
+        # carrying the previous day's figures. Connected last, so it never
+        # fires while the widgets are still being built.
+        self._date_edit.dateChanged.connect(self._generate)
 
     # ── Build ──────────────────────────────────────────────────────────────
 
@@ -873,8 +902,13 @@ class DailyReportScreen(QWidget):
         header.addWidget(QLabel(_LBL_EXPECTED, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;"))
         header.addWidget(QLabel(_LBL_PRESENT, styleSheet=f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;"))
         ben_layout.addLayout(header)
-        for meal_key, meal_label in _MEAL_ORDER:
-            row = QHBoxLayout()
+        # A row exists for every meal; only the selected date's are shown,
+        # so a Ramadan day lists إفطار/سحور instead of the normal three.
+        self._beneficiary_rows: Dict[str, QWidget] = {}
+        for meal_key, meal_label in _ALL_MEAL_ORDER:
+            row_host = QWidget()
+            row = QHBoxLayout(row_host)
+            row.setContentsMargins(0, 0, 0, 0)
             lbl = QLabel(meal_label)
             lbl.setStyleSheet(f"color:{COLOR_TEXT_PRIMARY}; font-size:{FONT_LABEL}px;")
             expected = QSpinBox()
@@ -890,7 +924,8 @@ class DailyReportScreen(QWidget):
             row.addWidget(lbl, 1)
             row.addWidget(expected)
             row.addWidget(present)
-            ben_layout.addLayout(row)
+            self._beneficiary_rows[meal_key] = row_host
+            ben_layout.addWidget(row_host)
         left.addWidget(ben_grp)
 
         # 3 — Meal quality
@@ -1194,6 +1229,12 @@ class DailyReportScreen(QWidget):
             combo.setCurrentIndex(combo.findData(getattr(report, field)))
         for field, combo in self._building_combos.items():
             combo.setCurrentIndex(combo.findData(getattr(report, field)))
+
+        # Show only the rows for the meals this date actually served.
+        active = {key for key, _label in _meals_for_document(report.date or
+                  self._date_edit.date().toString("yyyy-MM-dd"))}
+        for meal_key, row_host in self._beneficiary_rows.items():
+            row_host.setVisible(meal_key in active)
 
         if report.id is not None:
             for meal_key, (expected, present) in self._beneficiary_spins.items():

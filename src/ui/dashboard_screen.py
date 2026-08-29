@@ -445,8 +445,8 @@ def _build_kpi_row(data: DashboardData) -> QWidget:
                  "تاريخ آخر إدخال في النظام", COLOR_WARNING),
         StatCard("✅", "نسبة الحضور", f"{data.month.attendance_rate:,.0f}%",
                  "من إجمالي الحضور والغياب (هذا الشهر)", COLOR_TEAL),
-        StatCard("⚠️", "المخالفات", f"{data.month.violations_count:,}",
-                 "مسجَّلة هذا الشهر في دفتر المخالفات", COLOR_DANGER),
+        StatCard("⚠️", "المخالفات", f"{data.month.infractions_count:,}",
+                 "محاضر مخالفة في حق الشركة هذا الشهر", COLOR_DANGER),
     ]
     for i, card in enumerate(cards):
         layout.addWidget(card, i // 3, i % 3)
@@ -501,7 +501,7 @@ def _build_quick_actions(navigate_to: Callable[[int], None]) -> QFrame:
         ("لائحة التلاميذ", 2),
         ("تسجيل الحضور", 4),
         ("التقرير اليومي", 7),
-        ("المحضر الشهري", 8),
+        ("الملخص الشهري", 11),
     ]
     for label, index in actions:
         layout.addWidget(_quick_button(label, index, navigate_to), 1)

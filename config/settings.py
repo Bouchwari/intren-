@@ -59,11 +59,28 @@ MEAL_FTOUR: str = "ftour"       # فطور
 MEAL_GHADA: str = "ghada"       # غداء
 MEAL_ASHA: str = "asha"         # عشاء
 
+# Ramadan meals. These two string values are NOT new — meal_program_screen.py
+# has stored programs under them since before this constant existed, so they
+# must stay exactly as they are or saved Ramadan programs stop loading.
+MEAL_IFTAR: str = "ftour_ramadan"   # إفطار
+MEAL_SHOUR: str = "shour"           # سحور
+
 MEAL_LABELS: dict[str, str] = {
     MEAL_FTOUR: "فطور",
     MEAL_GHADA: "غداء",
     MEAL_ASHA:  "عشاء",
+    MEAL_IFTAR: "إفطار",
+    MEAL_SHOUR: "سحور",
 }
+
+# A day is either a normal day or a Ramadan day — never a mix of both.
+# Confirmed by the user (2026-08-25): during Ramadan the school serves
+# إفطار + سحور only, and these two REPLACE the three normal meals rather
+# than being added alongside them. This also matches what the meal-program
+# screen has always done and what both official Excel templates expect
+# (each adds exactly two Ramadan columns).
+REGULAR_MEALS: list[str] = [MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA]
+RAMADAN_MEALS: list[str] = [MEAL_IFTAR, MEAL_SHOUR]
 
 # ── Beneficiary types ────────────────────────────────────────────────────────
 

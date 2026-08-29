@@ -31,6 +31,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """Add new columns to existing tables without losing data (safe to run every launch)."""
     settings_cols = [
         "school_name_fr TEXT NOT NULL DEFAULT ''",
+        "city_fr TEXT NOT NULL DEFAULT ''",
         "aref TEXT NOT NULL DEFAULT ''",
         "direction_provinciale TEXT NOT NULL DEFAULT ''",
         "gresa_code TEXT NOT NULL DEFAULT ''",
@@ -47,6 +48,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "price_ftour_ramadan TEXT NOT NULL DEFAULT ''",
         "price_asha_ramadan TEXT NOT NULL DEFAULT ''",
         "price_shour TEXT NOT NULL DEFAULT ''",
+        # Ramadan period (ISO YYYY-MM-DD). Every document decides for itself
+        # whether its own date falls inside this range — see core/ramadan.py.
+        "ramadan_start TEXT NOT NULL DEFAULT ''",
+        "ramadan_end TEXT NOT NULL DEFAULT ''",
     ]
     student_cols = [
         "massar_number TEXT NOT NULL DEFAULT ''",
@@ -80,6 +85,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ghada_present INTEGER NOT NULL DEFAULT 0",
         "asha_expected INTEGER NOT NULL DEFAULT 0",
         "asha_present INTEGER NOT NULL DEFAULT 0",
+        # Ramadan meals get their own slots — a day is either normal or
+        # Ramadan, but reusing ghada_* to hold سحور would make the stored
+        # numbers mean different things depending on the date.
+        "ftour_ramadan_expected INTEGER NOT NULL DEFAULT 0",
+        "ftour_ramadan_present INTEGER NOT NULL DEFAULT 0",
+        "shour_expected INTEGER NOT NULL DEFAULT 0",
+        "shour_present INTEGER NOT NULL DEFAULT 0",
         "quality_supplies INTEGER NOT NULL DEFAULT -1",
         "quality_storage INTEGER NOT NULL DEFAULT -1",
         "quality_program INTEGER NOT NULL DEFAULT -1",
@@ -115,12 +127,34 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE daily_reports ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
             pass
+    # Ramadan meals get their own quantity slots on both reception records —
+    # a day serves either the normal three or إفطار+سحور, and reusing
+    # ghada_qty to hold سحور would make a stored number mean different
+    # things depending on its date.
+    reception_cols = [
+        "ftour_ramadan_qty INTEGER NOT NULL DEFAULT 0",
+        "shour_qty INTEGER NOT NULL DEFAULT 0",
+    ]
+    for table in ("daily_reception_records", "monthly_reception_records"):
+        for col_def in reception_cols:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
+
     order_letter_cols = [
         "document_number INTEGER",
     ]
     for col_def in order_letter_cols:
         try:
             conn.execute(f"ALTER TABLE order_letters ADD COLUMN {col_def}")
+        except sqlite3.OperationalError:
+            pass
+
+    # "primary" is a reserved word in newer SQLite, hence primary_count.
+    for col_def in ["primary_count INTEGER NOT NULL DEFAULT 0"]:
+        try:
+            conn.execute(f"ALTER TABLE order_items ADD COLUMN {col_def}")
         except sqlite3.OperationalError:
             pass
 
@@ -230,6 +264,15 @@ def init_database() -> None:
                 notes      TEXT    NOT NULL DEFAULT '',
                 created_at TEXT    NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS monthly_reception_records (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                month      TEXT    NOT NULL UNIQUE,
+                ftour_qty  INTEGER NOT NULL DEFAULT 0,
+                ghada_qty  INTEGER NOT NULL DEFAULT 0,
+                asha_qty   INTEGER NOT NULL DEFAULT 0,
+                remarks    TEXT    NOT NULL DEFAULT '',
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            );
             CREATE TABLE IF NOT EXISTS order_letters (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 letter_date  TEXT NOT NULL,
@@ -244,8 +287,15 @@ def init_database() -> None:
                 meal_type  TEXT NOT NULL,
                 collegial  INTEGER NOT NULL DEFAULT 0,
                 qualifying INTEGER NOT NULL DEFAULT 0,
-                monitors   INTEGER NOT NULL DEFAULT 0
+                monitors   INTEGER NOT NULL DEFAULT 0,
+                primary_count INTEGER NOT NULL DEFAULT 0
             );
+            -- RETIRED 2026-08-28. Held the old student-discipline log
+            -- (دفتر المخالفات), which was a misunderstanding from the start of
+            -- the project — no such document exists in the user's job. The
+            -- screen, model and CRUD are gone; the table is kept ONLY so an
+            -- existing matama.db does not lose rows someone may have typed.
+            -- Nothing reads it. Drop it during the end-of-project cleanup.
             CREATE TABLE IF NOT EXISTS violations (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
                 date           TEXT NOT NULL,
@@ -262,9 +312,34 @@ def init_database() -> None:
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL DEFAULT ''
             );
+            -- محضر المخالفة: one PV per contractual breach by the caterer.
+            -- Numbered per year (UNIQUE), so two records can never print the
+            -- same reference on a signed document.
+            CREATE TABLE IF NOT EXISTS infraction_records (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                date            TEXT    NOT NULL,
+                document_number INTEGER NOT NULL,
+                year            INTEGER NOT NULL,
+                meal_type       TEXT    NOT NULL DEFAULT '',
+                place           TEXT    NOT NULL DEFAULT '',
+                infraction_type TEXT    NOT NULL DEFAULT '',
+                description     TEXT    NOT NULL DEFAULT '',
+                reported_by     TEXT    NOT NULL DEFAULT '',
+                written_date    TEXT    NOT NULL DEFAULT '',
+                created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(year, document_number)
+            );
             CREATE TABLE IF NOT EXISTS holidays (
                 date  TEXT PRIMARY KEY,
                 label TEXT NOT NULL DEFAULT ''
+            );
+            -- Per-day corrections to the Ramadan period. Ramadan starts on a
+            -- moon sighting, so the announced dates can move a day either way
+            -- and the user must be able to fix a single day without shifting
+            -- the whole range. is_ramadan=1 forces a day ON, 0 forces it OFF.
+            CREATE TABLE IF NOT EXISTS ramadan_day_overrides (
+                date       TEXT PRIMARY KEY,
+                is_ramadan INTEGER NOT NULL
             );
         """)
         _migrate(conn)
@@ -325,11 +400,6 @@ from data.daily_repo import (  # noqa: E402
     get_all_order_letters,
     get_order_items,
     delete_order_letter,
-    add_violation,
-    update_violation,
-    delete_violation,
-    get_all_violations,
-    search_violations,
 )
 from data.monthly_repo import (  # noqa: E402
     get_monthly_summaries,
@@ -337,10 +407,23 @@ from data.monthly_repo import (  # noqa: E402
     save_monthly_report_notes,
     get_months_with_data,
     get_expense_data,
+    sum_daily_reception_for_month,
+    get_monthly_reception_record,
+    save_monthly_reception_record,
+)
+from data.infraction_repo import (  # noqa: E402
+    delete_infraction,
+    get_all_infractions,
+    get_infraction,
+    get_next_infraction_number,
+    save_infraction,
 )
 from data.holiday_repo import (  # noqa: E402
     get_all_holidays,
     add_holiday,
     delete_holiday,
     is_holiday,
+    get_ramadan_overrides,
+    set_ramadan_override,
+    clear_ramadan_override,
 )

@@ -133,6 +133,12 @@ class BatchExportBuildPageTests(unittest.TestCase):
         holiday_labels = {h.date: h.label for h in database.get_all_holidays()}
         return lambda painter, w, h, d: das.build_absence_pdf_page(painter, w, h, d, holiday_labels, settings)
 
+    def _reception_build_page(self):
+        from ui import daily_reception_screen as drc
+        settings = database.get_school_settings()
+        holiday_labels = {h.date: h.label for h in database.get_all_holidays()}
+        return lambda painter, w, h, d: drc.build_reception_pdf_page(painter, w, h, d, holiday_labels, settings)
+
     def _report_build_page(self):
         settings = database.get_school_settings()
         holiday_labels = {h.date: h.label for h in database.get_all_holidays()}
@@ -220,10 +226,51 @@ class BatchExportBuildPageTests(unittest.TestCase):
 
         self.assertEqual(_pdf_page_count(self._out_path), 2)
 
-    def test_report_export_never_saves_report_to_database(self) -> None:
-        """Read-only guarantee: exporting the report must not create a saved
-        DailyReport row, or it would silently freeze that date's beneficiary
-        numbers away from future auto-recompute (see _load_report_fields)."""
+    def test_batch_reception_saves_a_ramadan_days_own_meals(self) -> None:
+        """The batch builder used to construct the record from ftour/ghada/asha
+        only, so every Ramadan day was saved as an all-zero محضر تسلم even
+        though ورقة الاتصال had real إفطار/سحور numbers."""
+        from config.settings import MEAL_IFTAR, MEAL_SHOUR
+        from core.models import SchoolSettings
+
+        database.save_school_settings(SchoolSettings(
+            school_name="مؤسسة", school_year="2025-2026", director="المدير",
+            ramadan_start="2026-03-01", ramadan_end="2026-03-30"))
+        database.save_daily_contact(DailyContact(date="2026-03-10", meal_type=MEAL_IFTAR, collegial_granted=40))
+        database.save_daily_contact(DailyContact(date="2026-03-10", meal_type=MEAL_SHOUR, collegial_granted=35))
+
+        be.write_combined_pdf(
+            self._out_path, QDate(2026, 3, 10), QDate(2026, 3, 10),
+            QPageLayout.Orientation.Portrait, self._reception_build_page(),
+        )
+
+        record = database.get_daily_reception_record("2026-03-10")
+        self.assertIsNotNone(record)
+        self.assertEqual(record.ftour_ramadan_qty, 40)
+        self.assertEqual(record.shour_qty, 35)
+        # and it must not invent normal-day meals on a Ramadan day
+        self.assertEqual((record.ftour_qty, record.ghada_qty, record.asha_qty), (0, 0, 0))
+
+    def test_batch_reception_still_saves_a_normal_days_meals(self) -> None:
+        database.save_daily_contact(DailyContact(date="2026-06-01", meal_type=dcs.MEAL_GHADA, collegial_granted=50))
+
+        be.write_combined_pdf(
+            self._out_path, QDate(2026, 6, 1), QDate(2026, 6, 1),
+            QPageLayout.Orientation.Portrait, self._reception_build_page(),
+        )
+
+        record = database.get_daily_reception_record("2026-06-01")
+        self.assertIsNotNone(record)
+        self.assertEqual(record.ghada_qty, 50)
+        self.assertEqual((record.ftour_ramadan_qty, record.shour_qty), (0, 0))
+
+    def test_report_export_saves_the_report_it_printed(self) -> None:
+        """يوم العمل's batch run must leave the same data behind as making the
+        day by hand — the user asked for this explicitly on 2026-08-28
+        ("when i generated multiply days those out put and data should save
+        like normal made"). It previously printed the report and saved
+        nothing, so a batch-generated day looked untouched in التقرير اليومي.
+        """
         database.save_daily_contact(DailyContact(date="2026-06-01", meal_type=drs.MEAL_FTOUR, collegial_granted=3))
 
         be.write_combined_pdf(
@@ -231,7 +278,24 @@ class BatchExportBuildPageTests(unittest.TestCase):
             QPageLayout.Orientation.Landscape, self._report_build_page(),
         )
 
-        self.assertIsNone(database.get_daily_report("2026-06-01"))
+        saved = database.get_daily_report("2026-06-01")
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved.ftour_expected, 3)
+
+    def test_report_export_never_overwrites_a_day_already_saved(self) -> None:
+        """Saving what it prints must not clobber a day the user already
+        filled in by hand — batch only ever creates a missing report."""
+        database.save_daily_contact(DailyContact(date="2026-06-01", meal_type=drs.MEAL_FTOUR, collegial_granted=3))
+        database.save_daily_report(drs.DailyReport(date="2026-06-01", ftour_expected=99, ftour_present=98))
+
+        be.write_combined_pdf(
+            self._out_path, QDate(2026, 6, 1), QDate(2026, 6, 1),
+            QPageLayout.Orientation.Landscape, self._report_build_page(),
+        )
+
+        saved = database.get_daily_report("2026-06-01")
+        self.assertEqual(saved.ftour_expected, 99, "the user's own numbers were overwritten")
+        self.assertEqual(saved.ftour_present, 98)
 
     def test_report_batch_suggests_checklist_for_every_day_not_just_the_first(self) -> None:
         """يوم العمل's "توليد شامل لعدة أيام" must suggest real ratings for

@@ -165,6 +165,7 @@ class SetupWizard(QDialog):
         self._dir_prov       = _line("مثال: مديرية سلا")
         self._gresa_code     = _line("رمز GRESA")
         self._city           = _line("مثال: سلا")
+        self._city_fr        = _line("Nom de la ville")
         self._school_year    = _line("مثال: 2024-2025")
 
         form_inst.addRow("اسم المؤسسة *",            self._school_name)
@@ -173,6 +174,7 @@ class SetupWizard(QDialog):
         form_inst.addRow("المديرية الإقليمية",        self._dir_prov)
         form_inst.addRow("رمز GRESA",                 self._gresa_code)
         form_inst.addRow("الجماعة",                   self._city)
+        form_inst.addRow("Nom de la ville",           self._city_fr)
         form_inst.addRow("السنة الدراسية *",          self._school_year)
 
         # Group: staff
@@ -419,6 +421,7 @@ class SetupWizard(QDialog):
             direction_provinciale=self._dir_prov.text().strip(),
             gresa_code=self._gresa_code.text().strip(),
             city=self._city.text().strip(),
+            city_fr=self._city_fr.text().strip(),
             academy=self._aref.text().strip(),   # keep legacy field in sync
             director=self._director.text().strip(),
             school_year=self._school_year.text().strip(),
@@ -456,6 +459,7 @@ class SetupWizard(QDialog):
         self._dir_prov.setText(s.direction_provinciale)
         self._gresa_code.setText(s.gresa_code)
         self._city.setText(s.city)
+        self._city_fr.setText(s.city_fr)
         self._school_year.setText(s.school_year)
         self._director.setText(s.director)
         self._gestionnaire.setText(s.gestionnaire)
