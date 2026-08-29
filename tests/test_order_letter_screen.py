@@ -15,7 +15,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
 from config.settings import MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA
-from core.models import DailyContact
+from core.models import DailyContact, OrderItem, OrderLetter
 from data import database
 from ui import order_letter_screen as ols
 
@@ -155,3 +155,50 @@ class OrderLetterNumberTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OrderLetterPrimaryCycleTests(unittest.TestCase):
+    """رسالة الطلبية used to have no ابتدائي field at all — OrderItem carried
+    only collegial/qualifying/monitors — so every letter asked the supplier
+    for fewer meals than ورقة الاتصال had counted, short by exactly the
+    primary count. The real template prints one total per meal with no cycle
+    breakdown, so that total must cover every cycle."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._original_db_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "test_matama.db"
+        database.init_database()
+
+    def tearDown(self) -> None:
+        database.DB_PATH = self._original_db_path
+        self._tmpdir.cleanup()
+
+    def test_order_total_matches_the_contact_sheet_total(self) -> None:
+        contacts = [
+            DailyContact(date="2026-05-11", meal_type=ols.MEAL_GHADA,
+                         primary_granted=6, primary_complement=10,
+                         collegial_granted=40, collegial_complement=12,
+                         qualifying_granted=30, monitors=6),
+        ]
+        items = ols._order_items_from_contacts(contacts)
+
+        self.assertEqual(items[ols.MEAL_GHADA].primary, 16)
+        self.assertEqual(items[ols.MEAL_GHADA].total, contacts[0].grand_total)
+
+    def test_primary_survives_a_database_round_trip(self) -> None:
+        letter_id = database.save_order_letter(
+            OrderLetter(letter_date="2026-05-11", period_start="2026-05-11",
+                        period_end="2026-05-11", document_number=1),
+            [OrderItem(letter_id=0, meal_type=ols.MEAL_GHADA, primary=16,
+                       collegial=52, qualifying=30, monitors=6)],
+        )
+
+        saved = database.get_order_items(letter_id)
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0].primary, 16)
+        self.assertEqual(saved[0].total, 104)

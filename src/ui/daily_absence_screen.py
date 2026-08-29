@@ -4,10 +4,12 @@ Daily absence sheet (ورقة الغياب اليومي) — count absent benefi
 Parallel structure to daily_contact_screen but for absences (red theme).
 """
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen,
+)
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QMessageBox, QPushButton,
@@ -18,7 +20,7 @@ from PySide6.QtWidgets import (
 from config.settings import (
     COLOR_BORDER, COLOR_DANGER, COLOR_PAPER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
-    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_IFTAR, MEAL_SHOUR, MEAL_LABELS,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 import datetime
@@ -26,8 +28,10 @@ import datetime
 from core.attendance_estimate import EstimateResult, estimate_absence
 from core.contact_counts import count_students
 from core.models import DailyAbsence
+from core.ramadan import meals_for_date
 from data.database import (
-    get_all_students, get_day_absences, get_recent_absences, get_school_settings,
+    get_all_students, get_day_absences, get_ramadan_overrides,
+    get_recent_absences, get_school_settings,
     is_holiday, save_daily_absence,
 )
 from ui.batch_export import draw_placeholder_pdf_page
@@ -92,8 +96,26 @@ _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_ASHA,  MEAL_LABELS[MEAL_ASHA]),
 ]
 
+_RAMADAN_MEAL_ORDER: List[Tuple[str, str]] = [
+    (MEAL_IFTAR, MEAL_LABELS[MEAL_IFTAR]),
+    (MEAL_SHOUR, MEAL_LABELS[MEAL_SHOUR]),
+]
+
+# A card exists for every meal; only the selected date's are shown.
+_CARD_MEAL_ORDER: List[Tuple[str, str]] = _MEAL_ORDER + _RAMADAN_MEAL_ORDER
+
+
+def _meals_for_document(date_str: str) -> List[Tuple[str, str]]:
+    """(meal key, label) for a document's own date, so a printed absence
+    sheet always matches the meals that day actually served."""
+    active = meals_for_date(date_str, get_school_settings(), get_ramadan_overrides())
+    labels = dict(_CARD_MEAL_ORDER)
+    return [(key, labels.get(key, key)) for key in active]
+
 # Red-toned palette for absences — visually distinct from contact sheet
 _MEAL_COLORS = {
+    MEAL_IFTAR: "#C2703D",   # clay
+    MEAL_SHOUR: "#dc2626",   # red-600
     MEAL_FTOUR: "#dc2626",   # red-600
     MEAL_GHADA: "#ea580c",   # orange-600
     MEAL_ASHA:  "#9f1239",   # rose-900
@@ -106,7 +128,13 @@ _INK = COLOR_TEXT_PRIMARY
 # theme (_MEAL_COLORS, #fff5f5 alternate rows) rather than the app-wide
 # COLOR_PANEL_ALT, which is teal and would clash here.
 _HISTORY_HEADER_BG = "#FBEAEA"
-_HISTORY_COLUMN_WIDTHS = [92, 78, 70, 70, 70, 70, 70, 70, 70, 70, 82]
+# Minimum width per history column. Each is widened at build time to fit its
+# own header text — the fixed 70px the cycle columns used to carry clipped
+# every one of them ("معلمون (ك)" rendered as "علمون (ك)").
+_HISTORY_COLUMN_MIN_WIDTHS = [92, 78, 70, 70, 70, 70, 70, 70, 70, 70, 82]
+# QHeaderView::section padding below is 7px 10px; add the two 10px sides
+# plus a little slack for the cell border.
+_HISTORY_HEADER_PADDING = 26
 
 
 def _spin() -> QSpinBox:
@@ -341,7 +369,8 @@ def _draw_daily_absence_pdf_page(
     table_h = page_h - table_y - footer_h - margin
     row_h = min(46.0, (table_h - header_rows_h) / n_data_rows)
     label_w = 130.0
-    meal_w = (table_w - label_w) / len(_MEAL_ORDER)
+    meals = _meals_for_document(date_str)
+    meal_w = (table_w - label_w) / len(meals)
     sub_w = meal_w / 2
     right = table_x + table_w
 
@@ -352,7 +381,7 @@ def _draw_daily_absence_pdf_page(
         text="", text_color="white", size=11, bold=True,
     )
     current_right = label_header.left()
-    for _, meal_label in _MEAL_ORDER:
+    for _, meal_label in meals:
         rect = QRectF(current_right - meal_w, table_y, meal_w, header_rows_h / 2)
         _draw_contact_pdf_cell(
             painter, rect,
@@ -369,7 +398,7 @@ def _draw_daily_absence_pdf_page(
         text="الفئة", text_color="white", size=10, bold=True,
     )
     current_right = label_subheader.left()
-    for _ in _MEAL_ORDER:
+    for _ in meals:
         for sub_label in (_LBL_GRANTED, _LBL_COMPLEMENT):
             rect = QRectF(current_right - sub_w, sub_y, sub_w, header_rows_h / 2)
             _draw_contact_pdf_cell(
@@ -388,7 +417,7 @@ def _draw_daily_absence_pdf_page(
             text=row_label, text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
         )
         current_right = label_rect.left()
-        for meal_key, _ in _MEAL_ORDER:
+        for meal_key, _ in meals:
             absence = absence_by_meal.get(meal_key) or DailyAbsence(date="", meal_type=meal_key)
             for field_name in (granted_field, complement_field):
                 rect = QRectF(current_right - sub_w, row_y, sub_w, row_h)
@@ -407,7 +436,7 @@ def _draw_daily_absence_pdf_page(
         text=_LBL_GRAND_TOT, text_color="white", size=11, bold=True,
     )
     current_right = total_label_rect.left()
-    for meal_key, _ in _MEAL_ORDER:
+    for meal_key, _ in meals:
         absence = absence_by_meal.get(meal_key) or DailyAbsence(date="", meal_type=meal_key)
         rect = QRectF(current_right - meal_w, total_y, meal_w, row_h)
         _draw_contact_pdf_cell(
@@ -445,7 +474,12 @@ def _counts_to_absences(date_str: str, counts: Dict[str, Dict[str, int]]) -> Lis
     collegial = counts.get("collegial", {})
     qualifying = counts.get("qualifying", {})
     monitors = counts.get("monitors", {})
-    return [
+    # Only the day's own meals are saved — a normal day must not get Ramadan
+    # rows, and a Ramadan day must not get normal ones. (The contact sheet
+    # got this when Ramadan mode landed; this function was missed, so batch
+    # generation kept writing فطور/غداء/عشاء absences onto Ramadan days.)
+    active = {key for key, _label in _meals_for_document(date_str)}
+    rows = [
         DailyAbsence(
             date=date_str, meal_type=MEAL_FTOUR,
             primary_granted=primary.get("full", 0),
@@ -467,7 +501,24 @@ def _counts_to_absences(date_str: str, counts: Dict[str, Dict[str, int]]) -> Lis
             qualifying_granted=qualifying.get("full", 0),
             monitors=monitors.get("full", 0),
         ),
+        # Ramadan. إفطار carries the وجبة غذاء students too: during Ramadan
+        # there is no غداء, and إفطار is the single meal those students get.
+        DailyAbsence(
+            date=date_str, meal_type=MEAL_IFTAR,
+            primary_granted=primary.get("full", 0), primary_complement=primary.get("lunch", 0),
+            collegial_granted=collegial.get("full", 0), collegial_complement=collegial.get("lunch", 0),
+            qualifying_granted=qualifying.get("full", 0), qualifying_complement=qualifying.get("lunch", 0),
+            monitors=monitors.get("full", 0), monitors_complement=monitors.get("lunch", 0),
+        ),
+        DailyAbsence(
+            date=date_str, meal_type=MEAL_SHOUR,
+            primary_granted=primary.get("full", 0),
+            collegial_granted=collegial.get("full", 0),
+            qualifying_granted=qualifying.get("full", 0),
+            monitors=monitors.get("full", 0),
+        ),
     ]
+    return [row for row in rows if row.meal_type in active]
 
 
 def _unflatten_counts(roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
@@ -532,8 +583,16 @@ class DailyAbsenceScreen(QWidget):
         super().__init__()
         self.setStyleSheet(f"background:{_PAGE_BG};")
         self._cards: Dict[str, _AbsenceCard] = {}
+        self._cards_grid: QGridLayout = QGridLayout()
+        self._packed_meals: List[str] = []
         self._loaded_once = False
         self._build_ui()
+        # Picking a date from the calendar must load THAT date. Without this
+        # the numbers stayed on whatever day was loaded before, and an
+        # export then produced a document stamped with the new date but
+        # carrying the previous day's figures. Connected last, so it never
+        # fires while the widgets are still being built.
+        self._date_edit.dateChanged.connect(self._load_selected)
 
     def refresh(self) -> None:
         if not getattr(self, "_loaded_once", False):
@@ -651,13 +710,35 @@ class DailyAbsenceScreen(QWidget):
     def _build_cards_row(self) -> QGridLayout:
         row = QGridLayout()
         row.setSpacing(12)
-        for index, (meal_key, meal_label) in enumerate(_MEAL_ORDER):
-            card = _AbsenceCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
-            self._cards[meal_key] = card
-            row.addWidget(card, index // 2, index % 2)
+        for meal_key, meal_label in _CARD_MEAL_ORDER:
+            self._cards[meal_key] = _AbsenceCard(
+                meal_key, meal_label, _MEAL_COLORS[meal_key])
         row.setColumnStretch(0, 1)
         row.setColumnStretch(1, 1)
+        self._cards_grid = row
+        # Placed by _relayout_cards() once the selected date says which meals
+        # the day actually serves.
         return row
+
+    def _relayout_cards(self, active: Set[str]) -> None:
+        """Re-pack the visible cards so they start at the top-right corner.
+
+        Every meal owns a card built once at startup, and only the selected
+        date's are shown. A hidden widget still holds its own grid cell,
+        though, so placing them at a fixed slot left إفطار (slot 3 → row 1,
+        column 1) and سحور (slot 4 → row 2, column 0) sitting diagonally
+        apart with three empty cells above them on every Ramadan day.
+        Re-adding only the visible cards packs them from (0, 0) instead.
+        """
+        visible = [key for key, _ in _CARD_MEAL_ORDER if key in active]
+        if visible == self._packed_meals:
+            return   # same meals as the last load — nothing to move
+        for card in self._cards.values():
+            self._cards_grid.removeWidget(card)
+        for position, meal_key in enumerate(visible):
+            self._cards_grid.addWidget(
+                self._cards[meal_key], position // 2, position % 2)
+        self._packed_meals = visible
 
     def _build_history(self) -> QGroupBox:
         grp = QGroupBox("سجل الغيابات الأخيرة")
@@ -684,8 +765,14 @@ class DailyAbsenceScreen(QWidget):
         self._history_table.verticalHeader().setVisible(False)
         self._history_table.horizontalHeader().setStretchLastSection(True)
         self._history_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        for col, width in enumerate(_HISTORY_COLUMN_WIDTHS):
-            self._history_table.setColumnWidth(col, width)
+        header_font = QFont(self._history_table.font())
+        header_font.setPixelSize(FONT_CAPTION)   # matches the stylesheet below
+        header_font.setBold(True)
+        metrics = QFontMetrics(header_font)
+        for col, (label, minimum) in enumerate(
+                zip(_HDR_HISTORY, _HISTORY_COLUMN_MIN_WIDTHS)):
+            needed = metrics.horizontalAdvance(label) + _HISTORY_HEADER_PADDING
+            self._history_table.setColumnWidth(col, max(minimum, needed))
         self._history_table.setMaximumHeight(190)
         self._history_table.setAlternatingRowColors(True)
         self._history_table.setStyleSheet(f"""
@@ -723,18 +810,35 @@ class DailyAbsenceScreen(QWidget):
         self._date_edit.setDate(self._date_edit.date().addDays(1))
         self._load_selected()
 
+    def _active_meals(self) -> List[str]:
+        """The meal types the selected date serves — Ramadan's two or the
+        normal three, decided centrally so every screen agrees."""
+        return meals_for_date(
+            self._selected_date_str(), get_school_settings(), get_ramadan_overrides())
+
+    def _current_absences(self) -> List[DailyAbsence]:
+        """Only the day's own meals — a normal day must not write empty
+        Ramadan rows, and a Ramadan day must not write normal ones."""
+        date_str = self._selected_date_str()
+        active = set(self._active_meals())
+        return [card.to_absence(date_str)
+                for meal_key, card in self._cards.items() if meal_key in active]
+
     def _load_selected(self) -> None:
         date_str = self._selected_date_str()
         absences = {a.meal_type: a for a in get_day_absences(date_str)}
+        active = set(self._active_meals())
         for meal_key, card in self._cards.items():
+            card.setVisible(meal_key in active)
             card.load(absences.get(meal_key))
+        self._relayout_cards(active)
         self._set_estimate_note(None)
         self._refresh_history()
 
     def _refresh_history(self) -> None:
         recent = get_recent_absences(60)
         self._history_table.setRowCount(0)
-        meal_labels = dict(_MEAL_ORDER)
+        meal_labels = dict(_CARD_MEAL_ORDER)
         for a in recent:
             r = self._history_table.rowCount()
             self._history_table.insertRow(r)
@@ -850,7 +954,7 @@ class DailyAbsenceScreen(QWidget):
             path = path.with_suffix(".pdf")
 
         try:
-            absences = [card.to_absence(date_str) for card in self._cards.values()]
+            absences = self._current_absences()
             for absence in absences:
                 save_daily_absence(absence)
             self._refresh_history()

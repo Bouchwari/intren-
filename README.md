@@ -29,7 +29,7 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-The app opens into the main Matama window with a right-to-left sidebar for dashboard, students, meal programs, daily logs, reports, incidents, and settings.
+The app opens into the main Matama window with a right-to-left sidebar for dashboard, students, meal programs, daily logs, reports, reception and infraction records, quarterly documents, and settings.
 
 ## Build the executable
 

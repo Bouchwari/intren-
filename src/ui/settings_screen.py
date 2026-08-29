@@ -18,7 +18,7 @@ from config.settings import (
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     DB_PATH, LOGO_PATH,
     EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF, EXPORT_FORMAT_LABELS,
-    FONT_BODY, FONT_LABEL,
+    FONT_BODY, FONT_CAPTION, FONT_LABEL,
 )
 from core.excel_handler import load_level_catalog
 from core.models import Holiday, SchoolSettings
@@ -41,7 +41,12 @@ _GRP_INST       = "المؤسسة التعليمية"
 _GRP_STAFF      = "أطر المؤسسة"
 _GRP_CONTRACT   = "صفقة المطعمة"
 _GRP_PRICES     = "أثمان الوجبات"
+_GRP_RAMADAN    = "مدة رمضان"
 _GRP_LEVELS     = "المستويات المستعملة"
+_RAMADAN_HINT   = ("حدّد مدة رمضان بصيغة YYYY-MM-DD. خلال هذه المدة تتحول كل "
+                   "الوثائق تلقائياً إلى وجبتي الإفطار والسحور بدل الوجبات "
+                   "الثلاث العادية. يمكنك تصحيح يوم واحد من ورقة الاتصال "
+                   "اليومية إذا اختلف الهلال.")
 _GRP_LOGO       = "شعار المؤسسة"
 _GRP_EXPORT     = "تصدير الوثائق"
 _GRP_BACKUP     = "النسخ الاحتياطي"
@@ -78,11 +83,14 @@ _HOLIDAY_DEL_CONFIRM = "حذف هذا اليوم من لائحة العطل؟"
 _HOLIDAY_DEL_CONFIRM_RANGE = "حذف كل الأيام ({count}) من لائحة العطل؟"
 
 
-def _field(text: str = "", placeholder: str = "") -> QLineEdit:
+def _field(text: str = "", placeholder: str = "", min_width: int = 430) -> QLineEdit:
+    """A settings input. `min_width` is reducible because two fields placed
+    side by side at the full 430px leave their labels zero width — which is
+    exactly why every price label was invisible on this screen."""
     w = QLineEdit(text)
     w.setPlaceholderText(placeholder)
     w.setMinimumHeight(34)
-    w.setMinimumWidth(430)
+    w.setMinimumWidth(min_width)
     w.setMaximumWidth(860)
     w.setStyleSheet(
         f"background:white; color:{COLOR_TEXT_PRIMARY}; border:1px solid {_PANEL_BORDER}; border-radius:10px;"
@@ -204,6 +212,7 @@ class SettingsScreen(QWidget):
         self._build_staff_section()
         self._build_contract_section()
         self._build_prices_section()
+        self._build_ramadan_section()
         self._build_levels_section()
         self._build_logo_section()
         self._build_export_format_section()
@@ -222,6 +231,7 @@ class SettingsScreen(QWidget):
         self._dir_prov       = _field(placeholder="المديرية الإقليمية")
         self._gresa_code     = _field(placeholder="رمز GRESA")
         self._city           = _field(placeholder="الجماعة / المدينة")
+        self._city_fr        = _field(placeholder="Nom de la ville")
         self._school_year    = _field(placeholder="مثال: 2024-2025")
         form.addRow("اسم المؤسسة *",            self._school_name)
         form.addRow("Nom d'établissement",       self._school_name_fr)
@@ -229,6 +239,7 @@ class SettingsScreen(QWidget):
         form.addRow("المديرية الإقليمية",        self._dir_prov)
         form.addRow("رمز GRESA",                 self._gresa_code)
         form.addRow("الجماعة",                   self._city)
+        form.addRow("Nom de la ville",           self._city_fr)
         form.addRow("السنة الدراسية *",          self._school_year)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
 
@@ -266,12 +277,14 @@ class SettingsScreen(QWidget):
             f.setSpacing(10)
             f.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        self._price_ftour         = _field(placeholder="0.00")
-        self._price_ghada         = _field(placeholder="0.00")
-        self._price_asha          = _field(placeholder="0.00")
-        self._price_ftour_ramadan = _field(placeholder="0.00")
-        self._price_asha_ramadan  = _field(placeholder="0.00")
-        self._price_shour         = _field(placeholder="0.00")
+        # Narrow: two of these sit side by side, and at the default width
+        # their labels get squeezed out of existence entirely.
+        self._price_ftour         = _field(placeholder="0.00", min_width=220)
+        self._price_ghada         = _field(placeholder="0.00", min_width=220)
+        self._price_asha          = _field(placeholder="0.00", min_width=220)
+        self._price_ftour_ramadan = _field(placeholder="0.00", min_width=220)
+        self._price_asha_ramadan  = _field(placeholder="0.00", min_width=220)
+        self._price_shour         = _field(placeholder="0.00", min_width=220)
 
         left.addRow("ثمن الفطور",        self._price_ftour)
         left.addRow("ثمن الغداء",        self._price_ghada)
@@ -284,6 +297,22 @@ class SettingsScreen(QWidget):
         price_row.addSpacing(20)
         price_row.addLayout(right)
         grp.layout().addRow(price_row)  # type: ignore[union-attr]
+
+        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+    def _build_ramadan_section(self) -> None:
+        """Its own titled section — buried among the prices, these two dates
+        gave no clue what they were for."""
+        grp, form = _group(_GRP_RAMADAN)
+        self._ramadan_start = _field(placeholder="2026-02-18")
+        self._ramadan_end   = _field(placeholder="2026-03-19")
+        form.addRow("بداية رمضان", self._ramadan_start)
+        form.addRow("نهاية رمضان", self._ramadan_end)
+
+        hint = QLabel(_RAMADAN_HINT)
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;")
+        form.addRow(hint)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def _build_levels_section(self) -> None:
@@ -584,6 +613,7 @@ class SettingsScreen(QWidget):
         self._dir_prov.setText(s.direction_provinciale)
         self._gresa_code.setText(s.gresa_code)
         self._city.setText(s.city)
+        self._city_fr.setText(s.city_fr)
         self._school_year.setText(s.school_year)
         self._director.setText(s.director)
         self._gestionnaire.setText(s.gestionnaire)
@@ -598,6 +628,8 @@ class SettingsScreen(QWidget):
         self._price_asha.setText(s.price_asha)
         self._price_ftour_ramadan.setText(s.price_ftour_ramadan)
         self._price_asha_ramadan.setText(s.price_asha_ramadan)
+        self._ramadan_start.setText(s.ramadan_start)
+        self._ramadan_end.setText(s.ramadan_end)
         self._price_shour.setText(s.price_shour)
         self._load_level_preferences()
 
@@ -677,6 +709,7 @@ class SettingsScreen(QWidget):
             direction_provinciale=self._dir_prov.text().strip(),
             gresa_code=self._gresa_code.text().strip(),
             city=self._city.text().strip(),
+            city_fr=self._city_fr.text().strip(),
             academy=self._aref.text().strip(),
             director=self._director.text().strip(),
             school_year=self._school_year.text().strip(),
@@ -692,6 +725,8 @@ class SettingsScreen(QWidget):
             price_asha=self._price_asha.text().strip(),
             price_ftour_ramadan=self._price_ftour_ramadan.text().strip(),
             price_asha_ramadan=self._price_asha_ramadan.text().strip(),
+            ramadan_start=self._ramadan_start.text().strip(),
+            ramadan_end=self._ramadan_end.text().strip(),
             price_shour=self._price_shour.text().strip(),
         )
         try:

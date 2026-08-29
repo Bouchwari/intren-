@@ -24,7 +24,8 @@ class SchoolSettings:
     aref: str = ""                      # الأكاديمية الجهوية (AREF)
     direction_provinciale: str = ""     # المديرية الإقليمية
     gresa_code: str = ""                # رمز GRESA
-    city: str = ""                      # الجماعة / المدينة
+    city: str = ""                      # الجماعة / المدينة (Arabic)
+    city_fr: str = ""                   # Nom de la ville (French — used on bilingual documents)
     academy: str = ""                   # legacy — same concept as aref
     gestionnaire: str = ""              # مسير المصالح المادية والمالية
     surveillant_general: str = ""       # الحارس العام للداخلية
@@ -39,6 +40,10 @@ class SchoolSettings:
     price_asha: str = ""                # ثمن وجبة العشاء
     price_ftour_ramadan: str = ""       # ثمن فطور رمضان
     price_asha_ramadan: str = ""        # ثمن عشاء رمضان
+    # Ramadan period, ISO YYYY-MM-DD. Blank = the app behaves as if Ramadan
+    # were never configured. See core/ramadan.py for how days are classified.
+    ramadan_start: str = ""             # بداية رمضان
+    ramadan_end: str = ""               # نهاية رمضان
     price_shour: str = ""               # ثمن السحور
     id: Optional[int] = None
 
@@ -221,6 +226,11 @@ class DailyReport:
     ghada_present: int = 0
     asha_expected: int = 0
     asha_present: int = 0
+    # Ramadan meals — a day serves either these or the three above.
+    ftour_ramadan_expected: int = 0
+    ftour_ramadan_present: int = 0
+    shour_expected: int = 0
+    shour_present: int = 0
 
     # 3 — تتبع الوجبات المقدمة (meal quality) — 3-point scale: 0=ناقصة .. 2=جيدة
     quality_supplies: int = -1        # جودة السلع والتزود
@@ -256,6 +266,32 @@ class DailyReceptionRecord:
     ftour_qty: int = 0
     ghada_qty: int = 0
     asha_qty: int = 0
+    # Ramadan meals — a date serves either these or the three above.
+    ftour_ramadan_qty: int = 0
+    shour_qty: int = 0
+    remarks: str = ""
+    id: Optional[int] = None
+
+
+@dataclass
+class MonthlyReceptionRecord:
+    """محضر تسليم الخدمة الشهري — the month's collected reception
+    confirmation, signed by STEWARD + HEADMASTER + CONTRACTOR and sent to
+    المديرية الإقليمية together with monthly_expense_statement. One per
+    month (stored as "YYYY-MM").
+
+    Quantities default from that month's summed DailyReceptionRecord
+    totals — the actual-delivered confirmations, not contact_sheet's
+    ordered/estimated ones, since this document itself is a reception
+    confirmation — but are their own stored, independently-editable
+    snapshot, same guarantee as DailyReceptionRecord."""
+    month: str
+    ftour_qty: int = 0
+    ghada_qty: int = 0
+    asha_qty: int = 0
+    # Ramadan meals — a date serves either these or the three above.
+    ftour_ramadan_qty: int = 0
+    shour_qty: int = 0
     remarks: str = ""
     id: Optional[int] = None
 
@@ -319,25 +355,53 @@ class OrderItem:
     collegial: int = 0      # إعدادي count
     qualifying: int = 0     # تأهيلي count
     monitors: int = 0       # معلمو الداخلية count
+    # ابتدائي. Added 2026-08-28: this cycle was missing entirely, so every
+    # order letter asked the supplier for fewer meals than ورقة الاتصال had
+    # counted — short by exactly the primary count, every single day.
+    primary: int = 0
     id: Optional[int] = None
 
     @property
     def total(self) -> int:
-        return self.collegial + self.qualifying + self.monitors
+        return self.primary + self.collegial + self.qualifying + self.monitors
 
 
 @dataclass
-class Violation:
-    """One incident record in the disciplinary log (دفتر المخالفات)."""
-    date: str                   # YYYY-MM-DD
-    student_name: str           # full name (denormalised for fast display)
-    student_class: str = ""     # class/section
-    violation_type: str = ""    # predefined or free text
-    description: str = ""       # free text details
-    action_taken: str = ""      # disciplinary action
-    reported_by: str = ""       # staff member who reported it
-    student_id: Optional[int] = None   # FK → students.id (nullable)
+class InfractionRecord:
+    """محضر المخالفة — the official PV raised against the catering company
+    when a contractual breach is observed (annex 5 of the ministry's
+    procedural guide).
+
+    This is the ONLY kind of مخالفة the app records. An earlier student-
+    discipline log (دفتر المخالفات) existed by mistake — it came from a
+    misunderstanding at the very start of the project, the user confirmed
+    no such document exists in their job, and it was removed 2026-08-28.
+
+    The subject is the CONTRACTOR breaching the صفقة, and it is signed by the
+    company's representative plus the three-member follow-up committee. It
+    records what happened and computes NO money — any deduction is decided
+    elsewhere.
+
+    The school/commune/contract/company identity is not stored here; it is
+    read live from SchoolSettings when the document is produced, the same
+    way every other official document in this app does it.
+    """
+    date: str                    # تاريخ المخالفة — YYYY-MM-DD
+    document_number: int = 0     # sequential within its year → "2026/01"
+    year: int = 0                # the year the number belongs to
+    meal_type: str = ""          # وجبة المخالفة — ftour/ghada/asha/ramadan
+    place: str = ""              # مكان المخالفة — المطبخ / المخزن / المطعم
+    infraction_type: str = ""    # نوع المخالفة (short label)
+    description: str = ""        # تفاصيل الإخلال المرصود
+    reported_by: str = ""        # من عاين المخالفة
+    written_date: str = ""       # حرر المحضر بتاريخ — YYYY-MM-DD
+    created_at: str = ""
     id: Optional[int] = None
+
+    @property
+    def reference(self) -> str:
+        """The number as it is printed on the document: "2026/01"."""
+        return f"{self.year}/{self.document_number:02d}"
 
 
 @dataclass

@@ -9,7 +9,7 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from core.attendance_estimate import estimate_attendance
+from core.attendance_estimate import estimate_absence, estimate_attendance
 from core.models import DailyContact
 
 MEAL = "ghada"
@@ -118,3 +118,28 @@ class AttendanceEstimateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AbsenceEstimateFallbackTests(unittest.TestCase):
+    """estimate_absence delegates to estimate_attendance, whose no-history
+    fallback is "assume the whole roster came". That is right for attendance
+    and exactly backwards for absence: it declared EVERY student absent, so
+    التقرير اليومي then computed present = expected - absent = 0 and every
+    document downstream said nobody ate. Batch generation saved that silently
+    across a whole date range."""
+
+    def test_no_history_means_zero_absences_not_the_whole_roster(self) -> None:
+        roster = {"primary_full": 40, "primary_lunch": 10}
+        result = estimate_absence(roster, [], TARGET_DATE, MEAL)
+
+        self.assertEqual(result.counts, {"primary_full": 0, "primary_lunch": 0})
+        self.assertEqual(result.confidence, "low")
+        self.assertEqual(result.reason, "insufficient_history")
+
+    def test_a_real_estimate_is_still_produced_once_history_exists(self) -> None:
+        roster = {"primary_full": 40}
+        history = [_record(1, 4), _record(2, 2), _record(3, 3)]
+        result = estimate_absence(roster, history, TARGET_DATE, MEAL)
+
+        self.assertEqual(result.counts["primary_full"], 3)   # median of 4/2/3
+        self.assertEqual(result.reason, "estimated")

@@ -26,7 +26,7 @@ from config.settings import (
     COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL, COLOR_PANEL_ALT,
     COLOR_PAPER, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
-    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_IFTAR, MEAL_SHOUR, MEAL_LABELS,
     EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
@@ -41,6 +41,7 @@ from ui.batch_export import draw_placeholder_pdf_page
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
+from core.ramadan import meals_for_date
 from data.database import (
     get_day_contacts,
     get_all_students,
@@ -52,6 +53,7 @@ from data.database import (
     get_recent_contacts,
     get_recent_daily_contact_documents,
     get_school_settings,
+    get_ramadan_overrides,
     is_holiday,
     record_daily_contact_document,
     save_daily_contact_document_number_draft,
@@ -101,11 +103,26 @@ _CONTACT_TEMPLATE_FILE = "ورقة الاتصال  اليومية.docx"
 _WORD_FILTER = "Word (*.docx)"
 
 # Maps DB meal_type key to display label (using MEAL_LABELS from settings)
+# _MEAL_ORDER stays the three normal meals: the official ورقة الاتصال Word
+# template has exactly three meal columns and must not be restructured.
+# _CARD_MEAL_ORDER adds the two Ramadan meals, which the SCREEN offers on a
+# Ramadan day so the counts can be recorded even though the printed sheet
+# keeps its own fixed layout.
 _MEAL_ORDER: List[Tuple[str, str]] = [
     (MEAL_FTOUR, MEAL_LABELS[MEAL_FTOUR]),
     (MEAL_GHADA, MEAL_LABELS[MEAL_GHADA]),
     (MEAL_ASHA,  MEAL_LABELS[MEAL_ASHA]),
 ]
+
+_RAMADAN_MEAL_ORDER: List[Tuple[str, str]] = [
+    (MEAL_IFTAR, MEAL_LABELS[MEAL_IFTAR]),
+    (MEAL_SHOUR, MEAL_LABELS[MEAL_SHOUR]),
+]
+
+# Every meal gets a card; only the ones the selected date actually serves are
+# visible, so switching to a Ramadan day swaps the three normal cards for the
+# two Ramadan ones without rebuilding the layout.
+_CARD_MEAL_ORDER: List[Tuple[str, str]] = _MEAL_ORDER + _RAMADAN_MEAL_ORDER
 
 # Card accent colors per meal — same amber/teal/navy convention as the meal
 # program table (ui_design.md's per-meal accents), not this page's own guess.
@@ -113,6 +130,8 @@ _MEAL_COLORS = {
     MEAL_FTOUR: "#EF9F27",   # amber
     MEAL_GHADA: COLOR_ACCENT,
     MEAL_ASHA:  "#534AB7",   # navy
+    MEAL_IFTAR: "#C2703D",   # clay — matches meal_program_screen's Ramadan accent
+    MEAL_SHOUR: COLOR_ACCENT,
 }
 _PAGE_BG = COLOR_PAPER
 _PANEL_BG = COLOR_PANEL
@@ -277,7 +296,9 @@ def _write_daily_contact_docx(
                     document_number=document_number,
                     place=place,
                     school_year=school_year,
+                    meals=_meals_for_document(date_str),
                 )
+                _fix_contact_header_body_gap(root)
                 data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
             elif item.filename.startswith("word/header") and item.filename.endswith(".xml"):
                 root = ET.fromstring(data)
@@ -291,13 +312,37 @@ def _write_daily_contact_docx(
             target.writestr(item, data)
 
 
+def _force_arabswell_font(paragraph: ET.Element) -> None:
+    """The header's academy/directorate/school identity lines must
+    always render in "arabswell" (arabswell_1 — the real internal family
+    name of the bundled templets/maghribi-font 1.ttf, the project's own
+    official Arabic display font) — an explicit standing instruction
+    from the user, not just whatever font a hand-edited template
+    paragraph happens to currently carry."""
+    for run in paragraph.findall(".//w:r", _WORD_NS):
+        rPr = run.find("w:rPr", _WORD_NS)
+        if rPr is None:
+            rPr = ET.Element(f"{{{_W_NS}}}rPr")
+            run.insert(0, rPr)
+        rFonts = rPr.find("w:rFonts", _WORD_NS)
+        if rFonts is None:
+            rFonts = ET.SubElement(rPr, f"{{{_W_NS}}}rFonts")
+        rFonts.set(f"{{{_W_NS}}}cs", "arabswell_1")
+        rFonts.set(f"{{{_W_NS}}}hint", "cs")
+
+
 def _fill_contact_header_xml(
     root: ET.Element,
     *,
     academy: str,
     province: str,
     school_name: str,
-) -> None:
+) -> int:
+    """Returns how many header paragraphs were actually matched and
+    filled — callers that have their own fallback for "nothing matched"
+    (see daily_reception_screen.py's _write_reception_docx) use this to
+    only apply that fallback when it's actually needed, instead of
+    always overwriting whatever this function just filled."""
     identity_lines = [
         _academy_line(academy),
         _province_line(province),
@@ -312,7 +357,93 @@ def _fill_contact_header_xml(
             continue
         if text.startswith("الأكاديمية") or text.startswith("المديرية") or "الثانوية" in text or "المؤسسة" in text:
             _set_docx_text(paragraph, identity_lines[header_index % len(identity_lines)])
+            _force_arabswell_font(paragraph)
             header_index += 1
+    return header_index
+
+
+def _fix_contact_header_body_gap(root: ET.Element) -> None:
+    """Same fix as the one built for محضر التسلم اليومي's template
+    (see daily_reception_screen.py's _fix_reception_header_body_gap for
+    the full investigation) — this template's own page margins leave the
+    header zone (pgMar/@header, 1928 twentieths-of-a-pt) starting AFTER
+    the body zone (pgMar/@top, 1417) even begins — a NEGATIVE gap, worse
+    than reception's ~3pt one. The header's own academy/directorate/
+    school block still needs ~45-50pt to lay out. A pre-existing
+    template design issue, not something this app's data-filling
+    touched before — likely stayed unnoticed while the header's `pic:`
+    namespace bug (see `register_docx_namespaces()`, fixed) made that
+    header content fail to render at all; now that it renders, it needs
+    real room. Only raises the margin, never lowers an already-generous
+    one."""
+    pgMar = root.find(".//w:sectPr/w:pgMar", _WORD_NS)
+    if pgMar is None:
+        return
+    header_attr = f"{{{_W_NS}}}header"
+    top_attr = f"{{{_W_NS}}}top"
+    header_dist = pgMar.get(header_attr)
+    if header_dist is None:
+        return
+    needed_top = int(header_dist) + 1000  # ~50pt of room for the header's 3 text lines
+    current_top = int(pgMar.get(top_attr, "0"))
+    if current_top < needed_top:
+        pgMar.set(top_attr, str(needed_top))
+
+
+
+def _meals_for_document(date_str: str) -> List[Tuple[str, str]]:
+    """(meal key, Arabic label) for a document's own date — Ramadan's two or
+    the normal three. Both the Word and PDF writers call this so a printed
+    sheet always matches what the screen collected for that day."""
+    active = meals_for_date(date_str, get_school_settings(), get_ramadan_overrides())
+    labels = dict(_CARD_MEAL_ORDER)
+    return [(key, labels.get(key, key)) for key in active]
+
+
+def _trim_contact_table_to_meals(
+    table: ET.Element, meals: List[Tuple[str, str]]
+) -> None:
+    """Reshape the template's meal table to the day's actual meals.
+
+    The template is built for three meals: 7 grid columns — a label column
+    plus 3 × (كاملة, وجبة غذاء). A Ramadan day has two meals, so the user
+    asked for the same document with two columns instead of three. Extra
+    column pairs are removed from every row and from the table grid, and the
+    meal captions are rewritten to the day's own meals.
+    """
+    rows = table.findall("./w:tr", _WORD_NS)
+    if len(rows) < 8:
+        return
+
+    meal_count = len(meals)
+    data_columns = 1 + (meal_count * 2)   # label column + 2 per meal
+    span_attr = f"{{{_W_NS}}}val"
+
+    def drop_extra(row: ET.Element, keep: int) -> None:
+        cells = row.findall("./w:tc", _WORD_NS)
+        for extra in cells[keep:]:
+            row.remove(extra)
+
+    # Row 0 is one merged banner cell spanning the whole table.
+    banner = rows[0].find("./w:tc/w:tcPr/w:gridSpan", _WORD_NS)
+    if banner is not None:
+        banner.set(span_attr, str(data_columns))
+
+    # Row 1 holds the meal captions, one cell per meal (each spanning 2).
+    caption_cells = rows[1].findall("./w:tc", _WORD_NS)
+    for index, (_key, label) in enumerate(meals, start=1):
+        if index < len(caption_cells):
+            _set_cell_text(caption_cells[index], label)
+    drop_extra(rows[1], 1 + meal_count)
+
+    for row in rows[2:7]:                 # نوع المنحة + the four cycle rows
+        drop_extra(row, data_columns)
+    drop_extra(rows[7], 1 + meal_count)   # المجموع row mirrors the captions
+
+    grid = table.find("./w:tblGrid", _WORD_NS)
+    if grid is not None:
+        for extra in grid.findall("./w:gridCol", _WORD_NS)[data_columns:]:
+            grid.remove(extra)
 
 
 def _fill_contact_document_xml(
@@ -323,6 +454,7 @@ def _fill_contact_document_xml(
     document_number: str,
     place: str,
     school_year: str = "",
+    meals: Optional[List[Tuple[str, str]]] = None,
 ) -> None:
     number_text = document_number.strip() or "...."
     place_text = place.strip() or "..............."
@@ -343,13 +475,23 @@ def _fill_contact_document_xml(
     if len(rows) < 8:
         return
 
+    meals = meals or _MEAL_ORDER
+    if len(meals) != len(_MEAL_ORDER):
+        _trim_contact_table_to_meals(tables[0], meals)
+        rows = tables[0].findall("./w:tr", _WORD_NS)
+    else:
+        caption_cells = rows[1].findall("./w:tc", _WORD_NS)
+        for index, (_key, label) in enumerate(meals, start=1):
+            if index < len(caption_cells):
+                _set_cell_text(caption_cells[index], label)
+
     primary_cells = rows[3].findall("./w:tc", _WORD_NS)
     collegial_cells = rows[4].findall("./w:tc", _WORD_NS)
     qualifying_cells = rows[5].findall("./w:tc", _WORD_NS)
     monitors_cells = rows[6].findall("./w:tc", _WORD_NS)
     total_cells = rows[7].findall("./w:tc", _WORD_NS)
 
-    for meal_index, (meal_key, _) in enumerate(_MEAL_ORDER):
+    for meal_index, (meal_key, _) in enumerate(meals):
         contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
         first_col = 1 + (meal_index * 2)
         second_col = first_col + 1
@@ -467,6 +609,9 @@ def _draw_daily_contact_pdf_page(
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     contact_by_meal = {contact.meal_type: contact for contact in contacts}
     display_date = _format_doc_date(date_str)
+    # A Ramadan day prints two meal columns instead of three — same sheet,
+    # fewer columns, matching what the screen collected for that date.
+    meals = _meals_for_document(date_str)
     place_text = place.strip() or "..............."
     margin = 38.0
     content_w = page_w - (margin * 2)
@@ -501,7 +646,7 @@ def _draw_daily_contact_pdf_page(
     # made each row balloon to ~140pt for a single centered number.
     row_h = min(46.0, (table_h - header_rows_h) / n_data_rows)
     label_w = 130.0
-    meal_w = (table_w - label_w) / len(_MEAL_ORDER)
+    meal_w = (table_w - label_w) / len(meals)
     sub_w = meal_w / 2
     right = table_x + table_w
 
@@ -513,7 +658,7 @@ def _draw_daily_contact_pdf_page(
         text="", text_color="white", size=11, bold=True,
     )
     current_right = label_header.left()
-    for _, meal_label in _MEAL_ORDER:
+    for _, meal_label in meals:
         rect = QRectF(current_right - meal_w, table_y, meal_w, header_rows_h / 2)
         _draw_contact_pdf_cell(
             painter, rect,
@@ -531,7 +676,7 @@ def _draw_daily_contact_pdf_page(
         text="الفئة", text_color="white", size=10, bold=True,
     )
     current_right = label_subheader.left()
-    for _ in _MEAL_ORDER:
+    for _ in meals:
         for sub_label in (_LBL_GRANTED, _LBL_COMPLEMENT):
             rect = QRectF(current_right - sub_w, sub_y, sub_w, header_rows_h / 2)
             _draw_contact_pdf_cell(
@@ -551,7 +696,7 @@ def _draw_daily_contact_pdf_page(
             text=row_label, text_color=COLOR_TEXT_PRIMARY, size=11, bold=True,
         )
         current_right = label_rect.left()
-        for meal_key, _ in _MEAL_ORDER:
+        for meal_key, _ in meals:
             contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
             for field_name in (granted_field, complement_field):
                 rect = QRectF(current_right - sub_w, row_y, sub_w, row_h)
@@ -571,7 +716,7 @@ def _draw_daily_contact_pdf_page(
         text=_LBL_TOTAL, text_color="white", size=11, bold=True,
     )
     current_right = total_label_rect.left()
-    for meal_key, _ in _MEAL_ORDER:
+    for meal_key, _ in meals:
         contact = contact_by_meal.get(meal_key) or DailyContact(date="", meal_type=meal_key)
         rect = QRectF(current_right - meal_w, total_y, meal_w, row_h)
         _draw_contact_pdf_cell(
@@ -933,7 +1078,10 @@ def _counts_to_contacts(date_str: str, counts: Dict[str, Dict[str, int]]) -> Lis
     collegial = counts.get("collegial", {})
     qualifying = counts.get("qualifying", {})
     monitors = counts.get("monitors", {})
-    return [
+    # Only the day's own meals are saved — a normal day must not get Ramadan
+    # rows, and a Ramadan day must not get normal ones.
+    active = {key for key, _label in _meals_for_document(date_str)}
+    rows = [
         DailyContact(
             date=date_str, meal_type=MEAL_FTOUR,
             primary_granted=primary.get("full", 0),
@@ -955,7 +1103,24 @@ def _counts_to_contacts(date_str: str, counts: Dict[str, Dict[str, int]]) -> Lis
             qualifying_granted=qualifying.get("full", 0),
             monitors=monitors.get("full", 0),
         ),
+        # Ramadan. إفطار carries the وجبة غذاء students too: during Ramadan
+        # there is no غداء, and إفطار is the single meal those students get.
+        DailyContact(
+            date=date_str, meal_type=MEAL_IFTAR,
+            primary_granted=primary.get("full", 0), primary_complement=primary.get("lunch", 0),
+            collegial_granted=collegial.get("full", 0), collegial_complement=collegial.get("lunch", 0),
+            qualifying_granted=qualifying.get("full", 0), qualifying_complement=qualifying.get("lunch", 0),
+            monitors=monitors.get("full", 0), monitors_complement=monitors.get("lunch", 0),
+        ),
+        DailyContact(
+            date=date_str, meal_type=MEAL_SHOUR,
+            primary_granted=primary.get("full", 0),
+            collegial_granted=collegial.get("full", 0),
+            qualifying_granted=qualifying.get("full", 0),
+            monitors=monitors.get("full", 0),
+        ),
     ]
+    return [row for row in rows if row.meal_type in active]
 
 
 def _unflatten_counts(roster: Dict[str, int]) -> Dict[str, Dict[str, int]]:
@@ -1030,6 +1195,12 @@ class DailyContactScreen(QWidget):
         self._auto_mode = False
         self._toast: QLabel | None = None
         self._build_ui()
+        # Picking a date from the calendar must load THAT date. Without this
+        # the numbers stayed on whatever day was loaded before, and an
+        # export then produced a document stamped with the new date but
+        # carrying the previous day's figures. Connected last, so it never
+        # fires while the widgets are still being built.
+        self._date_edit.dateChanged.connect(self._load_selected)
 
     def refresh(self) -> None:
         if not getattr(self, "_loaded_once", False):
@@ -1185,6 +1356,7 @@ class DailyContactScreen(QWidget):
 
         self._sync_document_number(force=True)
         self._date_edit.dateChanged.connect(self._sync_document_number)
+        self._date_edit.dateChanged.connect(self._apply_meal_visibility)
         self._number_edit.textChanged.connect(self._remember_document_number)
         return panel
 
@@ -1285,7 +1457,7 @@ class DailyContactScreen(QWidget):
         row.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignTop
         )
-        for index, (meal_key, meal_label) in enumerate(_MEAL_ORDER):
+        for index, (meal_key, meal_label) in enumerate(_CARD_MEAL_ORDER):
             card = _MealCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
             self._cards[meal_key] = card
             row.addWidget(
@@ -1411,9 +1583,26 @@ class DailyContactScreen(QWidget):
         self._set_document_number(next_number_text, auto=True)
         save_daily_contact_document_number_draft(self._selected_date_str(), next_number)
 
+    def _active_meals(self) -> List[str]:
+        """The meal types the selected date actually serves — Ramadan's two
+        or the normal three, decided centrally in core.ramadan so every
+        screen and document agrees."""
+        return meals_for_date(
+            self._selected_date_str(), get_school_settings(), get_ramadan_overrides())
+
+    def _apply_meal_visibility(self) -> None:
+        """Show only the cards for the selected date's meals."""
+        active = set(self._active_meals())
+        for meal_key, card in self._cards.items():
+            card.setVisible(meal_key in active)
+
     def _current_contacts(self) -> List[DailyContact]:
+        """Only the day's own meals are saved — a normal day must not write
+        empty Ramadan rows, and a Ramadan day must not write normal ones."""
         date_str = self._selected_date_str()
-        return [card.to_contact(date_str) for _, card in self._cards.items()]
+        active = set(self._active_meals())
+        return [card.to_contact(date_str)
+                for meal_key, card in self._cards.items() if meal_key in active]
 
     def _on_mode_changed(self, auto: bool) -> None:
         self._auto_mode = auto
@@ -1508,6 +1697,20 @@ class DailyContactScreen(QWidget):
             monitors.get("full", 0), monitors.get("lunch", 0),
         )
         self._cards[MEAL_ASHA].set_counts(
+            primary.get("full", 0), 0,
+            collegial.get("full", 0), 0,
+            qualifying.get("full", 0), 0,
+            monitors.get("full", 0), 0,
+        )
+        # Ramadan cards — hidden on a normal day, but filled the same way so
+        # "تلقائي" produces real numbers on a Ramadan day too.
+        self._cards[MEAL_IFTAR].set_counts(
+            primary.get("full", 0), primary.get("lunch", 0),
+            collegial.get("full", 0), collegial.get("lunch", 0),
+            qualifying.get("full", 0), qualifying.get("lunch", 0),
+            monitors.get("full", 0), monitors.get("lunch", 0),
+        )
+        self._cards[MEAL_SHOUR].set_counts(
             primary.get("full", 0), 0,
             collegial.get("full", 0), 0,
             qualifying.get("full", 0), 0,

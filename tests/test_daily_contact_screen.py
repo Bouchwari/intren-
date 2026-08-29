@@ -15,9 +15,13 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from core.models import DailyContact, Student
+from config.settings import (
+    MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA, MEAL_IFTAR, MEAL_SHOUR,
+)
+from core.models import DailyContact, SchoolSettings, Student
 from data import database
 from ui import daily_contact_screen
+from ui import daily_contact_screen as dcs
 
 
 class DailyContactDocumentTests(unittest.TestCase):
@@ -310,6 +314,31 @@ class DailyContactDocumentTests(unittest.TestCase):
         self.assertEqual(rows[6], ["معلمو الداخلية", "7", "8", "70", "80", "700", "800"])
         self.assertEqual(rows[7], ["المجموع", "36", "360", "3600"])
 
+    def test_header_body_gap_is_widened_a_modest_safety_amount(self) -> None:
+        """Regression: this template's own page margins put the body zone
+        (pgMar/@top) BEFORE the header zone (pgMar/@header) even starts —
+        a negative gap, worse than محضر التسلم اليومي's ~3pt version of
+        the same pre-existing template design issue. The header's own
+        3-line academy/directorate/school block needs ~45-50pt to lay
+        out without colliding with the body's first paragraph."""
+        contacts = [DailyContact(date="2026-06-11", meal_type=m) for m in ("ftour", "ghada", "asha")]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out = Path(tmp_dir) / "daily_contact.docx"
+            daily_contact_screen._write_daily_contact_docx(
+                out, "2026-06-11", contacts,
+                document_number="1", place="تنغير", academy="درعة تافيلالت",
+                province="تنغير", school_name="الثانوية الإعدادية المدون",
+            )
+            with ZipFile(out) as z:
+                root = ET.fromstring(z.read("word/document.xml"))
+
+        W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        pg_mar = root.find(f".//{W}sectPr/{W}pgMar")
+        header_dist = int(pg_mar.get(f"{W}header"))
+        top_margin = int(pg_mar.get(f"{W}top"))
+        gap_pt = (top_margin - header_dist) / 20
+        self.assertGreaterEqual(gap_pt, 20)
+
     def _docx_paragraphs(self, path: Path) -> list[str]:
         ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
         with ZipFile(path) as docx:
@@ -344,5 +373,176 @@ class DailyContactDocumentTests(unittest.TestCase):
         ]
 
 
+class DailyContactRamadanTests(unittest.TestCase):
+    """During Ramadan the school serves إفطار + سحور instead of the three
+    normal meals, so this screen must collect and save those instead."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._original_db_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "test_matama.db"
+        database.init_database()
+        database.save_school_settings(SchoolSettings(
+            school_name="ثانوية اختبار", school_year="2025/2026", director="مدير",
+            ramadan_start="2026-02-18", ramadan_end="2026-03-19",
+        ))
+
+    def tearDown(self) -> None:
+        database.DB_PATH = self._original_db_path
+        self._tmpdir.cleanup()
+
+    def _screen_on(self, year: int, month: int, day: int):
+        screen = dcs.DailyContactScreen()
+        screen.show()
+        screen._date_edit.setDate(QDate(year, month, day))
+        self.app.processEvents()
+        return screen
+
+    def test_normal_day_shows_and_saves_the_three_normal_meals(self) -> None:
+        screen = self._screen_on(2026, 1, 15)
+        visible = [k for k, c in screen._cards.items() if c.isVisible()]
+        self.assertEqual(visible, [MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA])
+        self.assertEqual(
+            [c.meal_type for c in screen._current_contacts()],
+            [MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA])
+        screen.close()
+
+    def test_ramadan_day_swaps_to_iftar_and_shour(self) -> None:
+        screen = self._screen_on(2026, 3, 1)
+        visible = [k for k, c in screen._cards.items() if c.isVisible()]
+        self.assertEqual(visible, [MEAL_IFTAR, MEAL_SHOUR])
+        # A Ramadan day must not write empty normal-meal rows either.
+        self.assertEqual(
+            [c.meal_type for c in screen._current_contacts()],
+            [MEAL_IFTAR, MEAL_SHOUR])
+        screen.close()
+
+    def test_a_day_override_flips_the_meal_set(self) -> None:
+        """The moon sighting can move Ramadan by a day, so a single-day
+        correction has to change which meals the screen collects."""
+        database.set_ramadan_override("2026-03-20", True)   # just after the range
+        screen = self._screen_on(2026, 3, 20)
+        self.assertEqual(
+            [c.meal_type for c in screen._current_contacts()],
+            [MEAL_IFTAR, MEAL_SHOUR])
+        screen.close()
+
+    def test_ramadan_counts_round_trip_through_the_database(self) -> None:
+        screen = self._screen_on(2026, 3, 1)
+        screen._cards[MEAL_IFTAR]._cg.setValue(42)
+        for contact in screen._current_contacts():
+            database.save_daily_contact(contact)
+        saved = {c.meal_type: c for c in database.get_day_contacts("2026-03-01")}
+        self.assertIn(MEAL_IFTAR, saved)
+        self.assertEqual(saved[MEAL_IFTAR].collegial_granted, 42)
+        self.assertNotIn(MEAL_GHADA, saved)
+        screen.close()
+
+
+    def test_word_sheet_prints_two_meal_columns_during_ramadan(self) -> None:
+        """The user asked for the SAME official sheet with two columns
+        instead of three on a Ramadan day, so the template's 7-column meal
+        table is trimmed to 5 rather than replaced."""
+        out = Path(self._tmpdir.name) / "ramadan.docx"
+        dcs._write_daily_contact_docx(
+            out, "2026-03-01",
+            [DailyContact(date="2026-03-01", meal_type=m, collegial_granted=7)
+             for m in (MEAL_IFTAR, MEAL_SHOUR)],
+            document_number="2", place="ألمدون",
+        )
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        with ZipFile(out) as docx:
+            table = ET.fromstring(docx.read("word/document.xml")).findall(".//w:tbl", ns)[0]
+        rows = table.findall("./w:tr", ns)
+
+        def texts(row):
+            return ["".join(t.text or "" for t in c.findall(".//w:t", ns)).strip()
+                    for c in row.findall("./w:tc", ns)]
+
+        self.assertEqual(texts(rows[1]), ["", "إفطار", "سحور"])
+        self.assertEqual(len(rows[3].findall("./w:tc", ns)), 5)   # label + 2 meals x 2
+        self.assertEqual(
+            len(table.find("./w:tblGrid", ns).findall("./w:gridCol", ns)), 5)
+        # The recorded counts still land in the right cells.
+        self.assertEqual(texts(rows[4]), ["الإعدادي", "7", "0", "7", "0"])
+
+    def test_word_sheet_keeps_three_columns_on_a_normal_day(self) -> None:
+        out = Path(self._tmpdir.name) / "normal.docx"
+        dcs._write_daily_contact_docx(
+            out, "2026-01-15",
+            [DailyContact(date="2026-01-15", meal_type=m, collegial_granted=10)
+             for m in (MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA)],
+            document_number="1", place="ألمدون",
+        )
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        with ZipFile(out) as docx:
+            table = ET.fromstring(docx.read("word/document.xml")).findall(".//w:tbl", ns)[0]
+        rows = table.findall("./w:tr", ns)
+        self.assertEqual(len(rows[3].findall("./w:tc", ns)), 7)
+        self.assertEqual(
+            len(table.find("./w:tblGrid", ns).findall("./w:gridCol", ns)), 7)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class DateChangeReloadsTests(unittest.TestCase):
+    """Picking a date from the calendar must load THAT date's saved numbers.
+    The prev/next buttons always reloaded, but changing the date directly did
+    not — so an export produced a document stamped with the new date while
+    carrying the previously-loaded day's figures."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._original_db_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "test_matama.db"
+        database.init_database()
+
+    def tearDown(self) -> None:
+        database.DB_PATH = self._original_db_path
+        self._tmpdir.cleanup()
+
+    def test_changing_the_date_loads_that_dates_numbers(self) -> None:
+        database.save_daily_contact(DailyContact(
+            date="2026-05-11", meal_type=dcs.MEAL_GHADA, collegial_granted=40))
+        database.save_daily_contact(DailyContact(
+            date="2026-05-12", meal_type=dcs.MEAL_GHADA, collegial_granted=17))
+
+        screen = dcs.DailyContactScreen()
+        screen.show()
+        screen._date_edit.setDate(QDate(2026, 5, 11))
+        self.app.processEvents()
+        self.assertEqual(
+            screen._cards[dcs.MEAL_GHADA].to_contact("2026-05-11").grand_total, 40)
+
+        # ...and switching again must not leave the first day's numbers behind
+        screen._date_edit.setDate(QDate(2026, 5, 12))
+        self.app.processEvents()
+        self.assertEqual(
+            screen._cards[dcs.MEAL_GHADA].to_contact("2026-05-12").grand_total, 17)
+        screen.close()
+
+    def test_moving_to_a_date_with_no_data_clears_the_previous_day(self) -> None:
+        """The worst case: stale numbers exported under a fresh date."""
+        database.save_daily_contact(DailyContact(
+            date="2026-05-11", meal_type=dcs.MEAL_GHADA, collegial_granted=40))
+
+        screen = dcs.DailyContactScreen()
+        screen.show()
+        screen._date_edit.setDate(QDate(2026, 5, 11))
+        self.app.processEvents()
+        screen._date_edit.setDate(QDate(2026, 5, 20))   # nothing saved here
+        self.app.processEvents()
+
+        self.assertEqual(
+            screen._cards[dcs.MEAL_GHADA].to_contact("2026-05-20").grand_total, 0)
+        screen.close()

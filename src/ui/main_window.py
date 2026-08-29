@@ -24,11 +24,12 @@ from ui.daily_contact_screen import DailyContactScreen
 from ui.daily_reception_screen import DailyReceptionScreen
 from ui.daily_report_screen import DailyReportScreen
 from ui.dashboard_screen import DashboardScreen
-from ui.expense_statement_screen import ExpenseStatementScreen
-from ui.incident_log_screen import IncidentLogScreen
+from ui.infraction_record_screen import InfractionRecordScreen
 from ui.meal_program_screen import MealProgramScreen
+from ui.monthly_reception_screen import MonthlyReceptionScreen
 from ui.monthly_report_screen import MonthlyReportScreen
 from ui.order_letter_screen import OrderLetterScreen
+from ui.quarterly_reception_screen import QuarterlyReceptionScreen
 from ui.students_screen import StudentsScreen
 from ui.settings_screen import SettingsScreen
 from ui.widgets.icon_button import IconButton
@@ -46,10 +47,11 @@ _NAV_ITEMS: list[tuple[str, str, int]] = [
     ("✉️", "رسالة الطلبية",         6),
     ("📄", "التقرير اليومي",        7),
     ("🧾", "محضر التسلم اليومي",    8),
-    ("📊", "المحضر الشهري",         9),
-    ("💰", "بيان المصاريف",         10),
-    ("📕", "دفتر المخالفات",        11),
-    ("⚙️", "الإعدادات",            12),
+    ("📚", "محضر التسلم الشهري",    9),
+    ("📜", "الوثائق الفصلية",       10),
+    ("📊", "الملخص الشهري",         11),
+    ("⚖️", "محضر المخالفة",         12),
+    ("⚙️", "الإعدادات",            13),
 ]
 
 _SIDEBAR_WIDTH = 235
@@ -62,6 +64,11 @@ _MENU_HIDE = "إخفاء الصفحات"
 _MENU_SHOW = "إظهار الصفحات"
 _MENU_ICON = "☰"
 _MEAL_PROGRAM_INDEX = 3
+# The sidebar button that gets a live student count appended. Looked up by
+# LABEL, not position: it used to be a hardcoded index that pointed one button
+# too high, so the live count overwrote الإحصائيات and the dashboard appeared
+# to rename itself to "لائحة التلاميذ".
+_STUDENTS_NAV_LABEL = "لائحة التلاميذ"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -195,19 +202,20 @@ class MainWindow(QMainWindow):
         # Index 2 — Students
         self._stack.addWidget(StudentsScreen())                         # 2
 
-        # Indices 3-11 — mix of built and placeholder screens
+        # Indices 3-12 — mix of built and placeholder screens
         self._stack.addWidget(MealProgramScreen())                          # 3 — built
         self._stack.addWidget(DailyContactScreen())                         # 4 — built
         self._stack.addWidget(DailyAbsenceScreen())                          # 5 — built
         self._stack.addWidget(OrderLetterScreen())                            # 6 — built
         self._stack.addWidget(DailyReportScreen())                           # 7 — built
         self._stack.addWidget(DailyReceptionScreen())                         # 8 — built
-        self._stack.addWidget(MonthlyReportScreen())                          # 9 — built
-        self._stack.addWidget(ExpenseStatementScreen())                       # 10 — built
-        self._stack.addWidget(IncidentLogScreen())                            # 11 — built
+        self._stack.addWidget(MonthlyReceptionScreen())                       # 9 — built
+        self._stack.addWidget(QuarterlyReceptionScreen())                     # 10 — built
+        self._stack.addWidget(MonthlyReportScreen())                          # 11 — built
+        self._stack.addWidget(InfractionRecordScreen())                       # 12 — built
 
-        # Index 12 — Settings
-        self._stack.addWidget(SettingsScreen())                         # 12
+        # Index 13 — Settings
+        self._stack.addWidget(SettingsScreen())                         # 13
 
         return self._stack
 
@@ -232,7 +240,10 @@ class MainWindow(QMainWindow):
             from data.database import get_student_counts
             counts = get_student_counts()
             total = counts.get("total", 0)
-            self._nav_buttons[1].setText(f"لائحة التلاميذ ({total})")
+            for position, (_icon, label, _index) in enumerate(_NAV_ITEMS):
+                if label == _STUDENTS_NAV_LABEL:
+                    self._nav_buttons[position].setText(f"{label} ({total})")
+                    break
         except Exception:
             _LOGGER.exception("Failed to refresh sidebar student count")
 

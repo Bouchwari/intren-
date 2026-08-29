@@ -21,6 +21,9 @@ matama_dist_before_*.db
 src/data/app.db
 *.db
 *.db.backup
+# Timestamped safety copies taken before a data cleanup — these are full
+# copies of the REAL database and carry real pupils' names. Never commit.
+*.db.backup-*
 *.db-journal
 *.db-wal
 *.db-shm

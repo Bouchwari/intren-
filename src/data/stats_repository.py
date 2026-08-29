@@ -67,7 +67,10 @@ class MonthSummary:
     ghada_total:      int   = 0
     asha_total:       int   = 0
     absence_total:    int   = 0
-    violations_count: int   = 0
+    # محضر المخالفة raised against the CATERING COMPANY this month. There is
+    # no student-discipline equivalent — that screen was a misunderstanding
+    # from the project's first days and was removed 2026-08-28.
+    infractions_count: int  = 0
     attendance_rate:  float = 0.0   # % present out of (present + absent)
 
 
@@ -131,9 +134,9 @@ def fetch_month_summary(year: int, month: int) -> MonthSummary:
             WHERE strftime('%Y-%m', date) = ?
         """, (month_str,)).fetchone()
 
-        violations_row = con.execute("""
-            SELECT COUNT(*) AS violations_count
-            FROM violations
+        infractions_row = con.execute("""
+            SELECT COUNT(*) AS infractions_count
+            FROM infraction_records
             WHERE strftime('%Y-%m', date) = ?
         """, (month_str,)).fetchone()
 
@@ -149,7 +152,7 @@ def fetch_month_summary(year: int, month: int) -> MonthSummary:
         ghada_total      = row["ghada_total"] or 0,
         asha_total       = row["asha_total"]  or 0,
         absence_total    = absence,
-        violations_count = violations_row["violations_count"] or 0,
+        infractions_count = infractions_row["infractions_count"] or 0,
         attendance_rate  = round(total / present_plus_absent * 100, 1) if present_plus_absent > 0 else 0.0,
     )
 

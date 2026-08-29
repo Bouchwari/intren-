@@ -78,6 +78,8 @@ _PDF_SAVED_OK     = "تم تحميل القائمة بصيغة PDF بنجاح."
 _PDF_DEFAULT_NAME = "قائمة_البرنامج_الغذائي"
 _EMPTY_MENU_CELL  = "—"
 _HISTORY_LABEL    = "سجل البرامج الأسبوعية"
+_HISTORY_CURRENT = "(مفتوح حاليا)"
+_PANEL_WIDTH = 306
 _BTN_COPY_PROGRAM = "نسخ إلى البرنامج الحالي"
 _BTN_COPY_PROGRAM_ICON = "📋"
 _MSG_COPY_TITLE     = "نسخ البرنامج"
@@ -254,7 +256,11 @@ class MealProgramScreen(QWidget):
         self._current_index: int = -1
         self._is_dirty: bool = False
         self._loading_grid: bool = False
-        self._program_panel_visible: bool = False
+        # Open by default: the panel holds the program list, the history,
+        # "نسخ من برنامج سابق" AND the save button, so starting it closed
+        # left the user typing a week's menu with no visible way to save it
+        # — and no sign that program history or copying existed at all.
+        self._program_panel_visible: bool = True
         self._ramadan_mode: bool = False
         self._build_ui()
         self._load_programs()
@@ -339,12 +345,25 @@ class MealProgramScreen(QWidget):
         self._panel_toggle_btn.setText(_PANEL_HIDE if self._program_panel_visible else _PANEL_SHOW)
 
     def refresh(self) -> None:
-        """Open this page in focus mode so the full week has maximum space."""
-        self._set_program_panel_visible(False)
+        """Deliberately does nothing.
+
+        This screen owns all its own data — programs are created, renamed and
+        deleted here and nowhere else — so there is nothing to re-read when the
+        page is reopened, and reloading would throw away edits the user had not
+        saved yet.
+
+        It used to force the side panel CLOSED on every visit. That panel holds
+        the program list, the history, "نسخ من برنامج سابق" and the save button,
+        so the effect was a user who could type a whole week's menu with no
+        visible way to save it, and no sign the history/copy features existed.
+        The panel's open/closed state is the user's own choice now — the header
+        toggle still collapses it for a full-width view of the week.
+        """
+        return
 
     def _build_control_panel(self) -> QWidget:
         panel = _card("mealControlPanel", background="white", border=_PANEL_BORDER, radius=26)
-        panel.setFixedWidth(306)
+        panel.setFixedWidth(_PANEL_WIDTH)
         panel.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         outer = QVBoxLayout(panel)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -363,6 +382,9 @@ class MealProgramScreen(QWidget):
 
         content = QWidget()
         content.setStyleSheet("background:transparent;")
+        # The panel is a fixed 306px; nothing inside may ask for more, or the
+        # scroll area (horizontal bar off) silently clips it.
+        content.setMaximumWidth(_PANEL_WIDTH - 12)
         layout = QVBoxLayout(content)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(8)
@@ -414,8 +436,15 @@ class MealProgramScreen(QWidget):
         layout.addWidget(self._make_panel_label(_HISTORY_LABEL))
         self._history_list = QListWidget()
         self._history_list.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        # "name — أسبوع 17 - 23 غشت 2026" is far longer than a bare name, and
+        # a QListWidget sizes itself to its widest item: without wrapping, the
+        # long lines pushed the whole panel wider than its fixed 306px and
+        # every label in it got clipped at the left edge.
+        self._history_list.setWordWrap(True)
+        self._history_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._history_list.setMinimumHeight(70)
-        self._history_list.setMaximumHeight(120)
+        self._history_list.setMaximumHeight(190)
         self._history_list.setStyleSheet(f"""
             QListWidget {{
                 background:white; border:1px solid #E4E1D8; border-radius:14px;
@@ -725,15 +754,23 @@ class MealProgramScreen(QWidget):
 
     def _load_history(self, programs: List[MealProgram]) -> None:
         """Every saved program, so past weeks stay one click away — this
-        list is also the source picker for "copy to current program"."""
+        list is also the source picker for "copy to current program".
+
+        NEWEST FIRST, unlike the dropdown: get_all_programs() returns oldest
+        first to match the "برنامج 1/2/3" naming, but this list is short and
+        the whole point of it is reaching a RECENT week, which would
+        otherwise sit below the fold.
+        """
         self._history_list.clear()
-        for p in programs:
+        current_id = self._current_program.id if self._current_program else None
+        for p in reversed(programs):
             icon = "☾ " if p.is_ramadan else ""
             # ‎ (LTR mark) stops Qt's bidi algorithm from reordering the
             # hyphen-separated date segments inside this RTL list (it was
             # showing 2026-07-30 as "30-07-2026" without this).
             when = f"  —  ‎{p.created_at}" if p.created_at else ""
-            item = QListWidgetItem(f"{icon}{p.name}{when}")
+            here = f"   {_HISTORY_CURRENT}" if p.id is not None and p.id == current_id else ""
+            item = QListWidgetItem(f"{icon}{p.name}{when}{here}")
             item.setData(Qt.ItemDataRole.UserRole, p)
             self._history_list.addItem(item)
 
@@ -1144,6 +1181,9 @@ class MealProgramScreen(QWidget):
             if current_idx >= 0:
                 label = f"{'☾ ' if self._ramadan_mode else ''}{self._current_program.name}"
                 self._prog_combo.setItemText(current_idx, label)
+            # The history list carries the same ☾ badge and name, so it goes
+            # stale too if only the dropdown is updated.
+            self._load_history(get_all_programs())
             QMessageBox.information(self, "تم", _SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")

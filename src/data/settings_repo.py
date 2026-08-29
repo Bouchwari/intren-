@@ -15,13 +15,14 @@ def save_school_settings(s: SchoolSettings) -> None:
         conn.execute("""
             INSERT INTO school_settings (
                 id, school_name, school_name_fr, aref, direction_provinciale,
-                gresa_code, city, academy, director, school_year,
+                gresa_code, city, city_fr, academy, director, school_year,
                 gestionnaire, surveillant_general,
                 contract_number, contract_object, supplier_name,
                 company_name, supplier_address,
                 price_ftour, price_ghada, price_asha,
-                price_ftour_ramadan, price_asha_ramadan, price_shour
-            ) VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                price_ftour_ramadan, price_asha_ramadan, price_shour,
+                ramadan_start, ramadan_end
+            ) VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
                 school_name=excluded.school_name,
                 school_name_fr=excluded.school_name_fr,
@@ -29,6 +30,7 @@ def save_school_settings(s: SchoolSettings) -> None:
                 direction_provinciale=excluded.direction_provinciale,
                 gresa_code=excluded.gresa_code,
                 city=excluded.city,
+                city_fr=excluded.city_fr,
                 academy=excluded.academy,
                 director=excluded.director,
                 school_year=excluded.school_year,
@@ -44,15 +46,18 @@ def save_school_settings(s: SchoolSettings) -> None:
                 price_asha=excluded.price_asha,
                 price_ftour_ramadan=excluded.price_ftour_ramadan,
                 price_asha_ramadan=excluded.price_asha_ramadan,
-                price_shour=excluded.price_shour
+                price_shour=excluded.price_shour,
+                ramadan_start=excluded.ramadan_start,
+                ramadan_end=excluded.ramadan_end
         """, (
             s.school_name, s.school_name_fr, s.aref, s.direction_provinciale,
-            s.gresa_code, s.city, s.academy, s.director, s.school_year,
+            s.gresa_code, s.city, s.city_fr, s.academy, s.director, s.school_year,
             s.gestionnaire, s.surveillant_general,
             s.contract_number, s.contract_object, s.supplier_name,
             s.company_name, s.supplier_address,
             s.price_ftour, s.price_ghada, s.price_asha,
             s.price_ftour_ramadan, s.price_asha_ramadan, s.price_shour,
+            s.ramadan_start, s.ramadan_end,
         ))
 
 
@@ -76,6 +81,7 @@ def get_school_settings() -> Optional[SchoolSettings]:
         direction_provinciale=_r("direction_provinciale"),
         gresa_code=_r("gresa_code"),
         city=_r("city"),
+        city_fr=_r("city_fr"),
         academy=_r("academy"),
         director=_r("director"),
         school_year=_r("school_year"),
@@ -91,6 +97,8 @@ def get_school_settings() -> Optional[SchoolSettings]:
         price_asha=_r("price_asha"),
         price_ftour_ramadan=_r("price_ftour_ramadan"),
         price_asha_ramadan=_r("price_asha_ramadan"),
+        ramadan_start=_r("ramadan_start"),
+        ramadan_end=_r("ramadan_end"),
         price_shour=_r("price_shour"),
     )
 

@@ -93,7 +93,21 @@ def estimate_absence(
     full/lunch), so the same median-historical-rate logic applies directly:
     "usually ~3 من 45 قسم إعدادي غائبون على الغذاء يوم الاثنين", not a
     random number."""
-    return estimate_attendance(active_roster, history, target_date, meal)  # type: ignore[arg-type]
+    result = estimate_attendance(active_roster, history, target_date, meal)  # type: ignore[arg-type]
+    if result.reason == "insufficient_history":
+        # estimate_attendance falls back to "assume the whole roster came",
+        # which is the right default for ATTENDANCE and exactly backwards
+        # here — it would declare every single student absent, and every
+        # document downstream would then report that nobody ate. Fall back to
+        # zero absences instead, which is what the absence screen's own
+        # "تم عرض 0 غياب" note has always promised the user.
+        return EstimateResult(
+            counts={category: 0 for category in active_roster},
+            confidence=result.confidence,
+            records_used=result.records_used,
+            reason=result.reason,
+        )
+    return result
 
 
 def _matching_records(
