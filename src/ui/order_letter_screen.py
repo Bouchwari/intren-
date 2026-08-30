@@ -267,7 +267,6 @@ def _generate_letter_html(
     dir_prov     = s.direction_provinciale if s else "—"
     city         = s.city if s else "—"
     director     = s.director if s else "—"
-    supplier     = s.supplier_name if s else "—"
     company      = s.company_name if s else "—"
     supplier_addr= s.supplier_address if s else "—"
     contract_num = s.contract_number if s else "—"
@@ -456,9 +455,7 @@ def _draw_order_letter_pdf_page(
     _write_order_letter_docx, which fills the same fields into the
     actual template."""
     s = settings
-    supplier = (s.supplier_name if s else "") or ""
-    company = (s.company_name if s else "") or ""
-    supplier_line = " — ".join(part for part in (supplier, company) if part) or "—"
+    supplier_line = ((s.company_name if s else "") or "").strip() or "—"
     city = (s.city if s else "") or "—"
     school_year = (s.school_year if s else "") or "—"
     # "-" gets visually reordered inside RTL text by Qt's bidi algorithm;
@@ -748,9 +745,7 @@ def _write_order_letter_docx(
     path.parent.mkdir(parents=True, exist_ok=True)
     s = settings
     school_year = (s.school_year if s else "") or "—"
-    supplier = (s.supplier_name if s else "") or ""
-    company = (s.company_name if s else "") or ""
-    supplier_line = " — ".join(part for part in (supplier, company) if part) or "—"
+    supplier_line = ((s.company_name if s else "") or "").strip() or "—"
     place = (s.city if s else "") or "—"
     display_date = letter_date.replace("-", "/")
 

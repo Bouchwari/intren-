@@ -229,7 +229,7 @@ def _draw_card(painter: QPainter, rect: QRectF, member: StaffMember,
 def _draw_meta_line(painter: QPainter, left: float, top: float, width: float,
                     settings: SchoolSettings, count: int,
                     today: datetime.date) -> float:
-    company = (settings.company_name or settings.supplier_name or "").strip()
+    company = (settings.company_name or "").strip()
     parts = [f"{_LBL_COUNT}: {count}"]
     if company:
         parts.append(f"{_LBL_COMPANY}: {company}")

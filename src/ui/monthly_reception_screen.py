@@ -237,7 +237,7 @@ def _draw_monthly_reception_pdf_page(
     """Draw one month's reception record onto an already-open page,
     mirroring templets/المحضر الشهري لتسلم الخدمة.docx's own real layout."""
     s = settings
-    company = ((s.company_name if s else "") or (s.supplier_name if s else "")) or "—"
+    company = ((s.company_name if s else "") or "") or "—"
     school_fr = ((s.school_name_fr if s else "") or (s.school_name if s else "")) or "—"
     contract_number = ((s.contract_number if s else "") or "").strip() or "—"
     place = ((s.city_fr if s else "") or (s.city if s else "") or "").strip() or "—"
@@ -399,7 +399,7 @@ def _fill_monthly_reception_legal_paragraphs(root: ET.Element, settings: Optiona
     s = settings
     contract_number = ((s.contract_number if s else "") or "").strip() or "—"
     school_fr = ((s.school_name_fr if s else "") or (s.school_name if s else "") or "").strip() or "—"
-    company = ((s.company_name if s else "") or (s.supplier_name if s else "") or "").strip() or "—"
+    company = ((s.company_name if s else "") or "").strip() or "—"
     place = ((s.city_fr if s else "") or (s.city if s else "") or "").strip() or "—"
     month_label = _month_label_fr(month)
 

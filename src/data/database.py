@@ -32,17 +32,19 @@ def _connection() -> Iterator[sqlite3.Connection]:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add new columns to existing tables without losing data (safe to run every launch)."""
+    # gresa_code / surveillant_general / contract_object / supplier_name were
+    # dropped from this list 2026-08-29 — the user asked for those four fields
+    # to go, and all four were blank in the real database. A database created
+    # before then keeps its (empty) columns; nothing reads or writes them any
+    # more, and they are left alone rather than dropped so no existing value
+    # can be destroyed.
     settings_cols = [
         "school_name_fr TEXT NOT NULL DEFAULT ''",
         "city_fr TEXT NOT NULL DEFAULT ''",
         "aref TEXT NOT NULL DEFAULT ''",
         "direction_provinciale TEXT NOT NULL DEFAULT ''",
-        "gresa_code TEXT NOT NULL DEFAULT ''",
         "gestionnaire TEXT NOT NULL DEFAULT ''",
-        "surveillant_general TEXT NOT NULL DEFAULT ''",
         "contract_number TEXT NOT NULL DEFAULT ''",
-        "contract_object TEXT NOT NULL DEFAULT ''",
-        "supplier_name TEXT NOT NULL DEFAULT ''",
         "company_name TEXT NOT NULL DEFAULT ''",
         "supplier_address TEXT NOT NULL DEFAULT ''",
         "price_ftour TEXT NOT NULL DEFAULT ''",

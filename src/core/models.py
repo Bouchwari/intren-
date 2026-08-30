@@ -23,16 +23,15 @@ class SchoolSettings:
     school_name_fr: str = ""            # Nom d'établissement
     aref: str = ""                      # الأكاديمية الجهوية (AREF)
     direction_provinciale: str = ""     # المديرية الإقليمية
-    gresa_code: str = ""                # رمز GRESA
     city: str = ""                      # الجماعة / المدينة (Arabic)
     city_fr: str = ""                   # Nom de la ville (French — used on bilingual documents)
     academy: str = ""                   # legacy — same concept as aref
     gestionnaire: str = ""              # مسير المصالح المادية والمالية
-    surveillant_general: str = ""       # الحارس العام للداخلية
     # ── Supplier / صفقة المطعمة (wizard page 2) ──────────────────────────
     contract_number: str = ""           # رقم الصفقة
-    contract_object: str = ""           # Objet du marché
-    supplier_name: str = ""             # اسم المزود
+    # The ONE company field. `supplier_name` (the Arabic اسم المزود) was
+    # removed 2026-08-29 at the user's request — it was blank in the real
+    # database and every document already fell back to this one.
     company_name: str = ""              # اسم الشركة / Raison sociale
     supplier_address: str = ""          # العنوان
     price_ftour: str = ""               # ثمن وجبة الفطور

@@ -163,7 +163,6 @@ class SetupWizard(QDialog):
         self._school_name_fr = _line("Nom d'établissement")
         self._aref           = _line("مثال: جهة الرباط سلا القنيطرة")
         self._dir_prov       = _line("مثال: مديرية سلا")
-        self._gresa_code     = _line("رمز GRESA")
         self._city           = _line("مثال: سلا")
         self._city_fr        = _line("Nom de la ville")
         self._school_year    = _line("مثال: 2024-2025")
@@ -172,7 +171,6 @@ class SetupWizard(QDialog):
         form_inst.addRow("Nom d'établissement",       self._school_name_fr)
         form_inst.addRow("الأكاديمية الجهوية (AREF)", self._aref)
         form_inst.addRow("المديرية الإقليمية",        self._dir_prov)
-        form_inst.addRow("رمز GRESA",                 self._gresa_code)
         form_inst.addRow("الجماعة",                   self._city)
         form_inst.addRow("Nom de la ville",           self._city_fr)
         form_inst.addRow("السنة الدراسية *",          self._school_year)
@@ -182,11 +180,9 @@ class SetupWizard(QDialog):
 
         self._director        = _line("الاسم الكامل للمدير")
         self._gestionnaire    = _line("مسير المصالح المادية والمالية")
-        self._surveillant     = _line("الحارس العام للداخلية")
 
         form_staff.addRow("اسم مدير المؤسسة *",                    self._director)
         form_staff.addRow("اسم مسير المصالح المادية والمالية",     self._gestionnaire)
-        form_staff.addRow("اسم الحارس العام للداخلية",             self._surveillant)
 
         layout.addWidget(grp_inst)
         layout.addWidget(grp_staff)
@@ -212,14 +208,10 @@ class SetupWizard(QDialog):
         grp_contract, form_c = _group(_GRP_CONTRACT)
 
         self._contract_number  = _line("رقم الصفقة")
-        self._contract_object  = _line("Objet du marché")
-        self._supplier_name    = _line("اسم المزود")
         self._company_name     = _line("Raison sociale")
         self._supplier_address = _line("العنوان / Adresse")
 
         form_c.addRow("رقم الصفقة",       self._contract_number)
-        form_c.addRow("Objet du marché",  self._contract_object)
-        form_c.addRow("اسم المزود",       self._supplier_name)
         form_c.addRow("اسم الشركة",       self._company_name)
         form_c.addRow("العنوان",          self._supplier_address)
 
@@ -419,17 +411,13 @@ class SetupWizard(QDialog):
             school_name_fr=self._school_name_fr.text().strip(),
             aref=self._aref.text().strip(),
             direction_provinciale=self._dir_prov.text().strip(),
-            gresa_code=self._gresa_code.text().strip(),
             city=self._city.text().strip(),
             city_fr=self._city_fr.text().strip(),
             academy=self._aref.text().strip(),   # keep legacy field in sync
             director=self._director.text().strip(),
             school_year=self._school_year.text().strip(),
             gestionnaire=self._gestionnaire.text().strip(),
-            surveillant_general=self._surveillant.text().strip(),
             contract_number=self._contract_number.text().strip(),
-            contract_object=self._contract_object.text().strip(),
-            supplier_name=self._supplier_name.text().strip(),
             company_name=self._company_name.text().strip(),
             supplier_address=self._supplier_address.text().strip(),
             price_ftour=self._price_ftour.text().strip(),
@@ -457,16 +445,12 @@ class SetupWizard(QDialog):
         self._school_name_fr.setText(s.school_name_fr)
         self._aref.setText(s.aref)
         self._dir_prov.setText(s.direction_provinciale)
-        self._gresa_code.setText(s.gresa_code)
         self._city.setText(s.city)
         self._city_fr.setText(s.city_fr)
         self._school_year.setText(s.school_year)
         self._director.setText(s.director)
         self._gestionnaire.setText(s.gestionnaire)
-        self._surveillant.setText(s.surveillant_general)
         self._contract_number.setText(s.contract_number)
-        self._contract_object.setText(s.contract_object)
-        self._supplier_name.setText(s.supplier_name)
         self._company_name.setText(s.company_name)
         self._supplier_address.setText(s.supplier_address)
         self._price_ftour.setText(s.price_ftour)

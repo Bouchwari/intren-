@@ -29,7 +29,7 @@ from ui import infraction_record_screen as irs
 def _settings(**kwargs) -> SchoolSettings:
     base = dict(
         school_name="الثانوية الإعدادية ألمدون", school_year="2025-2026",
-        director="محمد", gestionnaire="عبد الله", surveillant_general="الحارس العام",
+        director="محمد", gestionnaire="عبد الله",
         company_name="شركة آيت خويا", contract_number="08/MDD-TIN/2023",
         city="ألمدون",
     )

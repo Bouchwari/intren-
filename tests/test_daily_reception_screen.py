@@ -42,7 +42,6 @@ def _test_settings(**overrides) -> SchoolSettings:
         aref="سوس ماسة",
         direction_provinciale="أكادير",
         contract_number="99XYZ/2026/BB",
-        contract_object="PRESTATION DE RESTAURATION TEST",
         company_name="TEST CONTRACTOR SARL",
         city="TAGLEFT",
     )

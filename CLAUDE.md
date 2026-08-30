@@ -1593,6 +1593,35 @@ generated PDF proves nothing. Render to PNG with `pdftoppm` and look at it.
       the patterns page has something true to show on first run.
       25 new tests (71 in the file), 462 passing.
 
+- [x] **Four Settings fields removed** (2026-08-29, at the user's request):
+      **رمز GRESA** (`gresa_code`), **الحارس العام للداخلية**
+      (`surveillant_general`), **Objet du marché** (`contract_object`) and the
+      Arabic **اسم المزود** (`supplier_name`). Gone from `SchoolSettings`,
+      `settings_repo`, the Settings screen and the setup wizard.
+      **All four were BLANK in the real `matama.db`**, which is what made this
+      safe — checked before touching anything, and it decided the one
+      conditional the user attached ("الحارس العام — if his name is not used in
+      any doc just delete it"): the field only ever pre-filled محضر المخالفة's
+      عاين المخالفة box, and being empty it pre-filled nothing, so his name was
+      on no document. That box is now typed in.
+      The other three had live readers, all of which already fell through to
+      something else because the fields were empty:
+      · `contract_object` printed inside محضر التسلم اليومي's French legal
+        sentence with a hardcoded fallback — now the constant
+        `_CONTRACT_OBJECT_FR`, so the sentence is unchanged;
+      · `supplier_name` printed on رسالة الطلبية as "المزود — الشركة" and was
+        the second choice behind `company_name` on محضر التسلم اليومي/الشهري,
+        محضر المخالفة and طاقم المطبخ — `company_name` is now the ONE company
+        field everywhere.
+      **Verified by generating every affected document from the real settings
+      with the code before AND after, then diffing:** محضر التسلم اليومي (PDF
+      *and* the .docx body), رسالة الطلبية, محضر المخالفة and بطاقات طاقم
+      المطبخ all came back **byte-identical**. 462 tests still passing.
+      The four DB columns are deliberately LEFT in place on existing databases
+      (removed only from the migration list, so new databases never get them) —
+      same reasoning as the retired `violations` table: dropping a column
+      destroys whatever it holds, and nothing reads these any more.
+
 ### 📋 Not started
 - Nothing outstanding from the prototype. The remaining ideas in it were
   discussed with the user on 2026-08-29 and NOT chosen: المخزون (stock),
