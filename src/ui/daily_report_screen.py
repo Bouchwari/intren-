@@ -611,7 +611,7 @@ def build_report_pdf_page(
         )
         return "empty"
     report = _report_for_date(date_str)
-    # Batch generation saves what it prints, so a day produced from يوم العمل
+    # Batch generation saves what it prints, so a day produced from الصفحة الرئيسية
     # ends up in the database exactly as if it had been opened and saved on
     # screen. Only a date with no report yet is written — a day the user
     # already saved keeps their own numbers and ratings untouched.

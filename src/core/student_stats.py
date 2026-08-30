@@ -164,3 +164,49 @@ def profile_by_gender(students: Sequence[Student],
                       today: datetime.date) -> Dict[str, GroupProfile]:
     return _profile_by(students, today,
                        lambda student: (student.gender or "").strip())
+
+
+# ── Who is in each class ────────────────────────────────────────────────────
+
+@dataclass
+class ClassBreakdown:
+    """One class (قسم): how many pupils, split by gender."""
+    name: str
+    by_gender: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def total(self) -> int:
+        return sum(self.by_gender.values())
+
+    def count(self, gender: str) -> int:
+        return self.by_gender.get(gender, 0)
+
+    @property
+    def unknown_gender(self) -> int:
+        """Pupils whose gender is not recorded. Reported as its own number
+        rather than folded into either side."""
+        return self.by_gender.get(UNKNOWN, 0)
+
+
+def breakdown_by_class(students: Sequence[Student]) -> List[ClassBreakdown]:
+    """Every class with its gender split, ordered by cycle then by name.
+
+    Ordered through the app's own `student_category` rather than by trying to
+    parse "الأولى"/"الثانية" out of the class name — the roster is imported
+    from Excel and those names are whatever the school typed.
+    """
+    from core.contact_counts import student_category
+
+    # Cycle order as the school reads it, monitors last.
+    order = {"primary": 0, "collegial": 1, "qualifying": 2, "monitors": 3}
+    grouped: Dict[str, ClassBreakdown] = {}
+    ranks: Dict[str, int] = {}
+    for student in students:
+        name = (student.student_class or "").strip() or UNKNOWN
+        entry = grouped.setdefault(name, ClassBreakdown(name=name))
+        gender = (student.gender or UNKNOWN).strip()
+        entry.by_gender[gender] = entry.by_gender.get(gender, 0) + 1
+        ranks.setdefault(name, order.get(student_category(student), 9))
+
+    return sorted(grouped.values(),
+                  key=lambda entry: (ranks.get(entry.name, 9), entry.name))

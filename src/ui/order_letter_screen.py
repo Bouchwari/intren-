@@ -27,6 +27,10 @@ from config.settings import (
     EXPORT_FORMAT_PDF,
     FONT_BODY, FONT_LABEL, FONT_SECTION, FONT_TITLE,
 )
+from core.active_cycles import visible_cycles
+from core.contact_counts import (
+    CATEGORY_COLLEGIAL, CATEGORY_PRIMARY, CATEGORY_QUALIFYING,
+)
 from core.models import DailyContact, OrderItem, OrderLetter
 from core.ramadan import meals_for_date
 from data.database import (
@@ -143,9 +147,11 @@ def _btn(label: str, color: str, *, icon: str | None = None) -> QPushButton:
 class _MealQtyCard(QGroupBox):
     """Input card for one meal's quantity breakdown (ابتدائي/إعدادي/تأهيلي/معلمون)."""
 
-    def __init__(self, meal_key: str, meal_label: str, color: str) -> None:
+    def __init__(self, meal_key: str, meal_label: str, color: str,
+                 visible: tuple = ()) -> None:
         super().__init__(meal_label)
         self._meal_key = meal_key
+        self._visible_cycles = tuple(visible)
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setStyleSheet(f"""
             QGroupBox {{
@@ -187,10 +193,19 @@ class _MealQtyCard(QGroupBox):
             "border-radius:6px; padding:4px 10px;"
         )
 
-        layout.addLayout(row("الابتدائي",        self._sp_prim))
-        layout.addLayout(row("إعدادي",           self._sp_coll))
-        layout.addLayout(row("تأهيلي",           self._sp_qual))
-        layout.addLayout(row("معلمو الداخلية",   self._sp_mon))
+        # The letter's PRINTED table carries one aggregate per meal with no
+        # cycle breakdown at all, so hiding a row here changes nothing that
+        # reaches the supplier — only what has to be typed.
+        for cycle, label, spin in (
+            (CATEGORY_PRIMARY, "الابتدائي", self._sp_prim),
+            (CATEGORY_COLLEGIAL, "إعدادي", self._sp_coll),
+            (CATEGORY_QUALIFYING, "تأهيلي", self._sp_qual),
+            (None, "معلمو الداخلية", self._sp_mon),
+        ):
+            if self._visible_cycles and cycle is not None \
+                    and cycle not in self._visible_cycles:
+                continue
+            layout.addLayout(row(label, spin))
 
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color:{COLOR_BORDER};")
@@ -240,7 +255,7 @@ def _order_items_from_contacts(contacts: List[DailyContact]) -> Dict[str, OrderI
     """Sum real ورقة الاتصال beneficiary totals per meal, across whatever
     dates/rows are given — one day's 3 rows or a whole range's worth.
     Shared by the screen's من/إلى auto-fill and the per-day batch
-    generator on يوم العمل."""
+    generator on الصفحة الرئيسية."""
     items = {meal_key: OrderItem(letter_id=0, meal_type=meal_key)
              for meal_key, _ in _ALL_MEAL_ORDER}
     for contact in contacts:
@@ -933,8 +948,10 @@ class OrderLetterScreen(QWidget):
         # 3-meal-column convention used across the app's other screens.
         meals_row = QHBoxLayout()
         meals_row.setSpacing(14)
+        visible = tuple(visible_cycles())        # one database read for all
         for meal_key, meal_label in _ALL_MEAL_ORDER:
-            card = _MealQtyCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
+            card = _MealQtyCard(meal_key, meal_label, _MEAL_COLORS[meal_key],
+                                visible)
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             self._cards[meal_key] = card
             meals_row.addWidget(card)

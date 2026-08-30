@@ -340,7 +340,7 @@ def _draw_reception_pdf_page(
     a 4-column meal/quantity table, remarks, closing declaration, then
     HEADMASTER/STEWARD/CONTRACTOR signatures. Shared by
     _write_reception_pdf (standalone file) and build_reception_pdf_page
-    (يوم العمل's combined batch PDF)."""
+    (الصفحة الرئيسية's combined batch PDF)."""
     s = settings
     company = ((s.company_name if s else "") or "") or "—"
     school_fr = ((s.school_name_fr if s else "") or (s.school_name if s else "")) or "—"

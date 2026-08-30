@@ -113,7 +113,10 @@ who signs each step) see `.claude/skills/matama/references/document_chain.md`
 - [x] Project skeleton (folders, main entry, DB init)
 - [x] Setup wizard (school identity: name, city, academy, director, school year)
 - [x] Main window with sidebar navigation
-- [x] **يوم العمل** (Work Day) — the app's landing screen. Status cards for
+- [x] **الصفحة الرئيسية** (was **يوم العمل** until 2026-08-29 — the user
+      renamed it; the file is still `work_pipeline_screen.py` and the rest of
+      this entry uses the old name for the history) — the app's landing
+      screen. Status cards for
       the day's 5 documents (contact/absence/report/order letter/reception
       record) + one "توليد شامل لعدة أيام" button that batch-generates any
       combination of them for a date range in one shot. Not in the
@@ -1621,6 +1624,138 @@ generated PDF proves nothing. Render to PNG with `pdftoppm` and look at it.
       (removed only from the migration list, so new databases never get them) —
       same reasoning as the retired `violations` table: dropping a column
       destroys whatever it holds, and nothing reads these any more.
+
+- [x] **الإحصائيات المعمقة + وصول سريع** (2026-08-29). The user asked for
+      "a page just for very deep statistics and KPIs and patterns" plus "a home
+      page with quick access". **Both pages already existed** — يوم العمل is the
+      home screen and الإحصائيات the statistics one — so after showing them what
+      each already did, they chose to DEEPEN THE TWO rather than add a third and
+      fourth competing for the same job. Menu stays at 7 rows.
+      New `src/data/analytics_repo.py` (month/weekday/cycle aggregates, document
+      coverage), new `src/core/analytics.py` (the arithmetic), new
+      `src/ui/dashboard_deep.py` (the three sections — kept OUT of
+      dashboard_screen.py, which was already 673 lines).
+      Three sections, all chosen by the user:
+      · **اتجاهات شهرية** — meals, days, per-day average and cost for every
+        month with data, as a zero-based column chart plus a table.
+      · **أنماط الغياب** — rate, worst weekday, and bars per weekday and per
+        cycle. `worst_weekday` compares RATES, not counts: a weekday the school
+        serves more often would otherwise always win.
+      · **اكتمال الوثائق** — which of the five daily documents each served day
+        has, per-document coverage bars, and the specific days still missing
+        something (capped at 8, then counted).
+      Plus **من أبدى الرأي** on screen at last — the cycle/gender feedback
+      patterns with each group's real average age, which until now existed only
+      inside the exported PDF.
+      **A real bug caught before shipping it, by checking the numbers rather
+      than trusting them:** the first trend used `get_monthly_summaries`, which
+      hardcodes فطور/غداء/عشاء — so February and March (Ramadan) came back at
+      3,552 and 2,242 meals against a true 5,608 and 5,203, and the chart showed
+      a collapse that never happened. `get_monthly_meal_totals()` now counts
+      EVERY meal type, netted per meal then floored (an absence on one meal must
+      not cancel another's attendance). Since the user dropped Ramadan pricing
+      (2026-08-25), those meals are counted but not costed, and the month is
+      marked `cost_is_partial` with a footnote rather than printing a total that
+      quietly understates it. ⚠️ **الملخص الشهري still has this bug** — flagged
+      to the user, not fixed here, because it needs two decisions from them
+      (Ramadan pricing, and the row layout).
+      Honesty rules with tests: a month with no recorded days has NO average;
+      an absence rate with nothing expected is None, not zero; and completeness
+      counts ONLY days the school actually served — counting weekends and
+      holidays as missing paperwork would make the number meaningless.
+      **Also fixed, found by rendering the screen:** all four dashboard donut
+      legends were drawn BELOW the widget's own bottom edge (the donut was
+      centred in the full height and the legend placed after it), so every label
+      was invisible and the colours meant nothing; and the fixed 80px legend
+      stride ran wide labels off the card. Now the legend gets a reserved strip,
+      widths are measured, it wraps to as many rows as it needs, and it packs
+      right-to-left with each swatch on the right of its own label.
+      **يوم العمل** gained a وصول سريع grid to the 11 pages that are not one of
+      its five daily documents — it linked only to those five, and the lower
+      half of the screen was empty.
+      Round 2 (same day, from two screenshots): the user asked for the green
+      school banner and the وصول سريع row to LEAVE الإحصائيات — the banner
+      moved to يوم العمل, the quick row was deleted outright (يوم العمل's own
+      grid replaces it), and `_build_welcome_panel`/`_build_quick_actions`/
+      `_quick_button` are gone from dashboard_screen.py. On الإحصائيات the
+      banner always showed TODAY; on يوم العمل it follows the DATE PICKER,
+      since a banner reading "الأحد 30 غشت" above cards describing the 15th
+      would be wrong. الإحصائيات now opens straight onto its KPI cards.
+      Round 3 (same day, from a screenshot): **يوم العمل's five document cards
+      rendered crushed to ~25px each**, title, status and buttons on top of
+      one another. Same cause as the sidebar earlier the same day — the banner
+      and the quick-access grid pushed the content to 934px in a 700px window,
+      and `_PipelineCard` declared NO minimum height (0), so the QVBoxLayout
+      was free to squeeze it to nothing. Fixed twice over: the screen is inside
+      a QScrollArea, and a card now declares `_CARD_MIN_HEIGHT`.
+      **Lesson: adding anything to a screen that already fills its height needs
+      a render at WINDOW_MIN_HEIGHT (1100×700), not at a comfortable size — Qt
+      does not warn, it just violates the minimums it was given.**
+      Same round: **تقرير الإحصائيات** — `ui/dashboard_export.py`, a signed PDF
+      of the page (headline figures, the monthly trend table, absence patterns,
+      who rated what, document completeness), exported for the month selected
+      in the deep panel via a تصدير التقرير button in a new page header. The
+      drawing primitives are imported from `feedback_export.py` rather than
+      copied — they already carry three fixes that each took a render to find.
+      28 new tests, 496 passing.
+      Round 4 (same day, from a sidebar screenshot): three small user requests —
+      the stray "M" prefix on the sidebar's school title is gone (it was a
+      hardcoded `f"M  {…}"`, not initials of anything); **يوم العمل was renamed
+      الصفحة الرئيسية** everywhere in `src/` and `tests/` (the file keeps its
+      name); and **التلاميذ حسب القسم** was added to الإحصائيات and to the
+      exported report — every class with its own ذكور/إناث split and a
+      المجموع العام row. New `breakdown_by_class()` in core/student_stats.py
+      orders classes through the app's own `student_category` rather than by
+      parsing "الأولى"/"الثانية" out of a name the school typed into Excel; a
+      pupil with no recorded gender is counted and reported separately, never
+      assigned to one of the two columns. The report's table is built from the
+      SCREEN's own row builder, so the two can never disagree.
+      Round 5 (same day): the user asked for that class table to be **a graph**
+      — it is now a stacked bar per class (ذكور green, إناث purple, غير محدد
+      grey), each segment carrying its own number INSIDE it when it is wide
+      enough to hold one, measured with QFontMetrics so a narrow segment drops
+      its label rather than spilling over its neighbour. Bars are scaled to the
+      largest class, so their lengths compare across rows; the total sits in
+      its own column where no bar can cover it. Drawn the same way on screen
+      and in the PDF, from the same `class_chart_rows()`. The table builder it
+      replaced was deleted rather than left as dead code.
+      36 new tests, 504 passing.
+
+- [x] **Setup wizard remade** (2026-08-29) — `setup_wizard.py` +
+      new `setup_steps.py`. The user asked for a remake "considering what needs
+      modification", so it was audited first. Two things checked and found
+      FINE: the four deleted Settings fields were already gone from it, and the
+      level picker's `Liste_internes.xlsx` really does ship in the packaged
+      build (in `Matama.spec`'s datas, present in `dist/`).
+      Four real problems, all fixed:
+      · **The Ramadan fields were backwards.** It asked for three Ramadan
+        PRICES — dropped by the user on 2026-08-25, read by nothing — and never
+        asked for the Ramadan DATES, which every document reads to decide
+        whether a day serves إفطار/سحور. Prices removed, `مدة رمضان` added
+        behind a checkbox ("مؤسستي تقدّم وجبات رمضان"), so an untouched wizard
+        never writes a period nobody meant.
+      · **It ended in an empty app.** Three new SKIPPABLE steps: import
+        لائحة التلاميذ from Excel (same reader لائحة التلاميذ uses), record
+        العطل as date ranges, and type the first weekly menu. Every one says on
+        the page that it is optional — setup must never become a wall a
+        beginner cannot get past.
+      · **Prices were not validated.** "12,50" or a typo saved as text and then
+        read as 0.00 in every cost figure downstream, silently. Refused now,
+        naming the field; a BLANK price is still allowed, because not knowing a
+        price yet is normal and nonsense is not.
+      · **No sense of progress.** Six numbered chips across the header, and a
+        final **تم الإعداد** page that reports what was saved AND what was left
+        empty — a summary listing only successes would hide the gaps.
+      Settings are now written when LEAVING step 2, not at the very end: every
+      step after it is optional, and someone who closes the window on one
+      should still keep the identity they typed.
+      Guards worth keeping: a holiday range that ends before it starts, or runs
+      longer than 120 days (a mistyped year), or carries no reason, is refused
+      rather than writing thousands of rows; an untouched menu grid creates no
+      program at all, since an empty slot means "not served", not "a meal with
+      no name".
+      **The wizard had NO tests before this** — 21 new ones in a new
+      `tests/test_setup_wizard.py`. 525 passing.
 
 ### 📋 Not started
 - Nothing outstanding from the prototype. The remaining ideas in it were

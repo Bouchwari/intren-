@@ -102,7 +102,7 @@ class BatchExportCoreTests(unittest.TestCase):
 
 class BatchExportBuildPageTests(unittest.TestCase):
     """Regression coverage for build_contact_pdf_page / build_absence_pdf_page
-    / build_report_pdf_page — shared by يوم العمل's "توليد شامل لعدة أيام"
+    / build_report_pdf_page — shared by الصفحة الرئيسية's "توليد شامل لعدة أيام"
     (see ui/work_pipeline_screen.py), driven here through write_combined_pdf
     directly instead of through a screen."""
 
@@ -265,7 +265,7 @@ class BatchExportBuildPageTests(unittest.TestCase):
         self.assertEqual((record.ftour_ramadan_qty, record.shour_qty), (0, 0))
 
     def test_report_export_saves_the_report_it_printed(self) -> None:
-        """يوم العمل's batch run must leave the same data behind as making the
+        """الصفحة الرئيسية's batch run must leave the same data behind as making the
         day by hand — the user asked for this explicitly on 2026-08-28
         ("when i generated multiply days those out put and data should save
         like normal made"). It previously printed the report and saved
@@ -298,7 +298,7 @@ class BatchExportBuildPageTests(unittest.TestCase):
         self.assertEqual(saved.ftour_present, 98)
 
     def test_report_batch_suggests_checklist_for_every_day_not_just_the_first(self) -> None:
-        """يوم العمل's "توليد شامل لعدة أيام" must suggest real ratings for
+        """الصفحة الرئيسية's "توليد شامل لعدة أيام" must suggest real ratings for
         EVERY day in the range, not just a day that happens to already have
         a saved report — previously only _load_report_fields (the live
         screen) filled unrated items, so a batch run over several unsaved
@@ -357,8 +357,8 @@ class BatchExportBuildPageTests(unittest.TestCase):
 class BatchGenerateDataTests(unittest.TestCase):
     """generate_and_save_contact_for_date() / generate_and_save_absence_for_date()
     — the estimator-backed auto-fill shared by the single-day "توليد
-    تلقائي" button and يوم العمل's auto-fill-before-export option. The "no
-    students" / "unclassified students" warnings live in يوم العمل's own
+    تلقائي" button and الصفحة الرئيسية's auto-fill-before-export option. The "no
+    students" / "unclassified students" warnings live in الصفحة الرئيسية's own
     _auto_fill_range now — see test_work_pipeline_screen.py."""
 
     @classmethod

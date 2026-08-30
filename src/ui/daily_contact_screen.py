@@ -31,7 +31,11 @@ from config.settings import (
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.attendance_estimate import EstimateResult, estimate_attendance
-from core.contact_counts import count_students, empty_counts
+from core.active_cycles import visible_cycles
+from core.contact_counts import (
+    CATEGORY_COLLEGIAL, CATEGORY_PRIMARY, CATEGORY_QUALIFYING,
+    count_students, empty_counts,
+)
 from core.models import DailyContact
 from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
@@ -867,11 +871,15 @@ class _FillModeSelector(QFrame):
 class _MealCard(QGroupBox):
     """Compact form card for one meal's beneficiary counts."""
 
-    def __init__(self, meal_key: str, meal_label: str, color: str) -> None:
+    def __init__(self, meal_key: str, meal_label: str, color: str,
+                 visible: tuple = ()) -> None:
         super().__init__(meal_label)
         self._meal_key = meal_key
         self._color = color
         self._read_only = False
+        # Empty = show every cycle, which is what a school that never opened
+        # the المستويات المستعملة screen must keep seeing.
+        self._visible_cycles = tuple(visible)
         self.setMinimumWidth(335)
         self.setMaximumWidth(360)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
@@ -945,13 +953,20 @@ class _MealCard(QGroupBox):
                 f"color: {self._color}; font-weight: bold; font-size: {FONT_SECTION}px;"
             )
 
+        # A cycle this school does not run is left off the FORM — see
+        # core/active_cycles.py. معلمو الداخلية always stays: they are staff,
+        # not a cycle. The PRINTED document is untouched and still carries
+        # every row its ministry template has.
         rows = [
-            (_LBL_PRIMARY, self._pg, self._pc, self._pt_lbl),
-            (_LBL_COLLEGIAL, self._cg, self._cc, self._ct_lbl),
-            (_LBL_QUALIFYING, self._qg, self._qc, self._qt_lbl),
-            (_LBL_MONITORS, self._mo, self._mc, self._mt_lbl),
+            (CATEGORY_PRIMARY, _LBL_PRIMARY, self._pg, self._pc, self._pt_lbl),
+            (CATEGORY_COLLEGIAL, _LBL_COLLEGIAL, self._cg, self._cc, self._ct_lbl),
+            (CATEGORY_QUALIFYING, _LBL_QUALIFYING, self._qg, self._qc, self._qt_lbl),
+            (None, _LBL_MONITORS, self._mo, self._mc, self._mt_lbl),
         ]
-        for row, (label, full_spin, lunch_spin, total_label) in enumerate(rows):
+        if self._visible_cycles:
+            rows = [row for row in rows
+                    if row[0] is None or row[0] in self._visible_cycles]
+        for row, (_cycle, label, full_spin, lunch_spin, total_label) in enumerate(rows):
             row_label = QLabel(label)
             row_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             grid.addWidget(row_label, row, 0)
@@ -1446,6 +1461,8 @@ class DailyContactScreen(QWidget):
         return btn
 
     def _build_cards_row(self) -> QGridLayout:
+        # Read once for all five cards: it queries the database.
+        visible = tuple(visible_cycles())
         row = QGridLayout()
         row.setSpacing(12)
         row.setHorizontalSpacing(12)
@@ -1458,7 +1475,8 @@ class DailyContactScreen(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignTop
         )
         for index, (meal_key, meal_label) in enumerate(_CARD_MEAL_ORDER):
-            card = _MealCard(meal_key, meal_label, _MEAL_COLORS[meal_key])
+            card = _MealCard(meal_key, meal_label, _MEAL_COLORS[meal_key],
+                             visible)
             self._cards[meal_key] = card
             row.addWidget(
                 card,

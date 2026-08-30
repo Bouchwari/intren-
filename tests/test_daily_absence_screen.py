@@ -235,7 +235,7 @@ class AbsenceCardLayoutTests(unittest.TestCase):
 
 
 class BatchAbsenceGenerationTests(unittest.TestCase):
-    """يوم العمل's batch auto-fill writes absence rows straight to the
+    """الصفحة الرئيسية's batch auto-fill writes absence rows straight to the
     database with no screen open."""
 
     @classmethod

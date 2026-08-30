@@ -13,7 +13,9 @@ Layout:
 from __future__ import annotations
 from typing import Callable
 
+import logging
 import math
+from pathlib import Path
 
 from PySide6.QtCore import QMargins, QRect, QRectF, Qt
 from PySide6.QtGui import (
@@ -21,8 +23,8 @@ from PySide6.QtGui import (
     QLinearGradient,
 )
 from PySide6.QtWidgets import (
-    QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel,
-    QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QFileDialog, QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout,
+    QLabel, QMessageBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
@@ -33,6 +35,23 @@ from config.settings import (
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.stats_service import DashboardData, load_dashboard
+from data.database import get_school_settings
+from ui.widgets.icon_button import IconButton
+
+_PAGE_TITLE = "الإحصائيات"
+_BTN_EXPORT = "تصدير التقرير"
+_BTN_EXPORT_ICON = "📄"
+_PDF_DIALOG_TITLE = "تصدير تقرير الإحصائيات"
+_PDF_DEFAULT_NAME = "تقرير_الإحصائيات"
+_PDF_FILTER = "PDF (*.pdf)"
+_MSG_EXPORT_SAVED = "تم تصدير التقرير إلى:\n"
+_MSG_EXPORT_FAILED = "تعذر تصدير التقرير. تحقق من المكان المختار ثم أعد المحاولة."
+_MSG_EXPORT_LOCKED = ("تعذر الحفظ في هذا الملف — قد يكون مفتوحاً في برنامج آخر. "
+                      "أغلقه ثم أعد المحاولة.")
+_MSG_EXPORT_EMPTY = "لا توجد بيانات شهرية بعد، فلا شيء لتصديره."
+_MSG_NO_SETTINGS = "أدخل بيانات المؤسسة في الإعدادات أولاً."
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _tint(hex_color: str, alpha: float) -> str:
@@ -205,6 +224,11 @@ class TrendLineWidget(QWidget):
             p.drawText(0, y + 4, pad_l - 4, 16, Qt.AlignmentFlag.AlignRight, str(val))
 
 
+_DONUT_LEGEND_ROW_H = 15
+_DONUT_LEGEND_GAP = 10
+_DONUT_SWATCH_W = 13
+
+
 class DonutWidget(QWidget):
     """Simple donut chart."""
 
@@ -222,9 +246,17 @@ class DonutWidget(QWidget):
         total = sum(v for _, v, _ in self._slices)
         has_data = total > 0
 
-        size = min(w, h) - 20
+        # The legend gets its own reserved strip. It used to be drawn at
+        # oy + size + 8 with the donut centred in the FULL height, which put
+        # it past the bottom edge — every label on all four donuts was
+        # clipped away and only the colour swatches showed.
+        legend_font = QFont("Segoe UI", 8)
+        rows = self._legend_rows(QFontMetrics(legend_font), w - 8)
+        legend_h = len(rows) * _DONUT_LEGEND_ROW_H + 4 if rows else 0
+
+        size = max(40, min(w, h - legend_h) - 20)
         ox   = (w - size) // 2
-        oy   = (h - size) // 2
+        oy   = max(0, (h - legend_h - size) // 2)
         rect = QRectF(ox, oy, size, size)
         hole = QRectF(ox + size * 0.3, oy + size * 0.3, size * 0.4, size * 0.4)
 
@@ -252,18 +284,43 @@ class DonutWidget(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(hole)
 
-        # legend below
-        legend_y = oy + size + 8
-        lx = 4
-        p.setFont(QFont("Segoe UI", 8))
+        # legend below, laid out from MEASURED widths — a fixed 80px stride
+        # ran the later entries off the card whenever a label was long.
+        p.setFont(legend_font)
+        legend_y = oy + size + 6
+        # Packed RIGHT to LEFT, each swatch on the right of its own label:
+        # this is an RTL page, so the first slice belongs at the right edge.
+        for row in rows:
+            right = self.width() - 4
+            for text, color, width in row:
+                p.setBrush(QBrush(QColor(color)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.drawRoundedRect(right - 10, legend_y + 1, 10, 10, 2, 2)
+                p.setPen(QColor(COLOR_TEXT_MID))
+                p.drawText(right - width, legend_y + 10, text)
+                right -= width + _DONUT_LEGEND_GAP
+            legend_y += _DONUT_LEGEND_ROW_H
+
+    def _legend_rows(self, metrics: QFontMetrics, available: int) -> list:
+        """Pack the legend into as many rows as it needs, so nothing is cut
+        off and nothing runs past the card."""
+        total = sum(value for _label, value, _color in self._slices)
+        if total <= 0:
+            return []
+        rows: list = []
+        current: list = []
+        used = 0
         for label, value, color in self._slices:
-            pct = round(value / total * 100)
-            p.setBrush(QBrush(QColor(color)))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(lx, legend_y, 10, 10, 2, 2)
-            p.setPen(QColor(COLOR_TEXT_MID))
-            p.drawText(lx + 13, legend_y + 10, f"{label} {pct}٪")
-            lx += 80
+            text = f"{label} {round(value / total * 100)}٪"
+            width = metrics.horizontalAdvance(text) + _DONUT_SWATCH_W
+            if current and used + width > available:
+                rows.append(current)
+                current, used = [], 0
+            current.append((text, color, width))
+            used += width + _DONUT_LEGEND_GAP
+        if current:
+            rows.append(current)
+        return rows
 
 
 # ── Helper widgets ────────────────────────────────────────────────────────────
@@ -371,56 +428,6 @@ def _build_header(data: DashboardData) -> QWidget:
     return widget
 
 
-def _build_welcome_panel(data: DashboardData) -> QFrame:
-    panel = QFrame()
-    panel.setObjectName("welcomePanel")
-    panel.setStyleSheet("""
-        #welcomePanel {
-            background-color: #5A5A40;
-            border-radius: 18px;
-            border: none;
-        }
-    """)
-    layout = QHBoxLayout(panel)
-    layout.setContentsMargins(20, 14, 20, 14)
-    layout.setSpacing(14)
-
-    text_col = QVBoxLayout()
-    text_col.setSpacing(2)
-    title = QLabel("تدبير المطعمة المدرسية")
-    f = QFont(); f.setPointSize(16); f.setBold(True)
-    title.setFont(f)
-    title.setStyleSheet("color: white; background: transparent;")
-
-    school_name = data.school_name or "المؤسسة"
-    subtitle = QLabel(f"{school_name}  •  {data.month_label}")
-    subtitle.setWordWrap(True)
-    subtitle.setStyleSheet(
-        f"color: rgba(255, 255, 255, 0.82); font-size: {FONT_CAPTION}px; "
-        "background: transparent;"
-    )
-    text_col.addWidget(title)
-    text_col.addWidget(subtitle)
-
-    date_badge = QLabel(data.today_label)
-    date_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    date_badge.setMinimumWidth(180)
-    date_badge.setStyleSheet("""
-        QLabel {
-            color: white;
-            background-color: rgba(255, 255, 255, 0.12);
-            border: 1px solid rgba(255, 255, 255, 0.22);
-            border-radius: 12px;
-            padding: 8px 14px;
-            font-weight: 700;
-        }
-    """)
-
-    layout.addLayout(text_col, 1)
-    layout.addWidget(date_badge)
-    return panel
-
-
 def _build_kpi_row(data: DashboardData) -> QWidget:
     row = QWidget()
     layout = QGridLayout(row)
@@ -451,61 +458,6 @@ def _build_kpi_row(data: DashboardData) -> QWidget:
     for i, card in enumerate(cards):
         layout.addWidget(card, i // 3, i % 3)
     return row
-
-
-def _quick_button(label: str, screen_index: int, navigate_to: Callable[[int], None]) -> QPushButton:
-    btn = QPushButton(label)
-    btn.setMinimumHeight(34)
-    btn.setStyleSheet(f"""
-        QPushButton {{
-            background: white;
-            color: {COLOR_TEXT_DARK};
-            border: 1px solid #d6d6c8;
-            border-radius: 10px;
-            padding: 6px 12px;
-            font-size: {FONT_CAPTION}px;
-            font-weight: 700;
-            text-align: center;
-        }}
-        QPushButton:hover {{
-            background: #E4E4D7;
-            color: {COLOR_TEXT_DARK};
-        }}
-    """)
-    btn.clicked.connect(lambda: navigate_to(screen_index))
-    return btn
-
-
-def _build_quick_actions(navigate_to: Callable[[int], None]) -> QFrame:
-    panel = QFrame()
-    panel.setObjectName("quickActionsPanel")
-    panel.setStyleSheet("""
-        #quickActionsPanel {
-            background: #E4E4D7;
-            border: 1px solid #d6d6c8;
-            border-radius: 14px;
-        }
-    """)
-    layout = QHBoxLayout(panel)
-    layout.setContentsMargins(14, 10, 14, 10)
-    layout.setSpacing(10)
-
-    title = QLabel("وصول سريع")
-    title.setStyleSheet(
-        "background: transparent; color: #5A5A40; "
-        f"font-size: {FONT_CAPTION}px; font-weight: 800;"
-    )
-    layout.addWidget(title)
-
-    actions = [
-        ("لائحة التلاميذ", 2),
-        ("تسجيل الحضور", 4),
-        ("التقرير اليومي", 7),
-        ("الملخص الشهري", 11),
-    ]
-    for label, index in actions:
-        layout.addWidget(_quick_button(label, index, navigate_to), 1)
-    return panel
 
 
 def _build_charts_row_1(data: DashboardData) -> QWidget:
@@ -635,6 +587,58 @@ class DashboardScreen(QWidget):
         self._outer_layout.setContentsMargins(0, 0, 0, 0)
         self._render()
 
+    def _build_header_row(self):
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        title = QLabel(_PAGE_TITLE)
+        font = QFont(); font.setPointSize(15); font.setBold(True)
+        title.setFont(font)
+        title.setStyleSheet(
+            f"background: transparent; color: {COLOR_TEXT_DARK};")
+        row.addWidget(title)
+        row.addStretch()
+        # COLOR_ACCENT, matching every other export button in the app.
+        export = IconButton(
+            _BTN_EXPORT, icon=_BTN_EXPORT_ICON, bg=COLOR_ACCENT,
+            text_color="white", border_radius=10, padding_h=14, font_size=12,
+            bold=True, min_height=36)
+        export.clicked.connect(self._on_export)
+        row.addWidget(export)
+        return row
+
+    def _on_export(self) -> None:
+        """Save الإحصائيات as a signed PDF for the month on screen."""
+        month = getattr(self, "_deep", None) and self._deep.current_month()
+        if not month:
+            QMessageBox.information(self, _PAGE_TITLE, _MSG_EXPORT_EMPTY)
+            return
+        settings = get_school_settings()
+        if settings is None:
+            QMessageBox.information(self, _PAGE_TITLE, _MSG_NO_SETTINGS)
+            return
+
+        default = f"{_PDF_DEFAULT_NAME}_{month}.pdf"
+        path_str, _filter = QFileDialog.getSaveFileName(
+            self, _PDF_DIALOG_TITLE, default, _PDF_FILTER)
+        if not path_str:
+            return
+        path = Path(path_str)
+        if path.suffix.lower() != ".pdf":
+            path = path.with_suffix(".pdf")
+        try:
+            from ui.dashboard_export import write_statistics_report_pdf
+            write_statistics_report_pdf(path, settings, month)
+        except PermissionError:
+            _LOGGER.exception("statistics report: destination not writable")
+            QMessageBox.critical(self, _PAGE_TITLE, _MSG_EXPORT_LOCKED)
+            return
+        except Exception:
+            # Arabic for the user, the technical detail in the log — §5.
+            _LOGGER.exception("statistics report export failed")
+            QMessageBox.critical(self, _PAGE_TITLE, _MSG_EXPORT_FAILED)
+            return
+        QMessageBox.information(self, _PAGE_TITLE, f"{_MSG_EXPORT_SAVED}{path}")
+
     def refresh(self) -> None:
         while self._outer_layout.count():
             item = self._outer_layout.takeAt(0)
@@ -658,9 +662,11 @@ class DashboardScreen(QWidget):
         inner.setContentsMargins(18, 14, 18, 18)
         inner.setSpacing(12)
 
-        inner.addWidget(_build_welcome_panel(data))
+        # The school-name banner moved to الصفحة الرئيسية and the وصول سريع row was
+        # removed outright (2026-08-29, user's request) — الصفحة الرئيسية is the home
+        # screen and now carries both; this page is for the numbers.
+        inner.addLayout(self._build_header_row())
         inner.addWidget(_build_kpi_row(data))
-        inner.addWidget(_build_quick_actions(self._navigate))
         inner.addWidget(_build_charts_row_1(data))
         inner.addWidget(_build_charts_row_2(data))
 
@@ -668,6 +674,13 @@ class DashboardScreen(QWidget):
         pills_title.setStyleSheet(f"font-size: {FONT_LABEL}px; font-weight: bold; color: {COLOR_TEXT_DARK};")
         inner.addWidget(pills_title)
         inner.addWidget(_build_meal_pills(data))
+
+        # The deep half — trends, absence patterns, who rated what,
+        # and which days still owe paperwork. Its own module: this
+        # file was already long before it.
+        from ui.dashboard_deep import DeepStatsPanel
+        self._deep = DeepStatsPanel()
+        inner.addWidget(self._deep)
 
         scroll.setWidget(container)
         self._outer_layout.addWidget(scroll)

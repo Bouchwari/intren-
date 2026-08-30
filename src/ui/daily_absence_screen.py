@@ -27,6 +27,10 @@ import datetime
 
 from core.attendance_estimate import EstimateResult, estimate_absence
 from core.contact_counts import count_students
+from core.active_cycles import visible_cycles
+from core.contact_counts import (
+    CATEGORY_COLLEGIAL, CATEGORY_PRIMARY, CATEGORY_QUALIFYING,
+)
 from core.models import DailyAbsence
 from core.ramadan import meals_for_date
 from data.database import (
@@ -154,10 +158,13 @@ def _spin() -> QSpinBox:
 class _AbsenceCard(QGroupBox):
     """Compact count card for one meal's absence numbers."""
 
-    def __init__(self, meal_key: str, meal_label: str, color: str) -> None:
+    def __init__(self, meal_key: str, meal_label: str, color: str,
+                 visible: tuple = ()) -> None:
         super().__init__(meal_label)
         self._meal_key = meal_key
         self._color = color
+        # Empty = every cycle, for a school that never chose its levels.
+        self._visible_cycles = tuple(visible)
         self.setMinimumWidth(245)
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.setStyleSheet(f"""
@@ -215,13 +222,18 @@ class _AbsenceCard(QGroupBox):
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lbl.setStyleSheet(f"color:{self._color}; font-weight:bold; font-size:{FONT_SECTION}px;")
 
+        # Cycles this school does not run are left off the FORM only — the
+        # printed ورقة الغياب still carries every row its template has.
         rows = [
-            (_LBL_PRIMARY, self._pg, self._pc, self._pt_lbl),
-            (_LBL_COLLEGIAL, self._cg, self._cc, self._ct_lbl),
-            (_LBL_QUALIFYING, self._qg, self._qc, self._qt_lbl),
-            (_LBL_MONITORS, self._mo, self._mc, self._mt_lbl),
+            (CATEGORY_PRIMARY, _LBL_PRIMARY, self._pg, self._pc, self._pt_lbl),
+            (CATEGORY_COLLEGIAL, _LBL_COLLEGIAL, self._cg, self._cc, self._ct_lbl),
+            (CATEGORY_QUALIFYING, _LBL_QUALIFYING, self._qg, self._qc, self._qt_lbl),
+            (None, _LBL_MONITORS, self._mo, self._mc, self._mt_lbl),
         ]
-        for row, (label, granted_spin, complement_spin, total_lbl) in enumerate(rows):
+        if self._visible_cycles:
+            rows = [row for row in rows
+                    if row[0] is None or row[0] in self._visible_cycles]
+        for row, (_cycle, label, granted_spin, complement_spin, total_lbl) in enumerate(rows):
             grid.addWidget(QLabel(label), row, 0)
             grid.addWidget(granted_spin, row, 1)
             grid.addWidget(complement_spin, row, 2)
@@ -708,11 +720,13 @@ class DailyAbsenceScreen(QWidget):
         self._estimate_note.setVisible(True)
 
     def _build_cards_row(self) -> QGridLayout:
+        # Read once for all the cards: it queries the database.
+        visible = tuple(visible_cycles())
         row = QGridLayout()
         row.setSpacing(12)
         for meal_key, meal_label in _CARD_MEAL_ORDER:
             self._cards[meal_key] = _AbsenceCard(
-                meal_key, meal_label, _MEAL_COLORS[meal_key])
+                meal_key, meal_label, _MEAL_COLORS[meal_key], visible)
         row.setColumnStretch(0, 1)
         row.setColumnStretch(1, 1)
         self._cards_grid = row
