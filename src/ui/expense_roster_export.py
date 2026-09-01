@@ -31,6 +31,7 @@ to put there. On a document a government body pays against, a blank the user
 fills in is the only defensible option; see CLAUDE.md §7.
 """
 import logging
+import sys
 from pathlib import Path
 from typing import List, Optional
 from zipfile import ZipFile
@@ -146,7 +147,8 @@ def _signature_spans(has_monitors: bool, last_col: int) -> List[tuple]:
 
 def _template_path() -> Optional[Path]:
     """Locate the source template — only needed for its header image."""
-    for base in (Path.cwd(), Path(__file__).resolve().parents[2]):
+    runtime_base = Path(getattr(sys, "_MEIPASS", Path.cwd()))
+    for base in (runtime_base, Path.cwd(), Path(__file__).resolve().parents[2]):
         candidate = base / "templets" / _TEMPLATE_NAME
         if candidate.exists():
             return candidate

@@ -1,6 +1,6 @@
 """
 src/ui/batch_export.py
-Shared "do this for a range of days" pieces used to build يوم العمل's
+Shared "do this for a range of days" pieces used to build الصفحة الرئيسية's
 "توليد شامل لعدة أيام" flow (see ui/work_pipeline_screen.py):
 
 - pick_date_range(): shows the shared من/إلى dialog, returns the chosen

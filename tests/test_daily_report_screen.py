@@ -13,7 +13,7 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from core.models import DailyAbsence, DailyContact, DailyReport
+from core.models import DailyAbsence, DailyContact, DailyReport, SchoolSettings
 from data import database
 from ui import daily_report_screen as drs
 
@@ -65,6 +65,34 @@ class DailyReportScreenTests(unittest.TestCase):
         expected, present = screen._beneficiary_spins[drs.MEAL_FTOUR]
         self.assertEqual(expected.value(), 0)
         self.assertEqual(present.value(), 0)
+        screen.close()
+
+    def test_ramadan_detail_table_shows_iftar_and_shour(self) -> None:
+        database.save_school_settings(SchoolSettings(
+            school_name="test", school_year="2026", director="d",
+            ramadan_start="2026-03-01", ramadan_end="2026-03-30",
+        ))
+        database.save_daily_contact(DailyContact(
+            date="2026-03-10", meal_type=drs.MEAL_IFTAR,
+            collegial_granted=12,
+        ))
+        database.save_daily_contact(DailyContact(
+            date="2026-03-10", meal_type=drs.MEAL_SHOUR,
+            collegial_granted=9,
+        ))
+        screen = drs.DailyReportScreen()
+        screen._date_edit.setDate(QDate(2026, 3, 10))
+        screen._generate()
+
+        labels = {
+            screen._contact_table.item(row, 0).text()
+            for row in range(screen._contact_table.rowCount())
+            if screen._contact_table.item(row, 0) is not None
+        }
+        self.assertIn("إفطار", labels)
+        self.assertIn("سحور", labels)
+        self.assertNotIn("فطور", labels)
+        self.assertNotIn("غداء", labels)
         screen.close()
 
     def test_present_never_goes_negative_when_absence_exceeds_contact(self) -> None:

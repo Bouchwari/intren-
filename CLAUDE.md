@@ -113,7 +113,10 @@ who signs each step) see `.claude/skills/matama/references/document_chain.md`
 - [x] Project skeleton (folders, main entry, DB init)
 - [x] Setup wizard (school identity: name, city, academy, director, school year)
 - [x] Main window with sidebar navigation
-- [x] **يوم العمل** (Work Day) — the app's landing screen. Status cards for
+- [x] **الصفحة الرئيسية** (was **يوم العمل** until 2026-08-29 — the user
+      renamed it; the file is still `work_pipeline_screen.py` and the rest of
+      this entry uses the old name for the history) — the app's landing
+      screen. Status cards for
       the day's 5 documents (contact/absence/report/order letter/reception
       record) + one "توليد شامل لعدة أيام" button that batch-generates any
       combination of them for a date range in one shot. Not in the
@@ -1299,8 +1302,468 @@ who signs each step) see `.claude/skills/matama/references/document_chain.md`
 (presentation forms, reordered) — a text search for an Arabic string in a
 generated PDF proves nothing. Render to PNG with `pdftoppm` and look at it.
 
+- [x] **طاقم المطبخ** (kitchen staff) — `staff_screen.py` + `staff_export.py`,
+      built 2026-08-29. The FIRST feature taken from the user's own Google AI
+      Studio prototype (`~/Downloads/نظام-المطعمة`, a React/TS mockup with no
+      persistence at all — every screen is `useState` seeded from
+      `initialData.ts`, so ideas were portable but no code was).
+      An INTERNAL tracker, not an official document: the ministry guide has no
+      staff form, so nothing here reproduces a template. Its real job is the
+      **شهادة طبية expiry warning** — a valid medical certificate is a
+      contractual requirement for anyone handling food and the school is the
+      party expected to check it; the only existing link in the app was
+      التقرير اليومي's "نظافة وهندام المستخدمين" checklist item.
+      Scope was set explicitly by the user: *"no attendance history just a card
+      to identify the staff and the ability to export it for the user just to
+      put in his office (the document outputed it should be good design and
+      looking)"*. So `status` is the CURRENT situation, never a log, and there
+      is no per-day attendance table. Do not add one without being asked.
+      New `core/staff_certificates.py` (pure: `certificate_state` /
+      `days_until_expiry` / `needs_attention`, four states — valid / expiring
+      within 30 days / expired / missing, safe on blank and garbage dates
+      because a member can join before handing their certificate in), new
+      `data/staff_repo.py` (its own module, like `infraction_repo.py`), new
+      `staff_members` table, sidebar index 13 (الإعدادات shifted 13 → 14, every
+      index re-verified by building MainWindow).
+      Cards needing attention sort FIRST on both the screen and the printout —
+      burying a problem certificate under the valid ones would defeat the
+      point. The certificate state is spelled out in words as well as colour so
+      it survives a black-and-white printer.
+      **Three real bugs found by rendering rather than reading:**
+      (1) `f"{color}22"` for a translucent badge background — Qt reads 8-digit
+      hex as **#AARRGGBB**, not #RRGGBBAA, so it produced a dark opaque mud
+      colour and the badges were unreadable; replaced with a `_tint()` helper
+      emitting `rgba()`. (2) The PDF's certificate badge overflowed the card
+      and was clipped in half by the next row. (3) The fix for (2) — anchoring
+      the badge to the card bottom — then made it OVERLAP the details line.
+      Both came from guessing a fixed `_CARD_HEIGHT`; the card height is now
+      MEASURED from the tallest member's real content (`_card_height`), so the
+      layout and the height calculation cannot disagree. 17 new tests, 344
+      passing.
+
+- [x] **التحليل الغذائي** (nutrition) — `nutrition_screen.py` +
+      `core/nutrition.py` + `data/nutrition_repo.py`, built 2026-08-29. The
+      second feature taken from the user's prototype.
+      **The prototype's maths was FAKE** — `calories = 300 + len(dish) * 10`,
+      so "طاجين لحم بالخضر" scored more than "كسكس" purely for having a longer
+      name. That was explained to the user and NOT copied. Ours computes only
+      from values the user records per menu line; a line with no values is
+      reported as "غير محدد", excluded from the totals, and listed in a
+      to-do panel with a button to fill it in. Same standing boundary as the
+      refused "randomise بيانات المصاريف's per-student cells": real numbers or
+      a visible blank, never a filled-in guess.
+      **The unit is the whole MENU LINE, not an ingredient.** That is how
+      `meal_program_entries.menu_text` already stores a meal, and splitting a
+      free-text line into ingredients would mean guessing quantities.
+      Names are matched on a normalised form (`normalize_dish` collapses
+      repeated/surrounding spaces) and `dish_nutrition.dish_name` is UNIQUE, so
+      retyping a line with different spacing updates it in place instead of
+      creating a second, permanently-unknown entry.
+      Honesty rules the analysis enforces, each with a test: a day is
+      "complete" only when EVERY planned meal has values; the weekly average
+      is computed from complete days ALONE and is None when none are (a mean
+      over partial days would quietly understate the week); an unwritten menu
+      slot is NOT counted as missing data (a normal program is not "missing"
+      سحور — it just does not serve one), so a Ramadan program is scored on
+      its own two meals.
+      The daily reference figure (default 2200 kcal) is user-editable and
+      persisted in `app_preferences` — shown only as a comparison, explicitly
+      NOT dietary advice, and nothing else derives from it.
+      Sidebar index 14 (الإعدادات shifted 14 → 15, every index re-verified by
+      building MainWindow). Seeder records values for 11 of the 15 demo menu
+      lines on purpose, so the "غير محدد" path is visible without breaking
+      anything. 18 new tests, 362 passing.
+      **Round 2 (same day) — rebuilt around PRODUCTS + RECIPES**, at the
+      user's request and backed by the official guide. Reading
+      `~/Downloads/الدليل المسطري...pdf` p.5 found this, on the regional
+      committee that prepares the weekly program:
+      *"إرفاق مكونات البرنامج الغذائي المعتمد بالتوزيع الكمي لمكونات الوجبات
+      الغذائية"* — the approved program must be submitted WITH a quantity
+      breakdown of each meal's components, respecting
+      "الحاجيات الغذائية لكل فئة عمرية على حدة", and the contracted doctors
+      sign it. So per-component quantities are an OFFICIAL requirement, not a
+      UI nicety. The guide states the requirement but supplies no template and
+      no figures (annex 5 holds only the reception PV, daily report and
+      infraction PV — all already built), so the numbers still come from the
+      user.
+      New: `FoodProduct` (values against a BASIS — per 100g / per 100ml / per
+      countable unit, because that is how labels state them) and
+      `MealComponent` (how much of a product goes into a menu line), with
+      `food_products` + `meal_components` tables and the editing UI extracted
+      into `ui/nutrition_editor.py` (ProductLibraryPanel + RecipeEditorPanel)
+      so neither file grew unmanageable.
+      Resolution order per menu line: **recipe → whole-line value → unknown**
+      (`resolve_dish`). The user chose to KEEP the old whole-line values as a
+      fallback, so nothing entered in round 1 was lost; the week grid marks
+      which of the two a number came from ("من المكونات" / "قيمة مباشرة").
+      A recipe pointing at a deleted product returns None rather than a
+      partial sum — but that cannot happen anyway, since deleting a product
+      cascades its recipe lines away.
+      **New document: `ui/nutrition_export.py` prints التوزيع الكمي** — one
+      component table per composed meal with quantities, per-component
+      calories and a meal total, signed by المدير / المسير / الطبيب المتعاقد
+      معه. Meals with no components are OMITTED rather than printed empty.
+      Two user decisions recorded: **one quantity set for everyone** (no
+      per-cycle variants — the guide's "فئة عمرية" wording would have tripled
+      data entry and they declined), and **build the export**.
+      18 more tests (36 in the file), 399 passing.
+
+- [x] **تقييم التلاميذ** (meal feedback) — `feedback_screen.py` +
+      `core/feedback.py` + `data/feedback_repo.py`, built 2026-08-29. The last
+      of the three features taken from the user's prototype.
+      **The QR-code flow was NOT built** and should not be: it needs a web
+      server reachable from pupils' phones, and this app is offline on one PC.
+      That was explained to the user and accepted — ratings are ENTERED IN THE
+      APP by the مسير or الحارس العام after a meal. Do not add the phone flow.
+      Honesty rules, each with a test: a dish with no ratings has NO rating
+      rather than a zero (`overall_average` returns None, never 0.0 — "nobody
+      rated it" and "everyone rated it zero" are different claims); an invalid
+      rating (0 or >5) is IGNORED rather than counted as the worst possible
+      score; and every average is displayed WITH the number of opinions behind
+      it, because 5.0 from one rating is not the claim 5.0 from twenty is.
+      **`MIN_RATINGS_FOR_RANKING = 3`** — a dish needs at least three ratings
+      before it can appear as most/least popular, so one five-star entry can
+      never make something "the school's favourite". The panels say so in
+      their own hint text.
+      Ratings are grouped on the normalised dish name (same `normalize_dish`
+      idea as التحليل الغذائي), the meal list follows the DATE's own meals so
+      a rating cannot be filed against a meal that was never served (Ramadan
+      days offer إفطار/سحور), and the dish is suggested from that day's weekly
+      program so the name matches instead of being retyped slightly
+      differently each time.
+      Sidebar index 15 (الإعدادات shifted 15 → 16, every index re-verified by
+      building MainWindow). Seeder records ~44 ratings across the last 30
+      weekdays, weighted so some dishes genuinely outperform others and the
+      ranking panels have real data. 19 new tests, 381 passing.
+      **Round 2 (same day) — rebuilt around a RESPONSE COUNT PER LEVEL.** The
+      user said the screen "needs more work"; checking the data showed the real
+      flaw: a meal eaten by ~140 pupils carried exactly ONE recorded opinion
+      (all 44 demo rows were 1-per-meal), so calling it تقييم التلاميذ
+      overstated what it was — the prototype's QR code had just hidden the same
+      flaw by implying many submissions arrived.
+      Now each served meal records HOW MANY pupils gave each level
+      (`count_excellent` … `count_bad`), which is collectable in practice — a
+      show of hands, or slips at the door — and yields a genuinely weighted
+      average plus a real response count. The five old single-`rating` rows are
+      kept and read as exactly ONE response at that level (`response_counts`),
+      so nothing earlier is lost or inflated; a row carrying counts ignores its
+      legacy rating.
+      Consequences carried through: `MIN_RATINGS_FOR_RANKING` now counts
+      RESPONSES not rows (one row with 100 opinions can rank; three rows with
+      one each still cannot), the summary card shows pupils not saved entries
+      (a real bug caught by its own test — it was still showing `len(rows)`),
+      and the counts are labelled تلميذ rather than تقييم.
+      **New document: `ui/feedback_export.py`** — تقرير آراء التلاميذ for
+      لجنة التتبع: period, overall average, per-meal averages, then every dish
+      ranked with its average, its response count and its full distribution.
+      Dishes with too few opinions are listed under their own heading rather
+      than ranked. Row heights are MEASURED, after a first version let the
+      distribution text spill out of the table — the same fixed-row-height trap
+      as the staff cards.
+      The user declined a period filter, quick entry, and linking a badly rated
+      dish to محضر المخالفة. Do not add them unasked. 10 more tests (29 in the
+      file), 409 passing.
+      Round 3 (same day) — **how the opinions get collected**, in
+      `ui/feedback_collect.py`. The user asked whether a QR/phone flow was
+      possible. It is technically (Python's stdlib `http.server` needs no web
+      framework, so §3 is not violated in letter), but they confirmed the
+      pupils **have phones and NO usable WiFi reaching the office PC**, so it
+      would have been built and never used. NOT BUILT — do not revisit without
+      that changing.
+      Built instead, both chosen by the user:
+      · **ورقة تفريغ الآراء** — a landscape sheet listing every meal actually
+        served in a chosen range (Ramadan-aware, with that day's planned dish)
+        and five WIDE empty boxes per row to tally into. Someone marks it in
+        the refectory, then types the five totals in.
+      · **Excel round-trip** — the same rows as a workbook with EMPTY count
+        columns, filled anywhere (including from a form's own export) and
+        imported back. Reuses openpyxl; no new dependency.
+      Import rules, each with a test: a row nobody filled in is SKIPPED and
+      counted, never stored as a meal nobody liked; an unreadable or negative
+      count is REPORTED, never guessed; a row with counts but no dish is
+      refused with a message telling the user to write the dish (the column is
+      editable); and **re-importing the same sheet updates the meal rather than
+      doubling its counts** (`get_feedback_for` matches on date+meal+dish) —
+      that is the most likely user mistake.
+      Two bugs found by running the round-trip rather than reading it: the
+      tally sheet's two-line date cell overflowed into the row below (now one
+      line, column widened), and the import reported every UNTOUCHED row as
+      "no dish name" because the dish check ran before the counts check —
+      burying real problems in noise. 11 more tests (40 in the file),
+      420 passing.
+      **Round 4 (same day) — the unit became ONE DISH PER WEEK.** The user
+      rejected the day-by-day shape outright ("those days you make i didn't
+      like them") and asked to rate the WEEK'S MENU instead. They chose: one
+      rating per dish per week (not one for the whole week), and the old
+      per-day rows KEPT and shown separately.
+      A week's menu has ~13 distinct dishes against 21 day-slots and a dish
+      served twice is asked about once, so the collecting is roughly half the
+      work and happens once a week. New `WeekFeedback` + `week_feedback` table
+      (UNIQUE(week_start, dish)), and `week_start_of()` in core snaps any day
+      to its Monday so two ratings for one week cannot disagree about which
+      week that is. **Note: this is NOT the meal-program week field the user
+      rejected earlier — different feature, and they asked for this one.**
+      `WeekFeedback` deliberately carries the SAME count fields and `dish` as
+      `MealFeedback`, so `summarize_by_dish` / `overall_average` /
+      `most_popular` work on either with no special-casing; the screen feeds
+      both into the averages and rankings. `average_by_meal_type` is the one
+      exception — it now SKIPS records with no `meal_type` (a week rating
+      covers a dish across the week and cannot be filed under فطور or غداء).
+      That was a real crash, found by generating the report over both sources.
+      The screen is now the week's whole menu in one editable table — a row per
+      dish with its five count boxes, live per-dish responses/average and a
+      week total — instead of a form submitted once per meal. The tally sheet
+      and the Excel round-trip follow the same shape (one row per dish; the
+      week is stored in cell B2 so the import knows which week the file is for
+      and jumps the screen to it). A dish rated earlier but no longer on the
+      menu keeps its row, or its numbers would silently vanish.
+      One bug found by rendering: stale QSpinBox cell widgets from the previous
+      render left a ghost "0" under every value — `clearContents()` before
+      rebuilding, and a fixed row height instead of `resizeRowsToContents()`.
+      Tests rewritten for the new shape; 41 in the file, 422 passing.
+      **Round 5 (same day) — the REPORT.** The user called it weak and asked
+      for KPIs, graphs, the school population (numbers, gender, class, age),
+      and page 1 KEPT as it was. Page 1 is untouched; two pages follow it.
+      · **Indicators + charts** — eight KPI boxes (overall average, responses,
+        % positive (4-5) / % negative (1-2), dishes rated, opinions per pupil,
+        best and worst dish), then three charts drawn with QPainter (no chart
+        library, no new dependency): the response spread across the five
+        levels, the average per WEEK as a zero-based column chart (a truncated
+        axis makes a flat run look like a collapse), and per-dish averages.
+      · **التلاميذ المستفيدون** — total, monitors, average age, class count,
+        then bars by gender, cycle, class and AGE. Age comes from
+        `Student.birth_date` via new pure `core/student_stats.py`.
+      **`birth_date` is empty in the demo but filled 160/160 in the real
+      database**, so the seeder now sets plausible ages; a roster with no dates
+      prints "لم تُسجَّل تواريخ الازدياد" rather than an empty chart, and a
+      pupil without one is counted under `unknown_age`, never given an age.
+      Three layout bugs found by rendering, all the same family as before:
+      bar VALUES were drawn inside the track and vanished under long bars (they
+      now have their own column); the trend chart's values and labels sat half
+      a slot right of their columns because `_text` defaults to right-aligned;
+      and in the narrow half-width charts "52 تلميذ (35%)" wrapped and collided
+      with the row below (the share is dropped when it does not fit on one
+      line, measured not guessed).
+      One real design flaw caught by a failing test: `_MAX_PLAUSIBLE_AGE` was
+      30, which would have silently dropped the adult معلمو الداخلية — who are
+      on the same roster and DO have birth dates in the real database — from
+      the age chart. Raised to 75, still rejecting typo'd years.
+      15 new tests (new `tests/test_student_stats.py`), 437 passing.
+      **Round 6 (same day) — WHO gave the opinion.** The user asked to
+      "make a link like student of this age like this meal or let's say the
+      rank this or gender make patterns". They chose **by cycle AND gender**
+      (6 groups) and to keep everything already recorded as **غير محدد**.
+      Storage is a ROW PER GROUP, not 30 more columns: `WeekFeedback` gained
+      `cycle` and `gender`, and the table's key widened from
+      `UNIQUE(week_start, dish)` to `UNIQUE(week_start, dish, cycle, gender)`.
+      **That constraint change needs a real migration, not an ALTER TABLE** —
+      SQLite cannot widen a UNIQUE, so a database made before this keeps the
+      old two-column key and every save then fails on a conflict target that
+      matches nothing. `_widen_week_feedback_unique()` detects the old index
+      and rebuilds the table, copying every row across (their cycle/gender stay
+      blank). Covered by a test that builds the OLD schema by hand and checks
+      the row survives.
+      Collecting follows the same split: **choosing no group prints/exports
+      ALL SIX** (one tally page-set per group, one Excel sheet per group), and
+      choosing one exports just that one — the point of the paper route is one
+      print run, not six clicks. The group is printed on the page and written
+      into the sheet's D2, so a filled sheet knows where its numbers belong.
+      **A sheet whose group name was hand-edited into something unrecognised is
+      REFUSED, not filed under a guess** — the same standing boundary as the
+      refused "randomise بيانات المصاريف" request.
+      The report gained a 4th page, **من أبدى الرأي**: average per cycle and
+      per gender (each bar labelled with that group's REAL AVERAGE AGE from the
+      roster — that is what turns "تأهيلي rate it higher" into "the oldest
+      pupils rate it higher"), the dishes the cycles and the genders most
+      disagree about, and each group's favourite. `MIN_RESPONSES_FOR_PATTERN
+      = 10` and a dish only ONE group rated is skipped entirely — that is
+      missing collection, not a disagreement. Ungrouped opinions are counted
+      and printed as excluded rather than quietly folded in.
+      The group's age comes from `profile_by_cycle()`, which routes pupils
+      through the app's own `student_category()` — so the roster and the
+      feedback groups line up by construction instead of via a second mapping
+      that could drift.
+      Three fixes found by rendering, not reading: the two group charts were
+      half-width and their labels wrapped into the row below (now full-width
+      stacked); the rating bars were scaled to the largest bar present, turning
+      3.66 vs 3.75 into a landslide (now scaled to 5 — `_bar_chart` gained a
+      `maximum`); and the screen's own `_field_style()` was a bare property
+      list, so the spin buttons drew as a detached bordered box beside every
+      count cell (now real selectors). The two new combos deliberately carry
+      NO stylesheet — `theme.py` already styles every combo in the app, and
+      overriding it removed the arrow.
+      Seeder now records all six groups with a real difference of taste, so
+      the patterns page has something true to show on first run.
+      25 new tests (71 in the file), 462 passing.
+
+- [x] **Four Settings fields removed** (2026-08-29, at the user's request):
+      **رمز GRESA** (`gresa_code`), **الحارس العام للداخلية**
+      (`surveillant_general`), **Objet du marché** (`contract_object`) and the
+      Arabic **اسم المزود** (`supplier_name`). Gone from `SchoolSettings`,
+      `settings_repo`, the Settings screen and the setup wizard.
+      **All four were BLANK in the real `matama.db`**, which is what made this
+      safe — checked before touching anything, and it decided the one
+      conditional the user attached ("الحارس العام — if his name is not used in
+      any doc just delete it"): the field only ever pre-filled محضر المخالفة's
+      عاين المخالفة box, and being empty it pre-filled nothing, so his name was
+      on no document. That box is now typed in.
+      The other three had live readers, all of which already fell through to
+      something else because the fields were empty:
+      · `contract_object` printed inside محضر التسلم اليومي's French legal
+        sentence with a hardcoded fallback — now the constant
+        `_CONTRACT_OBJECT_FR`, so the sentence is unchanged;
+      · `supplier_name` printed on رسالة الطلبية as "المزود — الشركة" and was
+        the second choice behind `company_name` on محضر التسلم اليومي/الشهري,
+        محضر المخالفة and طاقم المطبخ — `company_name` is now the ONE company
+        field everywhere.
+      **Verified by generating every affected document from the real settings
+      with the code before AND after, then diffing:** محضر التسلم اليومي (PDF
+      *and* the .docx body), رسالة الطلبية, محضر المخالفة and بطاقات طاقم
+      المطبخ all came back **byte-identical**. 462 tests still passing.
+      The four DB columns are deliberately LEFT in place on existing databases
+      (removed only from the migration list, so new databases never get them) —
+      same reasoning as the retired `violations` table: dropping a column
+      destroys whatever it holds, and nothing reads these any more.
+
+- [x] **الإحصائيات المعمقة + وصول سريع** (2026-08-29). The user asked for
+      "a page just for very deep statistics and KPIs and patterns" plus "a home
+      page with quick access". **Both pages already existed** — يوم العمل is the
+      home screen and الإحصائيات the statistics one — so after showing them what
+      each already did, they chose to DEEPEN THE TWO rather than add a third and
+      fourth competing for the same job. Menu stays at 7 rows.
+      New `src/data/analytics_repo.py` (month/weekday/cycle aggregates, document
+      coverage), new `src/core/analytics.py` (the arithmetic), new
+      `src/ui/dashboard_deep.py` (the three sections — kept OUT of
+      dashboard_screen.py, which was already 673 lines).
+      Three sections, all chosen by the user:
+      · **اتجاهات شهرية** — meals, days, per-day average and cost for every
+        month with data, as a zero-based column chart plus a table.
+      · **أنماط الغياب** — rate, worst weekday, and bars per weekday and per
+        cycle. `worst_weekday` compares RATES, not counts: a weekday the school
+        serves more often would otherwise always win.
+      · **اكتمال الوثائق** — which of the five daily documents each served day
+        has, per-document coverage bars, and the specific days still missing
+        something (capped at 8, then counted).
+      Plus **من أبدى الرأي** on screen at last — the cycle/gender feedback
+      patterns with each group's real average age, which until now existed only
+      inside the exported PDF.
+      **A real bug caught before shipping it, by checking the numbers rather
+      than trusting them:** the first trend used `get_monthly_summaries`, which
+      hardcodes فطور/غداء/عشاء — so February and March (Ramadan) came back at
+      3,552 and 2,242 meals against a true 5,608 and 5,203, and the chart showed
+      a collapse that never happened. `get_monthly_meal_totals()` now counts
+      EVERY meal type, netted per meal then floored (an absence on one meal must
+      not cancel another's attendance). Since the user dropped Ramadan pricing
+      (2026-08-25), those meals are counted but not costed, and the month is
+      marked `cost_is_partial` with a footnote rather than printing a total that
+      quietly understates it. ⚠️ **الملخص الشهري still has this bug** — flagged
+      to the user, not fixed here, because it needs two decisions from them
+      (Ramadan pricing, and the row layout).
+      Honesty rules with tests: a month with no recorded days has NO average;
+      an absence rate with nothing expected is None, not zero; and completeness
+      counts ONLY days the school actually served — counting weekends and
+      holidays as missing paperwork would make the number meaningless.
+      **Also fixed, found by rendering the screen:** all four dashboard donut
+      legends were drawn BELOW the widget's own bottom edge (the donut was
+      centred in the full height and the legend placed after it), so every label
+      was invisible and the colours meant nothing; and the fixed 80px legend
+      stride ran wide labels off the card. Now the legend gets a reserved strip,
+      widths are measured, it wraps to as many rows as it needs, and it packs
+      right-to-left with each swatch on the right of its own label.
+      **يوم العمل** gained a وصول سريع grid to the 11 pages that are not one of
+      its five daily documents — it linked only to those five, and the lower
+      half of the screen was empty.
+      Round 2 (same day, from two screenshots): the user asked for the green
+      school banner and the وصول سريع row to LEAVE الإحصائيات — the banner
+      moved to يوم العمل, the quick row was deleted outright (يوم العمل's own
+      grid replaces it), and `_build_welcome_panel`/`_build_quick_actions`/
+      `_quick_button` are gone from dashboard_screen.py. On الإحصائيات the
+      banner always showed TODAY; on يوم العمل it follows the DATE PICKER,
+      since a banner reading "الأحد 30 غشت" above cards describing the 15th
+      would be wrong. الإحصائيات now opens straight onto its KPI cards.
+      Round 3 (same day, from a screenshot): **يوم العمل's five document cards
+      rendered crushed to ~25px each**, title, status and buttons on top of
+      one another. Same cause as the sidebar earlier the same day — the banner
+      and the quick-access grid pushed the content to 934px in a 700px window,
+      and `_PipelineCard` declared NO minimum height (0), so the QVBoxLayout
+      was free to squeeze it to nothing. Fixed twice over: the screen is inside
+      a QScrollArea, and a card now declares `_CARD_MIN_HEIGHT`.
+      **Lesson: adding anything to a screen that already fills its height needs
+      a render at WINDOW_MIN_HEIGHT (1100×700), not at a comfortable size — Qt
+      does not warn, it just violates the minimums it was given.**
+      Same round: **تقرير الإحصائيات** — `ui/dashboard_export.py`, a signed PDF
+      of the page (headline figures, the monthly trend table, absence patterns,
+      who rated what, document completeness), exported for the month selected
+      in the deep panel via a تصدير التقرير button in a new page header. The
+      drawing primitives are imported from `feedback_export.py` rather than
+      copied — they already carry three fixes that each took a render to find.
+      28 new tests, 496 passing.
+      Round 4 (same day, from a sidebar screenshot): three small user requests —
+      the stray "M" prefix on the sidebar's school title is gone (it was a
+      hardcoded `f"M  {…}"`, not initials of anything); **يوم العمل was renamed
+      الصفحة الرئيسية** everywhere in `src/` and `tests/` (the file keeps its
+      name); and **التلاميذ حسب القسم** was added to الإحصائيات and to the
+      exported report — every class with its own ذكور/إناث split and a
+      المجموع العام row. New `breakdown_by_class()` in core/student_stats.py
+      orders classes through the app's own `student_category` rather than by
+      parsing "الأولى"/"الثانية" out of a name the school typed into Excel; a
+      pupil with no recorded gender is counted and reported separately, never
+      assigned to one of the two columns. The report's table is built from the
+      SCREEN's own row builder, so the two can never disagree.
+      Round 5 (same day): the user asked for that class table to be **a graph**
+      — it is now a stacked bar per class (ذكور green, إناث purple, غير محدد
+      grey), each segment carrying its own number INSIDE it when it is wide
+      enough to hold one, measured with QFontMetrics so a narrow segment drops
+      its label rather than spilling over its neighbour. Bars are scaled to the
+      largest class, so their lengths compare across rows; the total sits in
+      its own column where no bar can cover it. Drawn the same way on screen
+      and in the PDF, from the same `class_chart_rows()`. The table builder it
+      replaced was deleted rather than left as dead code.
+      36 new tests, 504 passing.
+
+- [x] **Setup wizard remade** (2026-08-29) — `setup_wizard.py` +
+      new `setup_steps.py`. The user asked for a remake "considering what needs
+      modification", so it was audited first. Two things checked and found
+      FINE: the four deleted Settings fields were already gone from it, and the
+      level picker's `Liste_internes.xlsx` really does ship in the packaged
+      build (in `Matama.spec`'s datas, present in `dist/`).
+      Four real problems, all fixed:
+      · **The Ramadan fields were backwards.** It asked for three Ramadan
+        PRICES — dropped by the user on 2026-08-25, read by nothing — and never
+        asked for the Ramadan DATES, which every document reads to decide
+        whether a day serves إفطار/سحور. Prices removed, `مدة رمضان` added
+        behind a checkbox ("مؤسستي تقدّم وجبات رمضان"), so an untouched wizard
+        never writes a period nobody meant.
+      · **It ended in an empty app.** Three new SKIPPABLE steps: import
+        لائحة التلاميذ from Excel (same reader لائحة التلاميذ uses), record
+        العطل as date ranges, and type the first weekly menu. Every one says on
+        the page that it is optional — setup must never become a wall a
+        beginner cannot get past.
+      · **Prices were not validated.** "12,50" or a typo saved as text and then
+        read as 0.00 in every cost figure downstream, silently. Refused now,
+        naming the field; a BLANK price is still allowed, because not knowing a
+        price yet is normal and nonsense is not.
+      · **No sense of progress.** Six numbered chips across the header, and a
+        final **تم الإعداد** page that reports what was saved AND what was left
+        empty — a summary listing only successes would hide the gaps.
+      Settings are now written when LEAVING step 2, not at the very end: every
+      step after it is optional, and someone who closes the window on one
+      should still keep the identity they typed.
+      Guards worth keeping: a holiday range that ends before it starts, or runs
+      longer than 120 days (a mistyped year), or carries no reason, is refused
+      rather than writing thousands of rows; an untouched menu grid creates no
+      program at all, since an empty slot means "not served", not "a meal with
+      no name".
+      **The wizard had NO tests before this** — 21 new ones in a new
+      `tests/test_setup_wizard.py`. 525 passing.
+
 ### 📋 Not started
-- Nothing major beyond finishing Ramadan mode above.
+- Nothing outstanding from the prototype. The remaining ideas in it were
+  discussed with the user on 2026-08-29 and NOT chosen: المخزون (stock),
+  التتبع المالي (budget ledger), الأرشيف (document archive), التقارير الدورية,
+  and the pipeline blocking/prerequisites idea for يوم العمل. The user picked
+  طاقم المطبخ only from that list, then added التحليل الغذائي and
+  تقييم التلاميذ. Do not build the others without being asked.
 
 ---
 
@@ -1426,3 +1889,37 @@ The user relies on these files to pick up work across sessions without
 re-explaining everything each time.
 
 **End of file. When in doubt → ASK.**
+
+### 2026-09-01 — setup cycle choices now control data-entry screens
+
+The setup wizard's selected school cycles are now operational, not decorative.
+If the user selects only الثانوي الإعدادي, the primary and qualifying rows are
+hidden from the daily contact, daily absence, order-letter, daily-report and
+student-feedback screens. معلمو الداخلية remains visible because it is staff,
+not a school cycle. Official printed templates are deliberately unchanged and
+retain all required rows. Safety rule: any cycle with existing non-zero daily
+data is always shown even when it is unticked, so saved numbers can never become
+invisible. No selected cycle preference means all three cycles remain visible
+for old installations. The absence history table follows the same filter; its
+unused columns are removed, not merely left empty. The shared rule lives in
+`core/active_cycles.py`; the SQL evidence query lives in
+`data/students_repo.py`. 533 tests plus 9 subtests.
+
+### 2026-09-01 — pre-release diagnostic and cleanup
+
+The full release audit found and fixed two real Ramadan under-counts: the
+daily-report detail tables hardcoded the normal three meals, and the monthly
+summary omitted Ramadan rows entirely. Both now use the date/month's real meal
+types. Monthly إفطار/سحور are counted but remain unpriced (0.00), preserving
+the user's standing “ignore Ramadan pricing” decision. Ordinary months do not
+gain empty Ramadan rows. The monthly page also reloads fresh data without
+discarding unsaved notes.
+
+Other release fixes: SQLite's backup API replaces raw file copying; malformed
+QGroupBox CSS and unsupported `box-sizing` were removed; deprecated Qt table
+alignment calls were updated; all 17 screens now open with zero stylesheet
+errors; PyInstaller now produces one portable file; runtime resource paths
+support one-file extraction; unused pandas was removed; and a Windows GitHub
+Actions build/release workflow was added. Final source result: 538 tests plus
+9 subtests, no warnings. The Linux one-file smoke build is 86 MB and starts
+successfully; the real Windows `.exe` must be produced by the Windows workflow.

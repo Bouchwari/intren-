@@ -227,7 +227,11 @@ class AbsenceCardLayoutTests(unittest.TestCase):
         font.setPixelSize(FONT_CAPTION)
         font.setBold(True)
         metrics = QFontMetrics(font)
-        for column, label in enumerate(das._HDR_HISTORY):
+        headers = [
+            table.horizontalHeaderItem(column).text()
+            for column in range(table.columnCount())
+        ]
+        for column, label in enumerate(headers):
             self.assertGreaterEqual(
                 table.columnWidth(column),
                 metrics.horizontalAdvance(label) + das._HISTORY_HEADER_PADDING,
@@ -235,7 +239,7 @@ class AbsenceCardLayoutTests(unittest.TestCase):
 
 
 class BatchAbsenceGenerationTests(unittest.TestCase):
-    """يوم العمل's batch auto-fill writes absence rows straight to the
+    """الصفحة الرئيسية's batch auto-fill writes absence rows straight to the
     database with no screen open."""
 
     @classmethod

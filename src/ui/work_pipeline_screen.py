@@ -1,6 +1,6 @@
 """
 src/ui/work_pipeline_screen.py
-يوم العمل — the day's paperwork at a glance: status of the 3 daily
+الصفحة الرئيسية — the day's paperwork at a glance: status of the 3 daily
 documents (contact sheet, absence sheet, daily report) for a selected
 date, with a one-click jump to fix anything missing, and a single
 "generate everything" action that can auto-fill missing numbers and
@@ -12,13 +12,14 @@ from typing import Callable, Dict, List, Optional, Tuple
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QFont, QPageLayout
 from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
-    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_PAPER, COLOR_SUCCESS,
-    COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
+    ARABIC_DAY_NAMES, ARABIC_MONTHS,
+    COLOR_ACCENT, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT, COLOR_PAPER,
+    COLOR_SUCCESS, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION, FONT_TITLE,
 )
 from core.contact_counts import count_students
@@ -39,8 +40,28 @@ from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
 # ── Arabic strings ────────────────────────────────────────────────────────────
-_TITLE = "يوم العمل"
+_TITLE = "الصفحة الرئيسية"
 _SUBTITLE = "حالة وثائق اليوم — وتوليدها كلها بضغطة واحدة"
+_BANNER_TITLE = "تدبير المطعمة المدرسية"
+_BANNER_FALLBACK_SCHOOL = "المؤسسة"
+_QUICK_TITLE = "وصول سريع إلى باقي الصفحات"
+# Everything that is NOT one of the five daily documents above — those already
+# have their own card. Index is the stack index, same as the sidebar's.
+_QUICK_LINKS: list[tuple[str, str, int]] = [
+    ("📈", "الإحصائيات", 1),
+    ("👥", "لائحة التلاميذ", 2),
+    ("🍽️", "البرنامج الغذائي", 3),
+    ("👨\u200d🍳", "طاقم المطبخ", 13),
+    ("📚", "محضر التسلم الشهري", 9),
+    ("📊", "الملخص الشهري", 11),
+    ("📜", "الوثائق الفصلية", 10),
+    ("⚖️", "محضر المخالفة", 12),
+    ("🥗", "التحليل الغذائي", 14),
+    ("💬", "تقييم التلاميذ", 15),
+    ("⚙️", "الإعدادات", 16),
+]
+_QUICK_COLUMNS = 4
+_CARD_MIN_HEIGHT = 64
 _BTN_TODAY = "اليوم"
 _BTN_PREV = "اليوم السابق"
 _BTN_NEXT = "اليوم التالي"
@@ -85,6 +106,10 @@ class _PipelineCard(QFrame):
 
     def __init__(self, item: PipelineItem, on_fix: Callable[[], None], parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        # A real minimum, not just whatever the contents ask for: with none,
+        # a layout short of room squeezes these to ~25px and the title, the
+        # status line and the buttons all render on top of each other.
+        self.setMinimumHeight(_CARD_MIN_HEIGHT)
         self.setStyleSheet(f"""
             QFrame {{
                 background: white;
@@ -217,7 +242,7 @@ class _GenerateEverythingDialog(QDialog):
 
 
 class WorkPipelineScreen(QWidget):
-    """يوم العمل — the app's landing screen."""
+    """الصفحة الرئيسية — the app's landing screen."""
 
     def __init__(self, navigate_to: Callable[[int], None]) -> None:
         super().__init__()
@@ -229,9 +254,30 @@ class WorkPipelineScreen(QWidget):
     # ── Build ──────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # Everything sits inside a scroll area. Without it the QVBoxLayout has
+        # to fit the banner, the five cards AND the quick-access grid into
+        # whatever the window gives it, and at 700px it crushed every card to
+        # ~25px — title, status and buttons drawn on top of each other.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        scroll.viewport().setStyleSheet("background: transparent;")
+        outer.addWidget(scroll)
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        scroll.setWidget(content)
+
+        root = QVBoxLayout(content)
         root.setContentsMargins(24, 20, 24, 24)
         root.setSpacing(16)
+
+        root.addWidget(self._build_banner())
 
         header = QVBoxLayout()
         title = QLabel(_TITLE)
@@ -278,7 +324,99 @@ class WorkPipelineScreen(QWidget):
         self._cards_container = QVBoxLayout()
         self._cards_container.setSpacing(10)
         root.addLayout(self._cards_container)
+
+        # The rest of the app, one click away. This screen is where the day
+        # starts, and it linked only to the five daily documents.
+        root.addWidget(self._build_quick_access())
         root.addStretch()
+
+    def _build_banner(self) -> QWidget:
+        """The school-identity banner, moved here from الإحصائيات on
+        2026-08-29 — this is the home screen, so this is where it belongs.
+
+        It shows the SELECTED date, not today: this screen has a date picker,
+        and a banner reading "الأحد 30 غشت" while the cards below describe the
+        15th would simply be wrong.
+        """
+        panel = QFrame()
+        panel.setObjectName("workDayBanner")
+        panel.setStyleSheet(
+            "#workDayBanner { background-color: #5A5A40; border-radius: 18px;"
+            " border: none; }")
+        layout = QHBoxLayout(panel)
+        layout.setContentsMargins(20, 14, 20, 14)
+        layout.setSpacing(14)
+
+        column = QVBoxLayout()
+        column.setSpacing(2)
+        title = QLabel(_BANNER_TITLE)
+        font = QFont(); font.setPointSize(16); font.setBold(True)
+        title.setFont(font)
+        title.setStyleSheet("color: white; background: transparent;")
+        self._banner_subtitle = QLabel("")
+        self._banner_subtitle.setWordWrap(True)
+        self._banner_subtitle.setStyleSheet(
+            f"color: rgba(255,255,255,0.82); font-size:{FONT_CAPTION}px;"
+            "background: transparent;")
+        column.addWidget(title)
+        column.addWidget(self._banner_subtitle)
+
+        self._banner_date = QLabel("")
+        self._banner_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._banner_date.setMinimumWidth(180)
+        self._banner_date.setStyleSheet(
+            "QLabel { color: white; background-color: rgba(255,255,255,0.12);"
+            " border: 1px solid rgba(255,255,255,0.22); border-radius: 12px;"
+            " padding: 8px 14px; font-weight: 700; }")
+
+        layout.addLayout(column, 1)
+        layout.addWidget(self._banner_date)
+        return panel
+
+    def _refresh_banner(self, day: QDate) -> None:
+        settings = get_school_settings()
+        school = (settings.school_name.strip() if settings else "") or \
+            _BANNER_FALLBACK_SCHOOL
+        month = ARABIC_MONTHS[day.month()]
+        self._banner_subtitle.setText(f"{school}  •  {month} {day.year()}")
+        self._banner_date.setText(
+            f"{ARABIC_DAY_NAMES[day.dayOfWeek() - 1]}  {day.day()} "
+            f"{month} {day.year()}")
+
+    def _build_quick_access(self) -> QWidget:
+        panel = QFrame()
+        panel.setStyleSheet(
+            f"background:{COLOR_PANEL_ALT}; border:1px solid {COLOR_BORDER};"
+            "border-radius:14px;")
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(16, 12, 16, 14)
+        outer.setSpacing(10)
+
+        heading = QLabel(_QUICK_TITLE)
+        heading.setStyleSheet(
+            f"background:transparent; border:none; color:{COLOR_TEXT_PRIMARY};"
+            f"font-size:{FONT_LABEL}px; font-weight:bold;")
+        outer.addWidget(heading)
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        for position, (icon, label, index) in enumerate(_QUICK_LINKS):
+            button = IconButton(
+                label, icon=icon, bg="white", text_color=COLOR_TEXT_PRIMARY,
+                border=COLOR_BORDER, border_radius=10, padding_h=12,
+                font_size=12, bold=False, min_height=38,
+                hover_bg=COLOR_PANEL_ALT,
+            )
+            button.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                 QSizePolicy.Policy.Fixed)
+            button.clicked.connect(lambda _c, i=index: self._navigate(i))
+            grid.addWidget(button, position // _QUICK_COLUMNS,
+                           position % _QUICK_COLUMNS)
+        # Even columns, so the last short row lines up with the ones above it.
+        for column in range(_QUICK_COLUMNS):
+            grid.setColumnStretch(column, 1)
+        outer.addLayout(grid)
+        return panel
 
     def _nav_btn(self, label: str) -> QPushButton:
         return IconButton(
@@ -315,6 +453,8 @@ class WorkPipelineScreen(QWidget):
                 # through dates fast).
                 widget.setParent(None)
                 widget.deleteLater()
+
+        self._refresh_banner(self._date_edit.date())
 
         date_str = self._date_edit.date().toString("yyyy-MM-dd")
         for pipeline_item in get_daily_pipeline_status(date_str):

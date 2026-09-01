@@ -45,8 +45,11 @@ def get_monthly_summaries(month: str, prices: dict) -> List[MonthlyMealSummary]:
     contacts = _aggregate_month(month, "daily_contact")
     absences = _aggregate_month(month, "daily_absence")
 
-    from config.settings import MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA
-    meal_keys = [MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA]
+    from config.settings import RAMADAN_MEALS, REGULAR_MEALS
+    meal_keys = list(REGULAR_MEALS) + [
+        meal for meal in RAMADAN_MEALS
+        if meal in contacts or meal in absences
+    ]
     result = []
     for mk in meal_keys:
         c = contacts.get(mk, {})

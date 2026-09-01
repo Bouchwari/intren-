@@ -1,4 +1,4 @@
-# نظام إدارة العمل / Matama
+# نظام المطعمة / Matama
 
 Offline desktop app for cafeteria records, students, reports, and supplier paperwork.
 
@@ -31,13 +31,27 @@ python src/main.py
 
 The app opens into the main Matama window with a right-to-left sidebar for dashboard, students, meal programs, daily logs, reports, reception and infraction records, quarterly documents, and settings.
 
-## Build the executable
+## Run the tests
 
 ```bash
-pyinstaller Matama.spec
+python -m pytest -q
 ```
 
-The packaged app will be created in `dist/`.
+## Build the portable executable
+
+PyInstaller builds for the operating system that runs it. On Windows:
+
+```bash
+pyinstaller --clean --noconfirm Matama.spec
+```
+
+The single portable file is created as `dist/Matama.exe`. Git tags beginning
+with `v` also run `.github/workflows/release.yml`, test the app on Windows,
+build the executable, and attach it to a GitHub release.
+
+The app stores `matama.db` beside the executable. Keep the executable in a
+writable folder such as Documents or Desktop, and use الإعدادات → النسخ
+الاحتياطي regularly.
 
 ## Project structure
 
@@ -52,9 +66,10 @@ work_system/
 |- templets/                   Document and spreadsheet templates
 |- build/ and dist/            Generated packaging output
 |- matama.db                   Local SQLite database
-|- tests/                      Test area (currently empty)
+|- tests/                      Automated test suite
 |- requirements.txt            Python packages
 `- README.md
 ```
 
-Golden rule: `ui/` calls `core/`, and `core/` calls `data/`.
+Layer rule: `ui/` may call `core/` and `data/`; `core/` may call `data/`;
+SQL stays in `data/`, and Qt stays in `ui/`.

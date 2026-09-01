@@ -1,4 +1,6 @@
 """School settings CRUD — moved out of database.py (Stage 1.5, Prompt 6)."""
+import sqlite3
+from pathlib import Path
 from typing import Optional
 
 from config.settings import EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF
@@ -9,36 +11,38 @@ _EXPORT_FORMAT_KEY = "document_export_format"
 _VALID_EXPORT_FORMATS = {EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX}
 
 
+def backup_database(destination: Path) -> None:
+    """Create a transactionally consistent SQLite backup at destination."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with _connection() as source, sqlite3.connect(destination) as target:
+        source.backup(target)
+
+
 def save_school_settings(s: SchoolSettings) -> None:
     """Upsert all school settings (always stored as row id=1)."""
     with _connection() as conn:
         conn.execute("""
             INSERT INTO school_settings (
                 id, school_name, school_name_fr, aref, direction_provinciale,
-                gresa_code, city, city_fr, academy, director, school_year,
-                gestionnaire, surveillant_general,
-                contract_number, contract_object, supplier_name,
+                city, city_fr, academy, director, school_year,
+                gestionnaire, contract_number,
                 company_name, supplier_address,
                 price_ftour, price_ghada, price_asha,
                 price_ftour_ramadan, price_asha_ramadan, price_shour,
                 ramadan_start, ramadan_end
-            ) VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
                 school_name=excluded.school_name,
                 school_name_fr=excluded.school_name_fr,
                 aref=excluded.aref,
                 direction_provinciale=excluded.direction_provinciale,
-                gresa_code=excluded.gresa_code,
                 city=excluded.city,
                 city_fr=excluded.city_fr,
                 academy=excluded.academy,
                 director=excluded.director,
                 school_year=excluded.school_year,
                 gestionnaire=excluded.gestionnaire,
-                surveillant_general=excluded.surveillant_general,
                 contract_number=excluded.contract_number,
-                contract_object=excluded.contract_object,
-                supplier_name=excluded.supplier_name,
                 company_name=excluded.company_name,
                 supplier_address=excluded.supplier_address,
                 price_ftour=excluded.price_ftour,
@@ -51,9 +55,8 @@ def save_school_settings(s: SchoolSettings) -> None:
                 ramadan_end=excluded.ramadan_end
         """, (
             s.school_name, s.school_name_fr, s.aref, s.direction_provinciale,
-            s.gresa_code, s.city, s.city_fr, s.academy, s.director, s.school_year,
-            s.gestionnaire, s.surveillant_general,
-            s.contract_number, s.contract_object, s.supplier_name,
+            s.city, s.city_fr, s.academy, s.director, s.school_year,
+            s.gestionnaire, s.contract_number,
             s.company_name, s.supplier_address,
             s.price_ftour, s.price_ghada, s.price_asha,
             s.price_ftour_ramadan, s.price_asha_ramadan, s.price_shour,
@@ -79,17 +82,13 @@ def get_school_settings() -> Optional[SchoolSettings]:
         school_name_fr=_r("school_name_fr"),
         aref=_r("aref"),
         direction_provinciale=_r("direction_provinciale"),
-        gresa_code=_r("gresa_code"),
         city=_r("city"),
         city_fr=_r("city_fr"),
         academy=_r("academy"),
         director=_r("director"),
         school_year=_r("school_year"),
         gestionnaire=_r("gestionnaire"),
-        surveillant_general=_r("surveillant_general"),
         contract_number=_r("contract_number"),
-        contract_object=_r("contract_object"),
-        supplier_name=_r("supplier_name"),
         company_name=_r("company_name"),
         supplier_address=_r("supplier_address"),
         price_ftour=_r("price_ftour"),
@@ -101,6 +100,34 @@ def get_school_settings() -> Optional[SchoolSettings]:
         ramadan_end=_r("ramadan_end"),
         price_shour=_r("price_shour"),
     )
+
+
+_NUTRITION_REFERENCE_KEY = "nutrition_reference_calories"
+
+
+def get_nutrition_reference_calories(default: int) -> int:
+    """The daily calorie figure التحليل الغذائي compares against.
+
+    Editable by the user and shown only as a comparison — it is a reference
+    figure, not dietary advice, and nothing else in the app derives from it.
+    """
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_preferences WHERE key=?",
+            (_NUTRITION_REFERENCE_KEY,),
+        ).fetchone()
+    try:
+        return int(row["value"]) if row else default
+    except (TypeError, ValueError):
+        return default
+
+
+def save_nutrition_reference_calories(value: int) -> None:
+    with _connection() as conn:
+        conn.execute("""
+            INSERT INTO app_preferences (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, (_NUTRITION_REFERENCE_KEY, str(int(value))))
 
 
 def get_document_export_format() -> str:

@@ -116,6 +116,11 @@ _SIGNER_LABEL_FR   = "Nous soussignons :"
 # overwrites the template's own role-label cells (see
 # _fill_reception_document_xml), so this only needs to mirror the real
 # template's CURRENT wording for the PDF to visually match it.
+# The marché's objet, as it reads on this document. Was a Settings field
+# until 2026-08-29; it was blank in the real database, so every export
+# already printed exactly this — the user asked for the field to go.
+_CONTRACT_OBJECT_FR = "PRESTATION DE RESTAURATION AU PROFIT DE L’INTERNAT DU"
+
 _SIGNER_ROLES_FR   = ["CHEF D'ÉTABLISSEMENT", "Gestionnaire des services matériels et financiers"]
 _ITEMS_COLUMNS_FR  = ["N°Article", "Désignation des Articles", "Unité", "Quantité"]
 _MEAL_DESIGNATION_FR = {
@@ -335,14 +340,12 @@ def _draw_reception_pdf_page(
     a 4-column meal/quantity table, remarks, closing declaration, then
     HEADMASTER/STEWARD/CONTRACTOR signatures. Shared by
     _write_reception_pdf (standalone file) and build_reception_pdf_page
-    (يوم العمل's combined batch PDF)."""
+    (الصفحة الرئيسية's combined batch PDF)."""
     s = settings
-    company = ((s.company_name if s else "") or (s.supplier_name if s else "")) or "—"
+    company = ((s.company_name if s else "") or "") or "—"
     school_fr = ((s.school_name_fr if s else "") or (s.school_name if s else "")) or "—"
     contract_number = ((s.contract_number if s else "") or "").strip() or "—"
-    contract_object = ((s.contract_object if s else "") or "").strip() or (
-        "PRESTATION DE RESTAURATION AU PROFIT DE L’INTERNAT DU"
-    )
+    contract_object = _CONTRACT_OBJECT_FR
     place = ((s.city_fr if s else "") or (s.city if s else "") or "").strip() or "—"
     display_date = _reception_date_format(date_str)
 
@@ -606,11 +609,9 @@ def _fill_reception_legal_paragraphs(root: ET.Element, settings: Optional[School
     s = settings
     year = ((s.school_year if s else "") or "").strip() or "—"
     contract_number = ((s.contract_number if s else "") or "").strip() or "—"
-    contract_object = ((s.contract_object if s else "") or "").strip() or (
-        "PRESTATION DE RESTAURATION AU PROFIT DE L’INTERNAT DU"
-    )
+    contract_object = _CONTRACT_OBJECT_FR
     school_fr = ((s.school_name_fr if s else "") or (s.school_name if s else "") or "").strip() or "—"
-    company = ((s.company_name if s else "") or (s.supplier_name if s else "") or "").strip() or "—"
+    company = ((s.company_name if s else "") or "").strip() or "—"
     place = ((s.city_fr if s else "") or (s.city if s else "") or "").strip() or "—"
 
     # The paragraph that used to hold the school name ("LYCEE QUALIFIANT

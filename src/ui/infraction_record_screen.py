@@ -197,8 +197,7 @@ def draw_infraction_pdf_page(
                _BODY_TEMPLATE.format(
                    contract=contract, school=school, commune=commune)) + 22
 
-    holder = (settings.company_name if settings else "") or (
-        settings.supplier_name if settings else "") or "." * 30
+    holder = ((settings.company_name if settings else "") or "").strip() or "." * 30
     _text(painter, QRectF(margin, y, content_w, 24),
           _filled_line(_LBL_HOLDER, holder))
     y += _LINE_GAP
@@ -272,8 +271,7 @@ def _docx_strings(record: InfractionRecord,
     contract = (settings.contract_number if settings else "") or "." * 25
     school = (settings.school_name if settings else "") or "." * 25
     commune = (settings.city if settings else "") or "." * 20
-    holder = (settings.company_name if settings else "") or (
-        settings.supplier_name if settings else "") or "." * 30
+    holder = ((settings.company_name if settings else "") or "").strip() or "." * 30
     meal_label = MEAL_LABELS.get(record.meal_type, record.meal_type)
     return {
         "title": _TITLE,
@@ -582,9 +580,10 @@ class InfractionRecordScreen(QWidget):
         self._place_combo.setCurrentIndex(0)
         self._type_combo.setCurrentIndex(0)
         self._description_edit.clear()
-        settings = get_school_settings()
-        self._reporter_edit.setText(
-            (settings.surveillant_general if settings else "") or "")
+        # Who observed the breach is typed in: the الحارس العام Settings field
+        # this used to prefill from was removed 2026-08-29 (it was blank in the
+        # real database, so it never prefilled anything anyway).
+        self._reporter_edit.clear()
         self._suggest_number()
 
     def _current_record(self) -> InfractionRecord:
@@ -713,7 +712,7 @@ class InfractionRecordScreen(QWidget):
             ]
             for column, item in enumerate(values):
                 item.setTextAlignment(
-                    int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+                    Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                 self._table.setItem(row, column, item)
             delete_btn = IconButton(
                 _BTN_DELETE, bg=COLOR_DANGER, text_color="white",

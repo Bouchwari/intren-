@@ -84,5 +84,33 @@ class GroupConsecutiveHolidaysTests(unittest.TestCase):
         self.assertEqual(groups, [("2026-08-13", "2026-08-13", "", ["2026-08-13"])])
 
 
+class DatabaseBackupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._original_db_path = database.DB_PATH
+        database.DB_PATH = Path(self._tmpdir.name) / "source.db"
+        database.init_database()
+
+    def tearDown(self) -> None:
+        database.DB_PATH = self._original_db_path
+        self._tmpdir.cleanup()
+
+    def test_backup_is_a_readable_consistent_database(self) -> None:
+        database.save_school_settings(SchoolSettings(
+            school_name="backup school", school_year="2026", director="d",
+        ))
+        destination = Path(self._tmpdir.name) / "copy.db"
+        database.backup_database(destination)
+
+        import sqlite3
+        with sqlite3.connect(destination) as connection:
+            integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+            school_name = connection.execute(
+                "SELECT school_name FROM school_settings WHERE id=1"
+            ).fetchone()[0]
+        self.assertEqual(integrity, "ok")
+        self.assertEqual(school_name, "backup school")
+
+
 if __name__ == "__main__":
     unittest.main()

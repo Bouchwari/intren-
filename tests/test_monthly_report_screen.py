@@ -13,7 +13,7 @@ SRC_DIR = ROOT_DIR / "src"
 sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
-from config.settings import MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA
+from config.settings import MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA, MEAL_IFTAR, MEAL_SHOUR
 from core.models import DailyContact, MonthlyMealSummary, SchoolSettings
 from data import database
 from ui import monthly_report_screen as mrs
@@ -74,6 +74,42 @@ class MonthlyReportScreenTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(screen._selected_month_str(), "2026-06")
         self.assertTrue(any(s.contact_total > 0 for s in screen._summaries))
+        screen.close()
+
+    def test_ramadan_meals_are_counted_but_not_priced(self) -> None:
+        database.save_daily_contact(DailyContact(
+            date="2026-03-10", meal_type=MEAL_IFTAR,
+            collegial_granted=40,
+        ))
+        database.save_daily_contact(DailyContact(
+            date="2026-03-10", meal_type=MEAL_SHOUR,
+            collegial_granted=30,
+        ))
+        summaries = database.get_monthly_summaries("2026-03", {
+            MEAL_FTOUR: "5", MEAL_GHADA: "8", MEAL_ASHA: "5",
+        })
+        by_meal = {summary.meal_type: summary for summary in summaries}
+        self.assertEqual(by_meal[MEAL_IFTAR].net_total, 40)
+        self.assertEqual(by_meal[MEAL_SHOUR].net_total, 30)
+        self.assertEqual(by_meal[MEAL_IFTAR].unit_price, 0)
+        self.assertEqual(by_meal[MEAL_SHOUR].total_cost, 0)
+
+    def test_ordinary_month_does_not_add_empty_ramadan_rows(self) -> None:
+        database.save_daily_contact(DailyContact(
+            date="2026-06-05", meal_type=MEAL_GHADA,
+            collegial_granted=10,
+        ))
+        summaries = database.get_monthly_summaries("2026-06", {})
+        self.assertEqual(
+            [summary.meal_type for summary in summaries],
+            [MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA],
+        )
+
+    def test_refresh_preserves_unsaved_notes(self) -> None:
+        screen = mrs.MonthlyReportScreen()
+        screen._notes_edit.setPlainText("ملاحظة لم تحفظ")
+        screen.refresh()
+        self.assertEqual(screen._notes_edit.toPlainText(), "ملاحظة لم تحفظ")
         screen.close()
 
     def test_detail_table_includes_primary_cycle_and_sums_to_subtotal(self) -> None:

@@ -14,6 +14,7 @@ The output is a plain black-and-white RTL document the user can edit in
 Word or LibreOffice — same content and order as the PDF.
 """
 from pathlib import Path
+import sys
 from typing import List, Optional
 from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -88,7 +89,8 @@ _IDENTITY_HALF_POINTS = 22
 
 
 def _crest_bytes() -> Optional[bytes]:
-    for base in (Path.cwd(), Path(__file__).resolve().parents[2]):
+    runtime_base = Path(getattr(sys, "_MEIPASS", Path.cwd()))
+    for base in (runtime_base, Path.cwd(), Path(__file__).resolve().parents[2]):
         candidate = base / "templets" / _CREST_TEMPLATE
         if candidate.exists():
             try:

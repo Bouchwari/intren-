@@ -142,6 +142,30 @@ def save_level_preferences(cycles: list[str], education_types: list[str]) -> Non
         """, (payload,))
 
 
+def get_cycles_with_daily_data() -> set[str]:
+    """Return cycle codes that have non-zero saved daily counts."""
+    cycle_columns = {
+        "primary": ("primary_granted", "primary_complement"),
+        "collegial": ("collegial_granted", "collegial_paying",
+                       "collegial_complement"),
+        "qualifying": ("qualifying_granted", "qualifying_paying",
+                        "qualifying_complement"),
+    }
+    found: set[str] = set()
+    with _connection() as conn:
+        for table in ("daily_contact", "daily_absence"):
+            for cycle, columns in cycle_columns.items():
+                if cycle in found:
+                    continue
+                total_expression = " + ".join(columns)
+                row = conn.execute(
+                    f"SELECT SUM({total_expression}) AS used FROM {table}"
+                ).fetchone()
+                if row is not None and (row["used"] or 0) > 0:
+                    found.add(cycle)
+    return found
+
+
 def get_student_counts() -> dict:
     """Return counts useful for the dashboard."""
     with _connection() as conn:

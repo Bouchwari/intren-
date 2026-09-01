@@ -23,7 +23,7 @@ from config.settings import (
 from core.excel_handler import load_level_catalog
 from core.models import Holiday, SchoolSettings
 from data.database import (
-    add_holiday, delete_holiday, get_all_holidays,
+    add_holiday, backup_database, delete_holiday, get_all_holidays,
     get_document_export_format, get_level_preferences, get_school_settings,
     save_document_export_format, save_level_preferences, save_school_settings,
 )
@@ -229,7 +229,6 @@ class SettingsScreen(QWidget):
         self._school_name_fr = _field(placeholder="Nom d'établissement")
         self._aref           = _field(placeholder="الأكاديمية الجهوية")
         self._dir_prov       = _field(placeholder="المديرية الإقليمية")
-        self._gresa_code     = _field(placeholder="رمز GRESA")
         self._city           = _field(placeholder="الجماعة / المدينة")
         self._city_fr        = _field(placeholder="Nom de la ville")
         self._school_year    = _field(placeholder="مثال: 2024-2025")
@@ -237,7 +236,6 @@ class SettingsScreen(QWidget):
         form.addRow("Nom d'établissement",       self._school_name_fr)
         form.addRow("الأكاديمية الجهوية (AREF)", self._aref)
         form.addRow("المديرية الإقليمية",        self._dir_prov)
-        form.addRow("رمز GRESA",                 self._gresa_code)
         form.addRow("الجماعة",                   self._city)
         form.addRow("Nom de la ville",           self._city_fr)
         form.addRow("السنة الدراسية *",          self._school_year)
@@ -247,22 +245,16 @@ class SettingsScreen(QWidget):
         grp, form = _group(_GRP_STAFF)
         self._director     = _field(placeholder="اسم مدير المؤسسة")
         self._gestionnaire = _field(placeholder="مسير المصالح المادية والمالية")
-        self._surveillant  = _field(placeholder="الحارس العام للداخلية")
         form.addRow("اسم مدير المؤسسة *",                  self._director)
         form.addRow("مسير المصالح المادية والمالية",        self._gestionnaire)
-        form.addRow("الحارس العام للداخلية",               self._surveillant)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def _build_contract_section(self) -> None:
         grp, form = _group(_GRP_CONTRACT)
         self._contract_number  = _field(placeholder="رقم الصفقة")
-        self._contract_object  = _field(placeholder="Objet du marché")
-        self._supplier_name    = _field(placeholder="اسم المزود")
         self._company_name     = _field(placeholder="Raison sociale")
         self._supplier_address = _field(placeholder="العنوان")
         form.addRow("رقم الصفقة",       self._contract_number)
-        form.addRow("Objet du marché",  self._contract_object)
-        form.addRow("اسم المزود",       self._supplier_name)
         form.addRow("اسم الشركة",       self._company_name)
         form.addRow("العنوان",          self._supplier_address)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
@@ -362,7 +354,7 @@ class SettingsScreen(QWidget):
         for box in (cycle_box, type_box):
             box.setStyleSheet(
                 f"QGroupBox {{ background:#fafaf6; border:1px solid {_PANEL_BORDER};"
-                "border-radius:12px; margin-top:10px; padding:10px; }}"
+                "border-radius:12px; margin-top:10px; padding:10px; }"
                 "QGroupBox::title { padding:0 6px; right:10px; }"
                 "QCheckBox { spacing:10px; padding:5px 2px; }"
             )
@@ -611,16 +603,12 @@ class SettingsScreen(QWidget):
         self._school_name_fr.setText(s.school_name_fr)
         self._aref.setText(s.aref)
         self._dir_prov.setText(s.direction_provinciale)
-        self._gresa_code.setText(s.gresa_code)
         self._city.setText(s.city)
         self._city_fr.setText(s.city_fr)
         self._school_year.setText(s.school_year)
         self._director.setText(s.director)
         self._gestionnaire.setText(s.gestionnaire)
-        self._surveillant.setText(s.surveillant_general)
         self._contract_number.setText(s.contract_number)
-        self._contract_object.setText(s.contract_object)
-        self._supplier_name.setText(s.supplier_name)
         self._company_name.setText(s.company_name)
         self._supplier_address.setText(s.supplier_address)
         self._price_ftour.setText(s.price_ftour)
@@ -707,17 +695,13 @@ class SettingsScreen(QWidget):
             school_name_fr=self._school_name_fr.text().strip(),
             aref=self._aref.text().strip(),
             direction_provinciale=self._dir_prov.text().strip(),
-            gresa_code=self._gresa_code.text().strip(),
             city=self._city.text().strip(),
             city_fr=self._city_fr.text().strip(),
             academy=self._aref.text().strip(),
             director=self._director.text().strip(),
             school_year=self._school_year.text().strip(),
             gestionnaire=self._gestionnaire.text().strip(),
-            surveillant_general=self._surveillant.text().strip(),
             contract_number=self._contract_number.text().strip(),
-            contract_object=self._contract_object.text().strip(),
-            supplier_name=self._supplier_name.text().strip(),
             company_name=self._company_name.text().strip(),
             supplier_address=self._supplier_address.text().strip(),
             price_ftour=self._price_ftour.text().strip(),
@@ -779,7 +763,7 @@ class SettingsScreen(QWidget):
         if not dest_str:
             return
         try:
-            shutil.copy2(str(DB_PATH), dest_str)
+            backup_database(Path(dest_str))
             QMessageBox.information(self, "تم", _MSG_BACKUP_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")
