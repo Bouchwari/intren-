@@ -6,15 +6,18 @@ Returns plain Python dataclasses only (no PySide6).
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from collections.abc import Iterator
 
-from config.settings import DB_PATH
+from data import database
 import sqlite3
 from contextlib import contextmanager
 
 
 @contextmanager
-def _conn():
-    con = sqlite3.connect(DB_PATH)
+def _conn() -> Iterator[sqlite3.Connection]:
+    # Read the path at connection time. Tests, the demo launcher and future
+    # database switching all update database.DB_PATH after modules are loaded.
+    con = sqlite3.connect(database.DB_PATH)
     con.row_factory = sqlite3.Row
     try:
         yield con
