@@ -117,7 +117,7 @@ def _quarter_months(year: int, first_month: int) -> List[tuple]:
 
 def _titem(text: str, bold: bool = False, bg: str = "", fg: str = "") -> QTableWidgetItem:
     item = QTableWidgetItem(text)
-    item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
     item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
     f = QFont(); f.setBold(bold)
     item.setFont(f)

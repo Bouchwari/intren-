@@ -173,7 +173,7 @@ def _cell(text: str, *, bold: bool = False,
           color: str = COLOR_TEXT_PRIMARY) -> QTableWidgetItem:
     item = QTableWidgetItem(text)
     item.setTextAlignment(
-        int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+        Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
     if bold:
         font = QFont()
         font.setBold(True)

@@ -22,7 +22,7 @@ and the user confirmed it again on 2026-08-29. This is for screens only.
 
 Pure logic plus repository reads: no Qt, no Arabic (labels live in ui/).
 """
-from typing import Dict, Iterable, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from core.contact_counts import (
     CATEGORY_COLLEGIAL, CATEGORY_MONITORS, CATEGORY_PRIMARY,
@@ -34,16 +34,6 @@ from core.contact_counts import (
 # an internat has them.
 SCHOOL_CYCLES: tuple = (CATEGORY_PRIMARY, CATEGORY_COLLEGIAL,
                         CATEGORY_QUALIFYING)
-
-# The count columns that prove a cycle is in use, per cycle.
-_CYCLE_COLUMNS: Dict[str, tuple] = {
-    CATEGORY_PRIMARY: ("primary_granted", "primary_complement"),
-    CATEGORY_COLLEGIAL: ("collegial_granted", "collegial_paying",
-                         "collegial_complement"),
-    CATEGORY_QUALIFYING: ("qualifying_granted", "qualifying_paying",
-                          "qualifying_complement"),
-}
-
 
 def _normalize(text: str) -> str:
     """Strip the hamza variants so "الإعدادي" and "الاعدادي" match."""
@@ -85,20 +75,8 @@ def cycles_with_data() -> Set[str]:
 
     These stay visible no matter what is ticked — see rule 2 above.
     """
-    from data.database import _connection
-
-    found: Set[str] = set()
-    with _connection() as conn:
-        for table in ("daily_contact", "daily_absence"):
-            for cycle, columns in _CYCLE_COLUMNS.items():
-                if cycle in found:
-                    continue
-                total = " + ".join(columns)
-                row = conn.execute(
-                    f"SELECT SUM({total}) AS used FROM {table}").fetchone()
-                if row is not None and (row["used"] or 0) > 0:
-                    found.add(cycle)
-    return found
+    from data.database import get_cycles_with_daily_data
+    return get_cycles_with_daily_data()
 
 
 def visible_cycles(preferences: Optional[Dict] = None) -> List[str]:

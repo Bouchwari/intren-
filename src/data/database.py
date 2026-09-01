@@ -510,6 +510,7 @@ def init_database() -> None:
 # ── Re-exports — keep every existing `from data.database import ...` working ───
 
 from data.settings_repo import (  # noqa: E402
+    backup_database,
     save_school_settings,
     get_school_settings,
     get_document_export_format,
@@ -525,6 +526,7 @@ from data.students_repo import (  # noqa: E402
     delete_student,
     add_students_bulk,
     get_level_preferences,
+    get_cycles_with_daily_data,
     save_level_preferences,
     get_student_counts,
     get_dashboard_stats,

@@ -23,7 +23,7 @@ from config.settings import (
 from core.excel_handler import load_level_catalog
 from core.models import Holiday, SchoolSettings
 from data.database import (
-    add_holiday, delete_holiday, get_all_holidays,
+    add_holiday, backup_database, delete_holiday, get_all_holidays,
     get_document_export_format, get_level_preferences, get_school_settings,
     save_document_export_format, save_level_preferences, save_school_settings,
 )
@@ -354,7 +354,7 @@ class SettingsScreen(QWidget):
         for box in (cycle_box, type_box):
             box.setStyleSheet(
                 f"QGroupBox {{ background:#fafaf6; border:1px solid {_PANEL_BORDER};"
-                "border-radius:12px; margin-top:10px; padding:10px; }}"
+                "border-radius:12px; margin-top:10px; padding:10px; }"
                 "QGroupBox::title { padding:0 6px; right:10px; }"
                 "QCheckBox { spacing:10px; padding:5px 2px; }"
             )
@@ -763,7 +763,7 @@ class SettingsScreen(QWidget):
         if not dest_str:
             return
         try:
-            shutil.copy2(str(DB_PATH), dest_str)
+            backup_database(Path(dest_str))
             QMessageBox.information(self, "تم", _MSG_BACKUP_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")

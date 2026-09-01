@@ -34,14 +34,16 @@ LOGO_PATH: Path = BASE_DIR / "matama_logo.png"
 # applied to templets/ lookup in ui/document_header.py.
 FONTS_DIR: Path = BASE_DIR / "assets" / "fonts"
 if getattr(sys, 'frozen', False) and not FONTS_DIR.exists():
-    FONTS_DIR = BASE_DIR / "_internal" / "assets" / "fonts"
+    runtime_base = Path(getattr(sys, "_MEIPASS", BASE_DIR / "_internal"))
+    FONTS_DIR = runtime_base / "assets" / "fonts"
 
 # Checkbox checkmark glyph — QCheckBox::indicator loses Qt's native check
 # mark once ui/theme.py styles its background/border, so the stylesheet
 # draws this image back in for the checked state. Same onedir fallback.
 CHECK_ICON_PATH: Path = BASE_DIR / "assets" / "icons" / "check.svg"
 if getattr(sys, 'frozen', False) and not CHECK_ICON_PATH.exists():
-    CHECK_ICON_PATH = BASE_DIR / "_internal" / "assets" / "icons" / "check.svg"
+    runtime_base = Path(getattr(sys, "_MEIPASS", BASE_DIR / "_internal"))
+    CHECK_ICON_PATH = runtime_base / "assets" / "icons" / "check.svg"
 
 # ── App identity ─────────────────────────────────────────────────────────────
 

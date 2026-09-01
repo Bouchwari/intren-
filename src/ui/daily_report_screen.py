@@ -27,6 +27,10 @@ from config.settings import (
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
 from core.models import DailyContact, DailyAbsence, DailyReport
+from core.active_cycles import visible_cycles
+from core.contact_counts import (
+    CATEGORY_COLLEGIAL, CATEGORY_PRIMARY, CATEGORY_QUALIFYING,
+)
 from core.report_defaults import suggest_rating_index
 from core.ramadan import meals_for_date
 from data.database import (
@@ -172,7 +176,7 @@ _GRAND_TOTAL       = "الإجمالي العام"
 def _cell(text: str, bold: bool = False, align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter,
           bg: str = "", fg: str = "") -> QTableWidgetItem:
     item = QTableWidgetItem(text)
-    item.setTextAlignment(int(align | Qt.AlignmentFlag.AlignVCenter))
+    item.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
     item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
     f = QFont()
     f.setBold(bold)
@@ -992,8 +996,20 @@ class DailyReportScreen(QWidget):
 
     def _make_report_table(self, data: Dict[str, DailyContact | DailyAbsence]) -> QTableWidget:
         """Build a structured report QTableWidget from a dict of meal→data."""
-        # Rows: 5 per meal (ابتدائي, إعدادي, تأهيلي, معلمون, مجموع الوجبة) × 3 + grand total = 16
-        num_rows = len(_MEAL_ORDER) * 5 + 1
+        date_str = self._date_edit.date().toString("yyyy-MM-dd")
+        meal_rows = _meals_for_document(date_str)
+        active = set(visible_cycles())
+        sector_rows = [
+            (CATEGORY_PRIMARY, _SECTOR_PRIMARY, "primary_granted",
+             "primary_complement"),
+            (CATEGORY_COLLEGIAL, _SECTOR_COLLEGIAL, "collegial_granted",
+             "collegial_complement"),
+            (CATEGORY_QUALIFYING, _SECTOR_QUALIFYING, "qualifying_granted",
+             "qualifying_complement"),
+        ]
+        sector_rows = [row for row in sector_rows if row[0] in active]
+        # Visible cycles + monitors + meal total, once per meal, then grand total.
+        num_rows = len(meal_rows) * (len(sector_rows) + 2) + 1
         table = QTableWidget(num_rows, len(_HEADERS))
         table.setHorizontalHeaderLabels(_HEADERS)
         table.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
@@ -1019,7 +1035,7 @@ class DailyReportScreen(QWidget):
         row = 0
         grand_granted = grand_compl = grand_total = 0
 
-        for meal_key, meal_label in _MEAL_ORDER:
+        for meal_key, meal_label in meal_rows:
             contact = data.get(meal_key)
 
             # Helper to safely read a contact/absence object
@@ -1040,32 +1056,24 @@ class DailyReportScreen(QWidget):
             mt = mo + mc
             meal_tot = pt + ct + qt + mt
 
-            # الابتدائي row
-            table.setItem(row, 0, _cell(meal_label, bold=True))
-            table.setItem(row, 1, _cell(_SECTOR_PRIMARY))
-            table.setItem(row, 2, _cell(str(pg)))
-            table.setItem(row, 3, _cell(str(pc)))
-            table.setItem(row, 4, _cell(str(pt), bold=True))
-            row += 1
-
-            # إعدادي row
-            table.setItem(row, 0, _cell(""))
-            table.setItem(row, 1, _cell(_SECTOR_COLLEGIAL))
-            table.setItem(row, 2, _cell(str(cg)))
-            table.setItem(row, 3, _cell(str(cc)))
-            table.setItem(row, 4, _cell(str(ct), bold=True))
-            row += 1
-
-            # تأهيلي row
-            table.setItem(row, 0, _cell(""))
-            table.setItem(row, 1, _cell(_SECTOR_QUALIFYING))
-            table.setItem(row, 2, _cell(str(qg)))
-            table.setItem(row, 3, _cell(str(qc)))
-            table.setItem(row, 4, _cell(str(qt), bold=True))
-            row += 1
+            values = {
+                CATEGORY_PRIMARY: (pg, pc, pt),
+                CATEGORY_COLLEGIAL: (cg, cc, ct),
+                CATEGORY_QUALIFYING: (qg, qc, qt),
+            }
+            for index, (cycle, label, _granted, _complement) in enumerate(sector_rows):
+                granted, complement, total = values[cycle]
+                table.setItem(row, 0, _cell(meal_label if index == 0 else "",
+                                             bold=index == 0))
+                table.setItem(row, 1, _cell(label))
+                table.setItem(row, 2, _cell(str(granted)))
+                table.setItem(row, 3, _cell(str(complement)))
+                table.setItem(row, 4, _cell(str(total), bold=True))
+                row += 1
 
             # معلمون row
-            table.setItem(row, 0, _cell(""))
+            table.setItem(row, 0, _cell(meal_label if not sector_rows else "",
+                                         bold=not sector_rows))
             table.setItem(row, 1, _cell(_SECTOR_MONITORS))
             table.setItem(row, 2, _cell(str(mo)))
             table.setItem(row, 3, _cell(str(mc)))
@@ -1307,4 +1315,3 @@ class DailyReportScreen(QWidget):
             QMessageBox.information(self, "تم", _PDF_SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")
-

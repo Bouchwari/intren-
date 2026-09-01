@@ -227,7 +227,11 @@ class AbsenceCardLayoutTests(unittest.TestCase):
         font.setPixelSize(FONT_CAPTION)
         font.setBold(True)
         metrics = QFontMetrics(font)
-        for column, label in enumerate(das._HDR_HISTORY):
+        headers = [
+            table.horizontalHeaderItem(column).text()
+            for column in range(table.columnCount())
+        ]
+        for column, label in enumerate(headers):
             self.assertGreaterEqual(
                 table.columnWidth(column),
                 metrics.horizontalAdvance(label) + das._HISTORY_HEADER_PADDING,

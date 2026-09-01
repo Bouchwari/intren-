@@ -712,7 +712,7 @@ class InfractionRecordScreen(QWidget):
             ]
             for column, item in enumerate(values):
                 item.setTextAlignment(
-                    int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+                    Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                 self._table.setItem(row, column, item)
             delete_btn = IconButton(
                 _BTN_DELETE, bg=COLOR_DANGER, text_color="white",

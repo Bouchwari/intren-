@@ -42,6 +42,7 @@ from core.feedback import (
     normalize_dish, overall_average,
     record_average, response_counts, response_total, week_start_of,
 )
+from core.active_cycles import visible_cycles
 from core.models import MealFeedback, WeekFeedback
 from data.database import (
     delete_feedback, delete_week_feedback, get_all_feedback,
@@ -399,7 +400,10 @@ class FeedbackScreen(QWidget):
         group_row.addWidget(self._caption(_LBL_CYCLE))
         self._cycle_combo = QComboBox()
         self._cycle_combo.addItem(_GROUP_ANY, UNSPECIFIED)
+        active = set(visible_cycles())
         for code in CYCLES:
+            if code not in active:
+                continue
             self._cycle_combo.addItem(_CYCLE_LABELS[code], code)
         group_row.addWidget(self._cycle_combo)
         group_row.addWidget(self._caption(_LBL_GENDER))
@@ -631,7 +635,7 @@ class FeedbackScreen(QWidget):
                     color: str = COLOR_TEXT_PRIMARY) -> QTableWidgetItem:
         item = QTableWidgetItem(text)
         item.setTextAlignment(
-            int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         item.setFlags(Qt.ItemFlag.ItemIsEnabled)
         if bold:
             font = QFont()
@@ -795,7 +799,7 @@ class FeedbackScreen(QWidget):
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setTextAlignment(
-                    int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter))
+                    Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                 if column == 4 and average is not None:
                     item.setForeground(QColor(_rating_color(average)))
                 self._table.setItem(row, column, item)

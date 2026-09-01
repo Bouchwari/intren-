@@ -1889,3 +1889,37 @@ The user relies on these files to pick up work across sessions without
 re-explaining everything each time.
 
 **End of file. When in doubt → ASK.**
+
+### 2026-09-01 — setup cycle choices now control data-entry screens
+
+The setup wizard's selected school cycles are now operational, not decorative.
+If the user selects only الثانوي الإعدادي, the primary and qualifying rows are
+hidden from the daily contact, daily absence, order-letter, daily-report and
+student-feedback screens. معلمو الداخلية remains visible because it is staff,
+not a school cycle. Official printed templates are deliberately unchanged and
+retain all required rows. Safety rule: any cycle with existing non-zero daily
+data is always shown even when it is unticked, so saved numbers can never become
+invisible. No selected cycle preference means all three cycles remain visible
+for old installations. The absence history table follows the same filter; its
+unused columns are removed, not merely left empty. The shared rule lives in
+`core/active_cycles.py`; the SQL evidence query lives in
+`data/students_repo.py`. 533 tests plus 9 subtests.
+
+### 2026-09-01 — pre-release diagnostic and cleanup
+
+The full release audit found and fixed two real Ramadan under-counts: the
+daily-report detail tables hardcoded the normal three meals, and the monthly
+summary omitted Ramadan rows entirely. Both now use the date/month's real meal
+types. Monthly إفطار/سحور are counted but remain unpriced (0.00), preserving
+the user's standing “ignore Ramadan pricing” decision. Ordinary months do not
+gain empty Ramadan rows. The monthly page also reloads fresh data without
+discarding unsaved notes.
+
+Other release fixes: SQLite's backup API replaces raw file copying; malformed
+QGroupBox CSS and unsupported `box-sizing` were removed; deprecated Qt table
+alignment calls were updated; all 17 screens now open with zero stylesheet
+errors; PyInstaller now produces one portable file; runtime resource paths
+support one-file extraction; unused pandas was removed; and a Windows GitHub
+Actions build/release workflow was added. Final source result: 538 tests plus
+9 subtests, no warnings. The Linux one-file smoke build is 86 MB and starts
+successfully; the real Windows `.exe` must be produced by the Windows workflow.

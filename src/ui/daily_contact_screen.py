@@ -764,7 +764,6 @@ def _spin_style(read_only: bool = False) -> str:
         f"width:55px; height:26px; font-size:{FONT_BODY}px;"
         "padding:2px 4px; text-align:center;"
         "border:1px solid #ccc; border-radius:4px;"
-        "box-sizing:border-box;"
         f"background:{background}; color:{color};"
         "}"
     )
@@ -1807,8 +1806,7 @@ class DailyContactScreen(QWidget):
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(
-                    int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-                )
+                    Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
                 self._history_table.setItem(r, col, item)
 
     def _on_history_click(self) -> None:

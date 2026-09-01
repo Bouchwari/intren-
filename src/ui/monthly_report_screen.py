@@ -26,7 +26,7 @@ from config.settings import (
     COLOR_ACCENT, COLOR_ACCENT_DEEP, COLOR_BORDER, COLOR_DANGER, COLOR_PANEL_ALT,
     COLOR_SIDEBAR_BG, COLOR_SUCCESS,
     COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
-    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_LABELS,
+    MEAL_FTOUR, MEAL_GHADA, MEAL_ASHA, MEAL_IFTAR, MEAL_SHOUR, MEAL_LABELS,
     FONT_BODY, FONT_LABEL, FONT_SECTION,
 )
 from core.models import MonthlyMealSummary
@@ -90,13 +90,15 @@ _MEAL_COLORS = {
     MEAL_FTOUR: "#EF9F27",
     MEAL_GHADA: COLOR_ACCENT,
     MEAL_ASHA:  _MEAL_ASHA_PURPLE,
+    MEAL_IFTAR: "#C2703D",
+    MEAL_SHOUR: COLOR_ACCENT_DEEP,
 }
 
 
 def _titem(text: str, bold: bool = False, bg: str = "", fg: str = "",
            align: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignCenter) -> QTableWidgetItem:
     item = QTableWidgetItem(text)
-    item.setTextAlignment(int(align | Qt.AlignmentFlag.AlignVCenter))
+    item.setTextAlignment(align | Qt.AlignmentFlag.AlignVCenter)
     item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
     f = QFont()
     f.setBold(bold)
@@ -213,13 +215,12 @@ def _monthly_summary_main_rows(summaries: List[MonthlyMealSummary]) -> tuple:
     PDF and (indirectly, for totals) the Excel export, so the two exports
     and the on-screen table can't silently drift out of sync on the
     grand-total arithmetic."""
-    meal_labels = {MEAL_FTOUR: MEAL_LABELS[MEAL_FTOUR], MEAL_GHADA: MEAL_LABELS[MEAL_GHADA], MEAL_ASHA: MEAL_LABELS[MEAL_ASHA]}
     rows = []
     total_contact = total_absence = total_net = 0
     total_cost = 0.0
     for s in summaries:
         rows.append({"cells": [
-            (meal_labels.get(s.meal_type, s.meal_type), True),
+            (MEAL_LABELS.get(s.meal_type, s.meal_type), True),
             (str(s.days_count), False),
             (str(s.contact_total), False),
             (str(s.absence_total), False),
@@ -283,7 +284,6 @@ def _draw_monthly_summary_pdf_page(
     )
     y += 18
 
-    meal_labels = {MEAL_FTOUR: MEAL_LABELS[MEAL_FTOUR], MEAL_GHADA: MEAL_LABELS[MEAL_GHADA], MEAL_ASHA: MEAL_LABELS[MEAL_ASHA]}
     sectors = [
         ("ابتدائي", "contact_primary", "absence_primary"),
         ("إعدادي", "contact_collegial", "absence_collegial"),
@@ -293,7 +293,7 @@ def _draw_monthly_summary_pdf_page(
     detail_rows = []
     for s in summaries:
         color = _MEAL_COLORS.get(s.meal_type, COLOR_ACCENT)
-        meal_lbl = meal_labels.get(s.meal_type, s.meal_type)
+        meal_lbl = MEAL_LABELS.get(s.meal_type, s.meal_type)
         for index, (sector_label, contact_attr, absence_attr) in enumerate(sectors):
             contact, absence = getattr(s, contact_attr), getattr(s, absence_attr)
             detail_rows.append({"cells": [
@@ -438,7 +438,6 @@ def _write_monthly_summary_excel(
         cell.font, cell.alignment, cell.border = hdr_font, center, border
     row_num += 1
 
-    meal_labels = {MEAL_FTOUR: MEAL_LABELS[MEAL_FTOUR], MEAL_GHADA: MEAL_LABELS[MEAL_GHADA], MEAL_ASHA: MEAL_LABELS[MEAL_ASHA]}
     sectors = [
         ("ابتدائي", "contact_primary", "absence_primary"),
         ("إعدادي", "contact_collegial", "absence_collegial"),
@@ -446,7 +445,7 @@ def _write_monthly_summary_excel(
         ("معلمو الداخلية", "contact_monitors", "absence_monitors"),
     ]
     for s in summaries:
-        meal_lbl = meal_labels.get(s.meal_type, s.meal_type)
+        meal_lbl = MEAL_LABELS.get(s.meal_type, s.meal_type)
         for index, (sector_label, contact_attr, absence_attr) in enumerate(sectors):
             contact, absence = getattr(s, contact_attr), getattr(s, absence_attr)
             values = [meal_lbl if index == 0 else "", sector_label, contact, absence, max(0, contact - absence)]
@@ -484,6 +483,7 @@ class MonthlyReportScreen(QWidget):
         super().__init__()
         self.setStyleSheet(f"background:{COLOR_SURFACE};")
         self._summaries: List[MonthlyMealSummary] = []
+        self._saved_notes = ""
         self._build_ui()
         # Pre-fill selectors with current month and load its report
         # immediately — every sibling screen (daily/monthly reception,
@@ -742,8 +742,17 @@ class MonthlyReportScreen(QWidget):
             self._report_layout.addWidget(self._cost_box)
 
         # Load notes
-        self._notes_edit.setPlainText(get_monthly_report_notes(month_str))
+        self._saved_notes = get_monthly_report_notes(month_str)
+        self._notes_edit.setPlainText(self._saved_notes)
         self._refresh_months_combo()
+
+    def refresh(self) -> None:
+        """Reload totals without discarding notes the user has not saved."""
+        pending_notes = self._notes_edit.toPlainText()
+        has_unsaved_notes = pending_notes.strip() != self._saved_notes.strip()
+        self._generate()
+        if has_unsaved_notes:
+            self._notes_edit.setPlainText(pending_notes)
 
     # ── Table builders ─────────────────────────────────────────────────────
 
@@ -751,15 +760,11 @@ class MonthlyReportScreen(QWidget):
         rows = len(summaries) + 1  # +1 grand total
         t = _styled_table(rows, len(_MAIN_HEADERS), _MAIN_HEADERS)
 
-        meal_labels = {MEAL_FTOUR: MEAL_LABELS[MEAL_FTOUR],
-                       MEAL_GHADA: MEAL_LABELS[MEAL_GHADA],
-                       MEAL_ASHA:  MEAL_LABELS[MEAL_ASHA]}
-
         total_contact = total_absence = total_net = total_cost = 0.0
 
         for i, s in enumerate(summaries):
             color = _MEAL_COLORS.get(s.meal_type, COLOR_ACCENT)
-            t.setItem(i, 0, _titem(meal_labels.get(s.meal_type, s.meal_type), bold=True, fg=color))
+            t.setItem(i, 0, _titem(MEAL_LABELS.get(s.meal_type, s.meal_type), bold=True, fg=color))
             t.setItem(i, 1, _titem(str(s.days_count)))
             t.setItem(i, 2, _titem(str(s.contact_total)))
             t.setItem(i, 3, _titem(str(s.absence_total)))
@@ -800,14 +805,10 @@ class MonthlyReportScreen(QWidget):
         rows = len(summaries) * (len(sectors) + 1)  # +1 subtotal per meal
         t = _styled_table(rows, len(_DETAIL_HEADERS), _DETAIL_HEADERS, _MEAL_ASHA_PURPLE)
 
-        meal_labels = {MEAL_FTOUR: MEAL_LABELS[MEAL_FTOUR],
-                       MEAL_GHADA: MEAL_LABELS[MEAL_GHADA],
-                       MEAL_ASHA:  MEAL_LABELS[MEAL_ASHA]}
-
         row = 0
         for s in summaries:
             color = _MEAL_COLORS.get(s.meal_type, COLOR_ACCENT)
-            meal_lbl = meal_labels.get(s.meal_type, s.meal_type)
+            meal_lbl = MEAL_LABELS.get(s.meal_type, s.meal_type)
 
             for index, (sector_label, contact_attr, absence_attr) in enumerate(sectors):
                 contact = getattr(s, contact_attr)
@@ -898,10 +899,9 @@ class MonthlyReportScreen(QWidget):
 
     def _on_save_notes(self) -> None:
         try:
-            save_monthly_report_notes(
-                self._selected_month_str(),
-                self._notes_edit.toPlainText().strip()
-            )
+            notes = self._notes_edit.toPlainText().strip()
+            save_monthly_report_notes(self._selected_month_str(), notes)
+            self._saved_notes = notes
             QMessageBox.information(self, "تم", _SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")

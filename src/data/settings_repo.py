@@ -1,4 +1,6 @@
 """School settings CRUD — moved out of database.py (Stage 1.5, Prompt 6)."""
+import sqlite3
+from pathlib import Path
 from typing import Optional
 
 from config.settings import EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF
@@ -7,6 +9,13 @@ from data.database import _connection
 
 _EXPORT_FORMAT_KEY = "document_export_format"
 _VALID_EXPORT_FORMATS = {EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX}
+
+
+def backup_database(destination: Path) -> None:
+    """Create a transactionally consistent SQLite backup at destination."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with _connection() as source, sqlite3.connect(destination) as target:
+        source.backup(target)
 
 
 def save_school_settings(s: SchoolSettings) -> None:
