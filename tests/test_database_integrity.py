@@ -24,14 +24,11 @@ class DatabaseIntegrityTests(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self._tmpdir.name) / "test_matama.db"
         self._original_database_path = database.DB_PATH
-        self._original_stats_path = stats_repository.DB_PATH
         database.DB_PATH = self.db_path
-        stats_repository.DB_PATH = self.db_path
         database.init_database()
 
     def tearDown(self) -> None:
         database.DB_PATH = self._original_database_path
-        stats_repository.DB_PATH = self._original_stats_path
         self._tmpdir.cleanup()
 
     def test_dashboard_violation_card_counts_this_months_infractions(self) -> None:
