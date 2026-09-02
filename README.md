@@ -1,75 +1,134 @@
-# نظام المطعمة / Matama
+# نظام المطعمة — Matama
 
-Offline desktop app for cafeteria records, students, reports, and supplier paperwork.
+برنامج مكتبي يعمل دون إنترنت لتدبير المطعمة المدرسية وإعداد وثائق الإطعام
+المدرسي بالمؤسسات التعليمية المغربية. صُمم ليستعمله موظف واحد على حاسوب
+Windows، بواجهة عربية من اليمين إلى اليسار.
 
-Built with Python + PySide6.
+> الإصدار الحالي مخصص للتجربة الميدانية. يعتمد البرنامج على الدليل المسطري
+> والنماذج المعتمدة داخل المشروع، لكنه ليس منتجاً رسمياً صادراً عن الوزارة.
 
-## Setup
+## التحميل
 
-### 1. Install Python
-Use Python 3.11 or newer from `https://www.python.org/downloads/`.
+[تحميل Matama.exe للإصدار 1.0.0](https://github.com/Bouchwari/intren-/releases/download/v1.0.0/Matama.exe)
 
-### 2. Create a virtual environment
+- النظام: Windows 10 أو Windows 11، بنواة 64-bit.
+- الحجم عند التحميل: حوالي 51 MB.
+- لا يحتاج إلى تثبيت Python أو أي برنامج إضافي.
+- البرنامج محمول: ضع `Matama.exe` داخل مجلد قابل للكتابة مثل
+  `Documents/Matama`، ثم افتحه بالنقر المزدوج.
+
+قد يعرض Windows تحذير SmartScreen لأن الملف غير موقّع رقمياً. إذا حملته من
+صفحة الإصدار أعلاه، اختر **More info** ثم **Run anyway**.
+
+## أول تشغيل
+
+يفتح معالج الإعداد لمرة واحدة، ويساعدك على إدخال:
+
+1. معلومات المؤسسة والسنة الدراسية.
+2. معلومات الصفقة والشركة والأسعار.
+3. الأسلاك التعليمية المستعملة في المؤسسة.
+4. فترة رمضان والعطل، عند الحاجة.
+5. لائحة التلاميذ والبرنامج الغذائي، ويمكن تجاوز الخطوات الاختيارية.
+
+بعد الإنهاء ينشئ البرنامج قاعدة بيانات حقيقية وفارغة باسم `matama.db` بجانب
+ملف التشغيل. لا يضع البرنامج بيانات تجريبية داخل قاعدة المستخدم.
+
+## ماذا يقدم البرنامج؟
+
+### الصفحة الرئيسية والعمل اليومي
+
+- وصول سريع إلى أهم الصفحات.
+- إنشاء ورقة الاتصال وورقة الغياب والتقرير اليومي ورسالة الطلبية ومحضر
+  التسلم اليومي.
+- توليد وثائق عدة أيام دفعة واحدة مع حفظ البيانات التي بُنيت عليها الوثائق.
+- احتساب العدد اليومي وفق القاعدة: الاتصال − الغياب = المستفيدون الفعليون.
+- تكييف الوجبات تلقائياً مع أيام رمضان: إفطار وسحور بدلاً من الوجبات العادية.
+
+### اللوائح والبرامج
+
+- استيراد لائحة التلاميذ من Excel وإدارتها والبحث فيها.
+- دعم الأسلاك الابتدائي والإعدادي والتأهيلي، مع إخفاء الأسلاك غير المستعملة.
+- إعداد البرنامج الغذائي الأسبوعي وحفظ برامجه السابقة ونسخ برنامج قديم.
+- بطاقة طاقم المطبخ وتصدير لائحته.
+
+### الوثائق الدورية
+
+- محضر التسلم الشهري.
+- الملخص الشهري للوجبات والتكاليف بصيغتي PDF وExcel.
+- الوثائق الفصلية وبيان المصاريف وشهادة التسلم.
+- محضر مخالفة الشركة بصيغتي PDF وWord.
+
+### الإحصائيات والجودة
+
+- مؤشرات ورسوم حول أعداد التلاميذ والجنس والسلك والقسم والعمر.
+- إحصائيات الوجبات والحضور والغياب والمصاريف والمخالفات.
+- تقرير إحصائي قابل للتصدير.
+- تحليل غذائي مبني على مكونات الوجبات والكميات المسجلة.
+- تقييم أسبوعي لآراء التلاميذ مع المقارنة حسب السلك والجنس.
+
+## البيانات الحقيقية والبيانات التجريبية
+
+- `matama.db`: قاعدة المستخدم الحقيقية، ينشئها `Matama.exe` عند أول تشغيل.
+- `matama_test.db`: قاعدة تجريبية خاصة بالمطورين لاختبار الشاشات والوثائق.
+- قاعدة التجربة **غير مدمجة في الإصدار ولا تُنسخ إلى حاسوب المستخدم**.
+- فحوص الإصدار اختبرت قاعدة تجريبية كاملة، كما اختبرت سلامة ترحيل نسخة من
+  قاعدة العمل الموجودة أثناء التطوير. هذا لا يعني دمج البيانات الحقيقية في
+  ملف البرنامج.
+
+## النسخ الاحتياطي ونقل البرنامج
+
+من داخل البرنامج افتح **الإعدادات ← النسخ الاحتياطي** واحفظ نسخة بانتظام،
+خصوصاً قبل تعديل بيانات سنة سابقة.
+
+لنقل البرنامج إلى حاسوب آخر:
+
+1. أغلق البرنامج.
+2. انسخ `Matama.exe` و`matama.db` إلى المجلد الجديد.
+3. انسخ `matama_logo.png` أيضاً إذا استعملت شعاراً خاصاً.
+4. افتح البرنامج وتأكد من ظهور اسم المؤسسة والبيانات القديمة.
+
+حذف `Matama.exe` وحده لا يحذف القاعدة الموجودة بجانبه. لا تحذف `matama.db`
+إلا بعد التأكد من وجود نسخة احتياطية سليمة.
+
+## مساحة التخزين
+
+المستخدم العادي لا يحتاج إلى مجلد المشروع البرمجي:
+
+- ملف التشغيل: حوالي 51 MB.
+- قاعدة البيانات: تبدأ صغيرة وتزداد تدريجياً حسب عدد التلاميذ والسنوات.
+- أثناء التشغيل يفك PyInstaller بعض الملفات مؤقتاً، ويحذفها Windows بعد إغلاق
+  البرنامج بشكل طبيعي.
+
+مجلد التطوير قد يتجاوز 1 GB لأن فيه بيئة Python والمكتبات وملفات البناء؛ هذه
+الأشياء غير موجودة في تحميل المستخدم.
+
+## عند ظهور مشكلة
+
+قبل الإبلاغ عن الخطأ، دوّن الصفحة والتاريخ المختار والخطوات التي قمت بها،
+وأرفق لقطة شاشة. لا ترسل قاعدة `matama.db` إذا كانت تحتوي أسماء تلاميذ إلا
+عبر وسيلة آمنة وبعد أخذ نسخة احتياطية.
+
+## معلومات للمطورين
+
+يتطلب التطوير Python 3.11 أو أحدث:
+
 ```bash
-python -m venv venv
-```
-
-Activate it:
-- Windows: `venv\Scripts\activate`
-- Mac/Linux: `source venv/bin/activate`
-
-### 3. Install dependencies
-```bash
-pip install -r requirements.txt
-```
-
-## Run the app
-
-```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt pytest
 python src/main.py
-```
-
-The app opens into the main Matama window with a right-to-left sidebar for dashboard, students, meal programs, daily logs, reports, reception and infraction records, quarterly documents, and settings.
-
-## Run the tests
-
-```bash
 python -m pytest -q
-```
-
-## Build the portable executable
-
-PyInstaller builds for the operating system that runs it. On Windows:
-
-```bash
 pyinstaller --clean --noconfirm Matama.spec
 ```
 
-The single portable file is created as `dist/Matama.exe`. Git tags beginning
-with `v` also run `.github/workflows/release.yml`, test the app on Windows,
-build the executable, and attach it to a GitHub release.
-
-The app stores `matama.db` beside the executable. Keep the executable in a
-writable folder such as Documents or Desktop, and use الإعدادات → النسخ
-الاحتياطي regularly.
-
-## Project structure
+ينتج البناء ملفاً واحداً في `dist/Matama.exe`. ملفات `build/` و`dist/`
+و`.venv/` نواتج محلية وغير مرفوعة إلى GitHub. بنية الكود:
 
 ```text
-work_system/
-|- src/                        Application source
-|  |- main.py                  Entry point
-|  |- ui/                      Screens and widgets
-|  |- core/                    Business logic
-|  `- data/                    Database access
-|- config/                     Shared settings and constants
-|- templets/                   Document and spreadsheet templates
-|- build/ and dist/            Generated packaging output
-|- matama.db                   Local SQLite database
-|- tests/                      Automated test suite
-|- requirements.txt            Python packages
-`- README.md
+src/ui/       واجهات PySide6 والتصدير
+src/core/     قواعد العمل والحسابات
+src/data/     SQLite ومستودعات البيانات
+config/       المسارات والثوابت
+templets/     نماذج Word وExcel المعتمدة في المشروع
+tests/        الاختبارات الآلية
 ```
-
-Layer rule: `ui/` may call `core/` and `data/`; `core/` may call `data/`;
-SQL stays in `data/`, and Qt stays in `ui/`.
