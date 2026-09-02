@@ -1,5 +1,6 @@
 """School settings CRUD — moved out of database.py (Stage 1.5, Prompt 6)."""
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Optional
 
@@ -14,7 +15,10 @@ _VALID_EXPORT_FORMATS = {EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOC
 def backup_database(destination: Path) -> None:
     """Create a transactionally consistent SQLite backup at destination."""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with _connection() as source, sqlite3.connect(destination) as target:
+    # A sqlite Connection context commits/rolls back but does not close the
+    # handle. Explicit closing matters on Windows, where an open backup file
+    # cannot be moved, replaced or deleted afterwards.
+    with _connection() as source, closing(sqlite3.connect(destination)) as target:
         source.backup(target)
 
 

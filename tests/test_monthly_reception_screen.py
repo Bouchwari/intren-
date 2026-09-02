@@ -22,6 +22,27 @@ from ui import monthly_reception_screen as mrs
 
 _W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
+_MODULE_TMPDIR: tempfile.TemporaryDirectory[str] | None = None
+_MODULE_ORIGINAL_DB_PATH: Path | None = None
+
+
+def setUpModule() -> None:
+    """Document writers may read Ramadan overrides; give them a real DB."""
+    global _MODULE_TMPDIR, _MODULE_ORIGINAL_DB_PATH
+    _MODULE_TMPDIR = tempfile.TemporaryDirectory()
+    _MODULE_ORIGINAL_DB_PATH = database.DB_PATH
+    database.DB_PATH = Path(_MODULE_TMPDIR.name) / "monthly_reception_tests.db"
+    database.init_database()
+
+
+def tearDownModule() -> None:
+    global _MODULE_TMPDIR
+    if _MODULE_ORIGINAL_DB_PATH is not None:
+        database.DB_PATH = _MODULE_ORIGINAL_DB_PATH
+    if _MODULE_TMPDIR is not None:
+        _MODULE_TMPDIR.cleanup()
+        _MODULE_TMPDIR = None
+
 
 def _docx_plain_text(path: Path, part: str = "word/document.xml") -> str:
     with zipfile.ZipFile(path) as z:
