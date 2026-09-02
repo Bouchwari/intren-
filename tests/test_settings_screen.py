@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 
@@ -103,7 +104,7 @@ class DatabaseBackupTests(unittest.TestCase):
         database.backup_database(destination)
 
         import sqlite3
-        with sqlite3.connect(destination) as connection:
+        with closing(sqlite3.connect(destination)) as connection:
             integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
             school_name = connection.execute(
                 "SELECT school_name FROM school_settings WHERE id=1"

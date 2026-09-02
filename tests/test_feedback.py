@@ -728,7 +728,8 @@ class GroupStorageTests(unittest.TestCase):
         """The old table's UNIQUE(week_start, dish) cannot be widened by ALTER
         TABLE, so init_database rebuilds it — without losing a single row."""
         import sqlite3
-        with sqlite3.connect(database.DB_PATH) as conn:
+        from contextlib import closing
+        with closing(sqlite3.connect(database.DB_PATH)) as conn:
             conn.executescript("""
                 DROP TABLE week_feedback;
                 CREATE TABLE week_feedback (

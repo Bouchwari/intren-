@@ -23,12 +23,14 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt pytest
+        run: python -m pip install -r requirements.txt pytest pytest-timeout
 
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -q
+        # Verbose names and a per-test timeout make a blocking Qt dialog
+        # diagnosable instead of leaving a silent Windows runner for hours.
+        run: python -m pytest -vv --timeout=90 --timeout-method=thread
 
       - name: Build portable executable
         run: pyinstaller --clean --noconfirm Matama.spec
