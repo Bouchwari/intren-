@@ -19,7 +19,7 @@ sys.path.insert(0, str(_ROOT_DIR))
 
 from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 
 from config.settings import (
     APP_ICON_PATH, APP_NAME, APP_NAME_LATIN,
@@ -85,6 +85,7 @@ def main() -> int:
 
     window = MainWindow()
     window.show()
+    QTimer.singleShot(1_500, window.check_for_updates)
 
     return app.exec()
 

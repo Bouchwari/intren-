@@ -19,6 +19,7 @@ from config.settings import (
     FONT_CAPTION,
     WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH,
 )
+from core.update_check import ReleaseInfo
 from ui.daily_absence_screen import DailyAbsenceScreen
 from ui.daily_contact_screen import DailyContactScreen
 from ui.daily_reception_screen import DailyReceptionScreen
@@ -35,6 +36,7 @@ from ui.order_letter_screen import OrderLetterScreen
 from ui.quarterly_reception_screen import QuarterlyReceptionScreen
 from ui.students_screen import StudentsScreen
 from ui.settings_screen import SettingsScreen
+from ui.update_dialog import UpdateChecker, UpdateDialog
 from ui.widgets.icon_button import IconButton
 from ui.work_pipeline_screen import WorkPipelineScreen
 
@@ -225,8 +227,17 @@ class MainWindow(QMainWindow):
         self._nav_sections: list[_NavSection] = []
         self._stack: QStackedWidget | None = None
         self._sidebar_visible = True
+        self._update_checker = UpdateChecker(self)
+        self._update_checker.update_available.connect(self._show_update)
         self._build_ui()
         self._navigate(0)   # start on الصفحة الرئيسية (work pipeline)
+
+    def check_for_updates(self) -> None:
+        self._update_checker.check()
+
+    def _show_update(self, release: object) -> None:
+        if isinstance(release, ReleaseInfo):
+            UpdateDialog(self, release).exec()
 
     # ── Build ──────────────────────────────────────────────────────────────
 

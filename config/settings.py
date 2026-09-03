@@ -84,6 +84,13 @@ APP_NAME: str = "تدبير الداخلية المدرسية"
 APP_NAME_LATIN: str = "Tadbir Internat"
 APP_VERSION: str = "1.1.0"
 
+# Public release feed used for the optional, non-blocking update check.
+UPDATE_API_URL: str = (
+    "https://api.github.com/repos/Bouchwari/intren-/releases/latest"
+)
+UPDATE_INSTALLER_ASSET_NAME: str = "TadbirInternatSetup.exe"
+UPDATE_TIMEOUT_MS: int = 8_000
+
 # ── Window defaults ──────────────────────────────────────────────────────────
 
 WINDOW_MIN_WIDTH: int = 1100
