@@ -277,10 +277,19 @@ class BatchAbsenceGenerationTests(unittest.TestCase):
         saved = {a.meal_type for a in database.get_day_absences("2026-05-11")}
         self.assertEqual(saved, {das.MEAL_FTOUR, das.MEAL_GHADA, das.MEAL_ASHA})
 
-    def test_a_day_with_no_history_is_not_marked_fully_absent(self) -> None:
-        """The whole roster used to be written as absent, which made every
-        downstream document report that nobody ate."""
-        das.generate_and_save_absence_for_date("2026-05-11", self._roster, [])
+    def test_a_month_without_history_gets_small_varied_absences(self) -> None:
+        """Batch generation should not fill a whole month with silent zeros,
+        but its fallback must remain within the requested 0..5 daily range."""
+        ghada_totals = []
+        for day in range(1, 29):
+            date_str = f"2026-05-{day:02d}"
+            das.generate_and_save_absence_for_date(date_str, self._roster, [])
+            by_meal = {
+                row.meal_type: row
+                for row in database.get_day_absences(date_str)
+            }
+            ghada_totals.append(by_meal[das.MEAL_GHADA].grand_total)
 
-        for absence in database.get_day_absences("2026-05-11"):
-            self.assertEqual(absence.grand_total, 0, f"{absence.meal_type} was marked fully absent")
+        self.assertTrue(all(0 <= total <= 5 for total in ghada_totals))
+        self.assertTrue(any(total > 0 for total in ghada_totals))
+        self.assertGreater(len(set(ghada_totals)), 1)

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from config.settings import (
+    APP_NAME,
     COLOR_ACCENT, COLOR_BORDER, COLOR_PANEL_ALT, COLOR_SURFACE, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
     FONT_BODY, FONT_CAPTION, FONT_LABEL, FONT_SECTION,
 )
@@ -121,7 +122,7 @@ class SetupWizard(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("الإعداد الأولي — نظام المطعمة")
+        self.setWindowTitle(f"الإعداد الأولي — {APP_NAME}")
         self.setMinimumWidth(680)
         self.setMinimumHeight(650)
         self.resize(680, 700)

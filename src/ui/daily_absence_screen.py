@@ -547,7 +547,13 @@ def generate_and_save_absence_for_date(
     if is_holiday(date_str) or get_day_absences(date_str):
         return False
     target_date = datetime.date.fromisoformat(date_str)
-    result = estimate_absence(active_roster, history, target_date, MEAL_GHADA)
+    result = estimate_absence(
+        active_roster,
+        history,
+        target_date,
+        MEAL_GHADA,
+        fallback_random_max=5,
+    )
     for absence in _counts_to_absences(date_str, _unflatten_counts(result.counts)):
         save_daily_absence(absence)
     return True

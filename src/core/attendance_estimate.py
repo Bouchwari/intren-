@@ -7,6 +7,7 @@ and `confidence` into the Arabic sentence shown next to the generated counts.
 """
 from dataclasses import dataclass
 from datetime import date
+import random
 from statistics import median
 from typing import Literal
 
@@ -86,13 +87,17 @@ def estimate_absence(
     history: list[DailyAbsence],
     target_date: date,
     meal: str,
+    *,
+    fallback_random_max: int = 0,
 ) -> EstimateResult:
     """Estimate today's likely ABSENCE count per category, the same way
     estimate_attendance() estimates attendance — DailyAbsence shares the
     exact same category shape (primary/collegial/qualifying/monitors ×
     full/lunch), so the same median-historical-rate logic applies directly:
     "usually ~3 من 45 قسم إعدادي غائبون على الغذاء يوم الاثنين", not a
-    random number."""
+    random number. Batch generation may request a small deterministic random
+    fallback when there is not enough history; the manual screen keeps the
+    safer zero fallback by leaving ``fallback_random_max`` at its default."""
     result = estimate_attendance(active_roster, history, target_date, meal)  # type: ignore[arg-type]
     if result.reason == "insufficient_history":
         # estimate_attendance falls back to "assume the whole roster came",
@@ -101,13 +106,54 @@ def estimate_absence(
         # document downstream would then report that nobody ate. Fall back to
         # zero absences instead, which is what the absence screen's own
         # "تم عرض 0 غياب" note has always promised the user.
+        counts = (
+            _random_absence_counts(
+                active_roster,
+                target_date,
+                meal,
+                fallback_random_max,
+            )
+            if fallback_random_max > 0
+            else {category: 0 for category in active_roster}
+        )
         return EstimateResult(
-            counts={category: 0 for category in active_roster},
+            counts=counts,
             confidence=result.confidence,
             records_used=result.records_used,
             reason=result.reason,
         )
     return result
+
+
+def _random_absence_counts(
+    active_roster: dict[str, int],
+    target_date: date,
+    meal: str,
+    maximum: int,
+) -> dict[str, int]:
+    """Allocate a reproducible 0..maximum daily absence across the roster."""
+    counts = {category: 0 for category in active_roster}
+    roster_total = sum(max(0, value) for value in active_roster.values())
+    upper_bound = min(max(0, maximum), roster_total)
+    if upper_bound == 0:
+        return counts
+
+    rng = random.Random(f"{target_date.isoformat()}:{meal}:absence-fallback")
+    target_total = rng.randint(0, upper_bound)
+    available = sorted(
+        category for category, size in active_roster.items() if size > 0
+    )
+
+    for _ in range(target_total):
+        eligible = [
+            category
+            for category in available
+            if counts[category] < active_roster[category]
+        ]
+        if not eligible:
+            break
+        counts[rng.choice(eligible)] += 1
+    return counts
 
 
 def _matching_records(

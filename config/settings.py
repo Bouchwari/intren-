@@ -3,52 +3,86 @@ config/settings.py
 All paths and constants live here. Code never hardcodes these values.
 """
 
+import os
+import sys
 from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 
 # Root of the project (two levels up from this file)
-import sys
+IS_FROZEN: bool = bool(getattr(sys, "frozen", False))
 
-if getattr(sys, 'frozen', False):
-    # PyInstaller bundle: store DB next to the executable
+
+def _resolve_app_data_dir(
+    *,
+    frozen: bool,
+    base_dir: Path,
+    local_app_data: str | None,
+    home_dir: Path,
+) -> Path:
+    """Return writable app storage without depending on import-time globals."""
+    if not frozen:
+        return base_dir
+    windows_data = (
+        Path(local_app_data)
+        if local_app_data
+        else home_dir / "AppData" / "Local"
+    )
+    return windows_data / "TadbirInternat"
+
+
+if IS_FROZEN:
     BASE_DIR: Path = Path(sys.executable).resolve().parent
+    RESOURCE_DIR: Path = Path(getattr(sys, "_MEIPASS", BASE_DIR))
 else:
     BASE_DIR: Path = Path(__file__).resolve().parent.parent
+    RESOURCE_DIR: Path = BASE_DIR
+
+APP_DATA_DIR: Path = _resolve_app_data_dir(
+    frozen=IS_FROZEN,
+    base_dir=BASE_DIR,
+    local_app_data=os.environ.get("LOCALAPPDATA"),
+    home_dir=Path.home(),
+)
 
 # Where the SQLite database lives (next to the exe when packaged).
 # MATAMA_DB_PATH lets a separate test launcher (see run_test.sh) point the
 # app at a throwaway database instead, so trying things out never touches
-# the real one — unset (the normal case) always uses matama.db as before.
-import os
-
-DB_PATH: Path = Path(os.environ["MATAMA_DB_PATH"]) if os.environ.get("MATAMA_DB_PATH") else BASE_DIR / "matama.db"
+# the real one. Source mode keeps the historical project-local filename;
+# installed builds use per-user storage that survives application updates.
+DB_PATH: Path = (
+    Path(os.environ["MATAMA_DB_PATH"])
+    if os.environ.get("MATAMA_DB_PATH")
+    else APP_DATA_DIR / ("tadbir_internat.db" if IS_FROZEN else "matama.db")
+)
 
 # School logo (copied here when the user uploads one via Settings)
-LOGO_PATH: Path = BASE_DIR / "matama_logo.png"
+LOGO_PATH: Path = APP_DATA_DIR / (
+    "school_logo.png" if IS_FROZEN else "matama_logo.png"
+)
 
 # Bundled fonts — loaded offline via ui.theme.load_fonts(), never rely on a
-# font being installed on Windows. PyInstaller's onedir mode collects datas
-# under an "_internal" subfolder next to the exe (not directly beside it),
-# so fall back there when the direct path doesn't exist — same fix already
-# applied to templets/ lookup in ui/document_header.py.
+# font being installed on Windows. Frozen builds extract bundled resources to
+# sys._MEIPASS, so fall back there when the source-tree path does not exist.
 FONTS_DIR: Path = BASE_DIR / "assets" / "fonts"
 if getattr(sys, 'frozen', False) and not FONTS_DIR.exists():
-    runtime_base = Path(getattr(sys, "_MEIPASS", BASE_DIR / "_internal"))
-    FONTS_DIR = runtime_base / "assets" / "fonts"
+    FONTS_DIR = RESOURCE_DIR / "assets" / "fonts"
 
 # Checkbox checkmark glyph — QCheckBox::indicator loses Qt's native check
 # mark once ui/theme.py styles its background/border, so the stylesheet
-# draws this image back in for the checked state. Same onedir fallback.
+# draws this image back in for the checked state. Same frozen-build fallback.
 CHECK_ICON_PATH: Path = BASE_DIR / "assets" / "icons" / "check.svg"
 if getattr(sys, 'frozen', False) and not CHECK_ICON_PATH.exists():
-    runtime_base = Path(getattr(sys, "_MEIPASS", BASE_DIR / "_internal"))
-    CHECK_ICON_PATH = runtime_base / "assets" / "icons" / "check.svg"
+    CHECK_ICON_PATH = RESOURCE_DIR / "assets" / "icons" / "check.svg"
+
+# Application artwork used by Qt, Windows Explorer, and the installer.
+APP_ICON_PATH: Path = RESOURCE_DIR / "assets" / "app_icon.png"
 
 # ── App identity ─────────────────────────────────────────────────────────────
 
-APP_NAME: str = "نظام المطعمة"
-APP_VERSION: str = "1.0.0"
+APP_NAME: str = "تدبير الداخلية المدرسية"
+APP_NAME_LATIN: str = "Tadbir Internat"
+APP_VERSION: str = "1.1.0"
 
 # ── Window defaults ──────────────────────────────────────────────────────────
 

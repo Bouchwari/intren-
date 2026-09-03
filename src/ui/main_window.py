@@ -5,14 +5,14 @@ Main application window — sidebar navigation + stacked screens.
 import logging
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMainWindow, QScrollArea, QSizePolicy,
     QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from config.settings import (
-    APP_NAME, APP_VERSION,
+    APP_ICON_PATH, APP_NAME, APP_VERSION,
     COLOR_ACCENT, COLOR_SIDEBAR_ACTIVE, COLOR_SIDEBAR_BG,
     COLOR_SIDEBAR_BORDER, COLOR_SIDEBAR_HOVER, COLOR_SURFACE,
     COLOR_TEXT_SIDEBAR, COLOR_TEXT_SIDEBAR_ACTIVE,
@@ -279,17 +279,33 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(14, 16, 14, 14)
         layout.setSpacing(8)
 
-        # Title — shows the school name once configured, falls back to the
-        # generic app name before setup.
+        # Product identity — the text becomes the configured school name after
+        # setup, while the application mark remains stable.
+        identity = QHBoxLayout()
+        identity.setContentsMargins(4, 2, 4, 10)
+        identity.setSpacing(9)
+
+        icon_label = QLabel()
+        icon_label.setFixedSize(40, 40)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if APP_ICON_PATH.exists():
+            icon_label.setPixmap(QPixmap(str(APP_ICON_PATH)).scaled(
+                38, 38,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            ))
+
         self._title_label = QLabel(APP_NAME)
         self._title_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._title_label.setWordWrap(True)
         f = QFont(); f.setPointSize(13); f.setBold(True)
         self._title_label.setFont(f)
         self._title_label.setStyleSheet(
-            f"color: {COLOR_TEXT_SIDEBAR_ACTIVE}; padding: 8px 6px 18px 6px;"
+            f"color: {COLOR_TEXT_SIDEBAR_ACTIVE};"
         )
-        layout.addWidget(self._title_label)
+        identity.addWidget(self._title_label, 1)
+        identity.addWidget(icon_label)
+        layout.addLayout(identity)
 
         # The menu scrolls. Without this the QVBoxLayout has to fit an open
         # section into whatever height is left and starts violating the

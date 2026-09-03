@@ -35,15 +35,26 @@ jobs:
       - name: Build portable executable
         run: pyinstaller --clean --noconfirm Matama.spec
 
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc installer\TadbirInternat.iss
+
       - name: Upload testable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Matama-Windows
-          path: dist/Matama.exe
+          name: Tadbir-Internat-Windows
+          path: |
+            dist/TadbirInternat.exe
+            installer_output/TadbirInternatSetup.exe
           if-no-files-found: error
 
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/Matama.exe --generate-notes --title "Matama ${{ github.ref_name }}"
+        run: gh release create "${{ github.ref_name }}" dist/TadbirInternat.exe installer_output/TadbirInternatSetup.exe --generate-notes --title "Tadbir Internat ${{ github.ref_name }}"

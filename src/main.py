@@ -1,5 +1,5 @@
 """
-نظام إدارة المطعمة - Matama System
+تدبير الداخلية المدرسية - Tadbir Internat
 Entry point of the application.
 """
 import sys
@@ -17,12 +17,13 @@ else:
 sys.path.insert(0, str(_SRC_DIR))
 sys.path.insert(0, str(_ROOT_DIR))
 
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QApplication, QStyleFactory
 from PySide6.QtCore import Qt
 
 from config.settings import (
-    APP_NAME, COLOR_ACCENT, COLOR_OLIVE, COLOR_PANEL, COLOR_PAPER,
+    APP_ICON_PATH, APP_NAME, APP_NAME_LATIN,
+    COLOR_ACCENT, COLOR_OLIVE, COLOR_PANEL, COLOR_PAPER,
     COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY,
 )
 from data.database import init_database, get_school_settings
@@ -51,19 +52,33 @@ def _apply_light_palette(app: QApplication) -> None:
     app.setPalette(palette)
 
 
+def needs_initial_setup() -> bool:
+    """Treat missing or incomplete school identity as an unfinished setup."""
+    settings = get_school_settings()
+    return settings is None or not all((
+        settings.school_name.strip(),
+        settings.school_year.strip(),
+        settings.director.strip(),
+    ))
+
+
 def main() -> int:
     init_database()
 
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
     app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
+    app.setOrganizationName(APP_NAME_LATIN)
+    if APP_ICON_PATH.exists():
+        app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     _apply_light_palette(app)
     load_fonts()
     app.setStyleSheet(build_stylesheet())
     install_dialog_overrides()
 
     # Show setup wizard the first time (no school settings saved yet)
-    if get_school_settings() is None:
+    if needs_initial_setup():
         wizard = SetupWizard()
         if wizard.exec() != SetupWizard.DialogCode.Accepted:
             return 0  # user closed wizard without finishing — exit cleanly

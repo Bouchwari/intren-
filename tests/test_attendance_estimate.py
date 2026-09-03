@@ -136,6 +136,36 @@ class AbsenceEstimateFallbackTests(unittest.TestCase):
         self.assertEqual(result.confidence, "low")
         self.assertEqual(result.reason, "insufficient_history")
 
+    def test_batch_fallback_is_between_zero_and_five(self) -> None:
+        roster = {"collegial_full": 40, "qualifying_full": 30}
+        totals = []
+        for day in range(1, 29):
+            result = estimate_absence(
+                roster,
+                [],
+                date(2026, 5, day),
+                MEAL,
+                fallback_random_max=5,
+            )
+            totals.append(sum(result.counts.values()))
+
+        self.assertTrue(all(0 <= total <= 5 for total in totals))
+        self.assertTrue(any(total > 0 for total in totals))
+        self.assertGreater(len(set(totals)), 1)
+
+    def test_batch_fallback_never_exceeds_a_small_roster(self) -> None:
+        roster = {"collegial_full": 1, "qualifying_full": 1}
+        result = estimate_absence(
+            roster,
+            [],
+            TARGET_DATE,
+            MEAL,
+            fallback_random_max=5,
+        )
+        self.assertLessEqual(sum(result.counts.values()), 2)
+        for category, count in result.counts.items():
+            self.assertLessEqual(count, roster[category])
+
     def test_a_real_estimate_is_still_produced_once_history_exists(self) -> None:
         roster = {"primary_full": 40}
         history = [_record(1, 4), _record(2, 2), _record(3, 3)]

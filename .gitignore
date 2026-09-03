@@ -11,6 +11,7 @@ env/
 build/
 dist/
 dist_auto_number/
+installer_output/
 *.spec.bak
 
 # Local data
