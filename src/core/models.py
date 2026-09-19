@@ -196,6 +196,15 @@ class DailyAbsence:
         return self.primary_total + self.collegial_total + self.qualifying_total + self.monitors_total
 
 
+@dataclass(frozen=True)
+class BulkDailyEntry:
+    """One real attendance/absence pair entered for a date and meal."""
+    date: str
+    meal_type: str
+    attendance: int
+    absence: int
+
+
 @dataclass
 class DailyReport:
     """The مسير's daily inspection report (التقرير اليومي للمصالح المادية

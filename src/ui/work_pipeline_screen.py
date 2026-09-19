@@ -28,9 +28,11 @@ from core.document_pipeline import (
     PipelineItem, get_daily_pipeline_status,
 )
 from data.database import (
-    get_all_holidays, get_all_students, get_recent_absences, get_recent_contacts, get_school_settings,
+    get_all_holidays, get_all_students, get_day_absences, get_day_contacts,
+    get_recent_absences, get_recent_contacts, get_school_settings, is_holiday,
 )
 from ui.batch_export import _summarize_combined_pdf, pick_date_range, write_combined_pdf
+from ui.bulk_daily_entry import BulkDailyEntryDialog
 from ui.daily_absence_screen import build_absence_pdf_page, generate_and_save_absence_for_date
 from ui.daily_contact_screen import build_contact_pdf_page, generate_and_save_contact_for_date
 from ui.daily_reception_screen import build_reception_pdf_page
@@ -67,6 +69,7 @@ _BTN_PREV = "اليوم السابق"
 _BTN_NEXT = "اليوم التالي"
 _BTN_GENERATE_ALL = "توليد شامل لعدة أيام"
 _BTN_GENERATE_ALL_ICON = "🗂"
+_BTN_BULK_ENTRY = "إدخال أرقام عدة أيام"
 _LBL_DATE = "التاريخ:"
 _CHIP_READY = "جاهز"
 _CHIP_NEEDS_ACTION = "بحاجة لإدخال"
@@ -313,6 +316,13 @@ class WorkPipelineScreen(QWidget):
         date_row.addWidget(prev_btn)
         date_row.addStretch()
 
+        bulk_entry_btn = IconButton(
+            _BTN_BULK_ENTRY, bg=COLOR_TEXT_PRIMARY, text_color="white", border_radius=10,
+            padding_h=16, font_size=13, bold=True, min_height=40,
+        )
+        bulk_entry_btn.clicked.connect(self._on_bulk_entry)
+        date_row.addWidget(bulk_entry_btn)
+
         generate_btn = IconButton(
             _BTN_GENERATE_ALL, icon=_BTN_GENERATE_ALL_ICON, bg=COLOR_ACCENT, text_color="white",
             border_radius=10, padding_h=16, font_size=13, bold=True, min_height=40,
@@ -464,6 +474,11 @@ class WorkPipelineScreen(QWidget):
 
     # ── Generate everything ────────────────────────────────────────────────
 
+    def _on_bulk_entry(self) -> None:
+        dialog = BulkDailyEntryDialog(self._date_edit.date(), self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.refresh()
+
     def _on_generate_everything(self) -> None:
         dialog = _GenerateEverythingDialog(self._date_edit.date(), self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -508,6 +523,13 @@ class WorkPipelineScreen(QWidget):
         return lambda painter, w, h, d: build_report_pdf_page(painter, w, h, d, holiday_labels, settings)
 
     def _auto_fill_range(self, start: QDate, end: QDate, doc_keys: List[str]) -> None:
+        needs_contact = DOC_CONTACT in doc_keys and self._range_has_missing_data(
+            start, end, get_day_contacts)
+        needs_absence = DOC_ABSENCE in doc_keys and self._range_has_missing_data(
+            start, end, get_day_absences)
+        if not needs_contact and not needs_absence:
+            return
+
         students = get_all_students()
         if not students:
             QMessageBox.information(self, "تنبيه", _TOAST_NO_STUDENTS)
@@ -517,19 +539,29 @@ class WorkPipelineScreen(QWidget):
             QMessageBox.information(self, "تنبيه", _TOAST_NO_CLASSIFIED_STUDENTS)
             return
 
-        if DOC_CONTACT in doc_keys:
+        if needs_contact:
             history = get_recent_contacts(limit=900)
             date = start
             while date <= end:
                 generate_and_save_contact_for_date(date.toString("yyyy-MM-dd"), roster, history)
                 date = date.addDays(1)
 
-        if DOC_ABSENCE in doc_keys:
+        if needs_absence:
             history = get_recent_absences(limit=900)
             date = start
             while date <= end:
                 generate_and_save_absence_for_date(date.toString("yyyy-MM-dd"), roster, history)
                 date = date.addDays(1)
+
+    @staticmethod
+    def _range_has_missing_data(start: QDate, end: QDate, get_rows: Callable) -> bool:
+        day = start
+        while day <= end:
+            date_str = day.toString("yyyy-MM-dd")
+            if not is_holiday(date_str) and not get_rows(date_str):
+                return True
+            day = day.addDays(1)
+        return False
 
 
 def _flatten_counts(counts: Dict[str, Dict[str, int]]) -> Dict[str, int]:

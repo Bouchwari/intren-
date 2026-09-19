@@ -15,7 +15,7 @@ sys.path.insert(0, str(SRC_DIR))
 sys.path.insert(0, str(ROOT_DIR))
 
 from config.settings import EXPORT_FORMAT_PDF
-from core.models import DailyContact, DailyReceptionRecord, Holiday, Student
+from core.models import DailyAbsence, DailyContact, DailyReceptionRecord, Holiday, Student
 from data import database
 from core.document_pipeline import DOC_ABSENCE, DOC_CONTACT, DOC_ORDER_LETTER, DOC_RECEPTION, DOC_REPORT
 from ui import work_pipeline_screen as wps
@@ -159,6 +159,27 @@ class WorkPipelineScreenTests(unittest.TestCase):
         for day in ("2026-06-11", "2026-06-12"):
             self.assertEqual(database.get_day_contacts(day), [])
             self.assertEqual(database.get_day_absences(day), [])
+        screen.close()
+
+    def test_saved_bulk_numbers_do_not_require_a_student_list(self) -> None:
+        """Real numbers entered in bulk are complete input, so the optional
+        estimator must not demand a roster before document generation."""
+        for day in ("2026-06-11", "2026-06-12"):
+            database.save_daily_contact(DailyContact(
+                date=day, meal_type="ghada", collegial_granted=80,
+            ))
+            database.save_daily_absence(DailyAbsence(
+                date=day, meal_type="ghada", collegial_granted=3,
+            ))
+
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        with patch.object(QMessageBox, "information") as information:
+            screen._auto_fill_range(
+                QDate(2026, 6, 11), QDate(2026, 6, 12),
+                [DOC_CONTACT, DOC_ABSENCE],
+            )
+
+        information.assert_not_called()
         screen.close()
 
     def test_unclassified_students_warn_instead_of_saving_silent_zeros(self) -> None:

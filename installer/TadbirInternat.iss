@@ -1,5 +1,5 @@
 #define MyAppName "تدبير الداخلية المدرسية"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Bouchwari"
 #define MyAppExeName "TadbirInternat.exe"
 

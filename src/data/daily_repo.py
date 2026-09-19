@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from config.settings import MEAL_ASHA, MEAL_FTOUR, MEAL_GHADA
 from core.models import (
-    DailyAbsence, DailyContact, DailyContactDocumentLog,
+    BulkDailyEntry, DailyAbsence, DailyContact, DailyContactDocumentLog,
     DailyReceptionRecord, DailyReport, OrderItem, OrderLetter,
 )
 from data.database import _connection
@@ -317,6 +317,29 @@ def get_recent_absences(limit: int = 60) -> List[DailyAbsence]:
             (limit,),
         ).fetchall()
     return [_row_to_absence(r) for r in rows]
+
+
+def upsert_bulk_daily_entries(entries: List[BulkDailyEntry]) -> None:
+    """Save middle-school full-grant values without altering other groups."""
+    contact_rows = [
+        (entry.date, entry.meal_type, entry.attendance)
+        for entry in entries
+    ]
+    absence_rows = [
+        (entry.date, entry.meal_type, entry.absence)
+        for entry in entries
+    ]
+    statement = """
+        INSERT INTO {table}
+            (date, meal_type, collegial_granted, collegial_paying)
+        VALUES (?, ?, ?, 0)
+        ON CONFLICT(date, meal_type) DO UPDATE SET
+            collegial_granted=excluded.collegial_granted,
+            collegial_paying=0
+    """
+    with _connection() as conn:
+        conn.executemany(statement.format(table="daily_contact"), contact_rows)
+        conn.executemany(statement.format(table="daily_absence"), absence_rows)
 
 
 # ── Daily report CRUD ─────────────────────────────────────────────────────────
