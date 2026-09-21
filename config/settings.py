@@ -82,7 +82,7 @@ APP_ICON_PATH: Path = RESOURCE_DIR / "assets" / "app_icon.png"
 
 APP_NAME: str = "تدبير الداخلية المدرسية"
 APP_NAME_LATIN: str = "Tadbir Internat"
-APP_VERSION: str = "1.2.0"
+APP_VERSION: str = "1.3.0"
 
 # Public release feed used for the optional, non-blocking update check.
 UPDATE_API_URL: str = (
