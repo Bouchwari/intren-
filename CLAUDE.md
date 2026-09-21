@@ -1890,6 +1890,14 @@ re-explaining everything each time.
 
 **End of file. When in doubt → ASK.**
 
+### 2026-09-21 — daily-report generated ratings narrowed
+
+Fresh daily reports now generate `جيدة` for every inspection item. Only
+`نظافة أرضيات وأسطح قاعة الأكل` and `نظافة المراقد` may vary automatically:
+85% `جيدة`, 10% `حسنة`, and 5% `لا بأس بها`. Saved manual ratings remain
+authoritative and are never replaced. The same rule is shared by the live
+daily-report screen and multi-day batch export.
+
 ### 2026-09-01 — setup cycle choices now control data-entry screens
 
 The setup wizard's selected school cycles are now operational, not decorative.

@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -140,36 +141,44 @@ class DailyReportScreenTests(unittest.TestCase):
         self.assertEqual(present.value(), 10)  # 10 expected - 0 absent
         screen.close()
 
-    def test_fresh_report_auto_fills_checklist_with_allowed_ratings_only(self) -> None:
-        """توليد التقرير on a date with no saved report yet must suggest a
-        real rating for all 16 checklist items instead of leaving them at
-        "—", and must never suggest ضعيفة/ناقصة (hygiene) or ناقصة
-        (quality/building) — those stay manual-only, for a real problem."""
+    def test_fresh_report_defaults_to_good_except_two_cleanliness_rows(self) -> None:
+        """Only dining-hall and dorm cleanliness may vary automatically."""
         screen = drs.DailyReportScreen()
         screen._date_edit.setDate(QDate(2026, 6, 11))
         screen._generate()
 
+        hygiene_good = drs._HYGIENE_SCALE.index("جيدة")
+        allowed_variable = {
+            drs._HYGIENE_SCALE.index("لا بأس بها"),
+            drs._HYGIENE_SCALE.index("حسنة"),
+            hygiene_good,
+        }
         for field, combo in screen._hygiene_combos.items():
-            value = combo.currentData()
-            self.assertNotEqual(value, -1, f"{field} was left at not-rated")
-            self.assertNotIn(value, drs._HYGIENE_EXCLUDED, f"{field} got an excluded rating")
+            if field in drs._VARIABLE_HYGIENE_FIELDS:
+                self.assertIn(combo.currentData(), allowed_variable)
+            else:
+                self.assertEqual(combo.currentData(), hygiene_good)
+        three_scale_good = drs._THREE_SCALE.index("جيدة")
         for field, combo in screen._quality_combos.items():
-            value = combo.currentData()
-            self.assertNotEqual(value, -1, f"{field} was left at not-rated")
-            self.assertNotIn(value, drs._QUALITY_EXCLUDED, f"{field} got an excluded rating")
-        screen.close()
-
-    def test_fresh_report_building_section_always_suggests_good(self) -> None:
-        """مراقبة وصيانة التجهيزات والبنايات (section 4) always auto-fills
-        as جيدة — a stricter rule than section 3, which still varies."""
-        screen = drs.DailyReportScreen()
-        screen._date_edit.setDate(QDate(2026, 6, 11))
-        screen._generate()
-
-        good_index = drs._THREE_SCALE.index("جيدة")
+            self.assertEqual(combo.currentData(), three_scale_good)
         for field, combo in screen._building_combos.items():
-            self.assertEqual(combo.currentData(), good_index, f"{field} was not جيدة")
+            self.assertEqual(combo.currentData(), three_scale_good)
         screen.close()
+
+    def test_only_allowed_cleanliness_rows_receive_random_suggestions(self) -> None:
+        """The two variable rows can use حسنة and لا بأس بها; no other row can."""
+        report = DailyReport(date="2026-06-11")
+        with patch.object(drs, "suggest_rating_index", side_effect=[4, 3]) as suggest:
+            filled = drs._fill_unrated_items(report)
+
+        self.assertEqual(filled.hygiene_dining_hall, 4)  # حسنة
+        self.assertEqual(filled.hygiene_dorms, 3)  # لا بأس بها
+        self.assertEqual(suggest.call_count, 2)
+        for field, _ in drs._HYGIENE_ITEMS:
+            if field not in drs._VARIABLE_HYGIENE_FIELDS:
+                self.assertEqual(getattr(filled, field), drs._HYGIENE_GOOD)
+        for field, _ in drs._QUALITY_ITEMS + drs._BUILDING_ITEMS:
+            self.assertEqual(getattr(filled, field), drs._THREE_SCALE_GOOD)
 
     def test_fresh_report_notes_stay_empty(self) -> None:
         """Notes are free text from the مسير — never auto-filled."""

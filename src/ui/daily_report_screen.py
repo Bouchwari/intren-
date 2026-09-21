@@ -107,18 +107,19 @@ _NOT_RATED = "—"
 _HYGIENE_SCALE = ["ضعيفة", "ناقصة", "متوسطة", "لا بأس بها", "حسنة", "جيدة"]
 _THREE_SCALE = ["ناقصة", "لابأس بها", "جيدة"]
 
-# Auto-fill weights for a fresh (never-saved) report — "توليد التقرير"
-# suggests a plausible day instead of leaving 16 items blank. ضعيفة/ناقصة
-# are excluded entirely (never auto-suggested, only ever set by hand when
-# something's actually wrong); لا بأس بها/لابأس بها gets a low weight so
-# it shows up only occasionally rather than dominating.
-_HYGIENE_EXCLUDED = [0, 1]              # ضعيفة, ناقصة
-_HYGIENE_WEIGHTS = {2: 15, 3: 8, 4: 35, 5: 42}   # متوسطة, لا بأس بها, حسنة, جيدة
-_QUALITY_EXCLUDED = [0]                 # ناقصة
-_QUALITY_WEIGHTS = {1: 20, 2: 80}       # لابأس بها, جيدة
-# مراقبة وصيانة التجهيزات والبنايات — always جيدة, per explicit request.
-_BUILDING_EXCLUDED = [0, 1]             # ناقصة, لابأس بها
-_BUILDING_WEIGHTS = {2: 100}            # جيدة
+# Auto-fill defaults for a fresh (never-saved) report. Everything starts as
+# جيدة except the two cleanliness rows the user explicitly allowed to vary.
+# Those still remain جيدة most days and only occasionally drop one or two
+# levels. A saved manual rating is never replaced by these defaults.
+_HYGIENE_GOOD = 5
+_THREE_SCALE_GOOD = 2
+_VARIABLE_HYGIENE_FIELDS = {"hygiene_dining_hall", "hygiene_dorms"}
+_VARIABLE_HYGIENE_EXCLUDED = [0, 1, 2]  # ضعيفة, ناقصة, متوسطة
+_VARIABLE_HYGIENE_WEIGHTS = {
+    3: 5,   # لا بأس بها
+    4: 10,  # حسنة
+    5: 85,  # جيدة
+}
 
 _LBL_HYGIENE = "1 — تتبع النظافة"
 _HYGIENE_ITEMS: List[Tuple[str, str]] = [
@@ -557,13 +558,20 @@ def _fill_unrated_items(report: DailyReport) -> DailyReport:
     updates: Dict[str, int] = {}
     for field, _ in _HYGIENE_ITEMS:
         if getattr(report, field) == -1:
-            updates[field] = suggest_rating_index(len(_HYGIENE_SCALE), _HYGIENE_EXCLUDED, _HYGIENE_WEIGHTS)
+            if field in _VARIABLE_HYGIENE_FIELDS:
+                updates[field] = suggest_rating_index(
+                    len(_HYGIENE_SCALE),
+                    _VARIABLE_HYGIENE_EXCLUDED,
+                    _VARIABLE_HYGIENE_WEIGHTS,
+                )
+            else:
+                updates[field] = _HYGIENE_GOOD
     for field, _ in _QUALITY_ITEMS:
         if getattr(report, field) == -1:
-            updates[field] = suggest_rating_index(len(_THREE_SCALE), _QUALITY_EXCLUDED, _QUALITY_WEIGHTS)
+            updates[field] = _THREE_SCALE_GOOD
     for field, _ in _BUILDING_ITEMS:
         if getattr(report, field) == -1:
-            updates[field] = suggest_rating_index(len(_THREE_SCALE), _BUILDING_EXCLUDED, _BUILDING_WEIGHTS)
+            updates[field] = _THREE_SCALE_GOOD
     return dataclasses.replace(report, **updates) if updates else report
 
 

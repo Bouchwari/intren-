@@ -308,13 +308,22 @@ class BatchExportBuildPageTests(unittest.TestCase):
         database.save_daily_contact(DailyContact(date="2026-06-02", meal_type=drs.MEAL_GHADA, collegial_granted=6))
         database.save_daily_contact(DailyContact(date="2026-06-03", meal_type=drs.MEAL_GHADA, collegial_granted=7))
 
+        hygiene_good = drs._HYGIENE_SCALE.index("جيدة")
+        variable_allowed = {
+            drs._HYGIENE_SCALE.index("لا بأس بها"),
+            drs._HYGIENE_SCALE.index("حسنة"),
+            hygiene_good,
+        }
         good_index = drs._THREE_SCALE.index("جيدة")
         for date_str in ("2026-06-01", "2026-06-02", "2026-06-03"):
             report = drs._report_for_date(date_str)
             for field, _ in drs._HYGIENE_ITEMS:
-                self.assertNotEqual(getattr(report, field), -1, f"{date_str}/{field} was left unrated")
+                if field in drs._VARIABLE_HYGIENE_FIELDS:
+                    self.assertIn(getattr(report, field), variable_allowed)
+                else:
+                    self.assertEqual(getattr(report, field), hygiene_good)
             for field, _ in drs._QUALITY_ITEMS:
-                self.assertNotEqual(getattr(report, field), -1, f"{date_str}/{field} was left unrated")
+                self.assertEqual(getattr(report, field), good_index)
             for field, _ in drs._BUILDING_ITEMS:
                 self.assertEqual(getattr(report, field), good_index, f"{date_str}/{field} was not جيدة")
             # still read-only — batch export must never persist (see above)
