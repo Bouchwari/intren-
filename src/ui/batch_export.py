@@ -147,6 +147,7 @@ def write_combined_pdf(
     end: QDate,
     orientation: QPageLayout.Orientation,
     build_page: Callable[[QPainter, float, float, str], str],
+    *, print_layout: str = "standard",
 ) -> Tuple[dict, list]:
     """Core writer, no dialogs: draw one page per date in [start, end]
     (inclusive) onto a single shared QPdfWriter at path — one document,
@@ -160,6 +161,13 @@ def write_combined_pdf(
     ui/work_pipeline_screen.py's "generate everything", which drives this
     directly with its own range and writes several documents into one
     chosen folder."""
+    if print_layout == "three_copies":
+        from ui.pdf_layout import write_copy_sheets
+
+        dates = (start.addDays(i).toString("yyyy-MM-dd")
+                 for i in range(start.daysTo(end) + 1))
+        return write_copy_sheets(path, dates, build_page)
+
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)

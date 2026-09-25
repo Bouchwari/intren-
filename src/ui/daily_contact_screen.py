@@ -41,7 +41,9 @@ from ui.document_header import (
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
+from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
+from ui.pdf_layout import write_three_copy_pdf
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
@@ -572,11 +574,16 @@ def _write_daily_contact_pdf(
     *,
     document_number: str = "",
     place: str = "",
+    print_layout: str = "standard",
 ) -> None:
     """Render the daily contact sheet as a single-page official PDF. Thin
     wrapper around _draw_daily_contact_pdf_page — batch export uses that
     directly to draw many days onto one shared writer instead of opening
     a new file per day."""
+    if print_layout == "three_copies":
+        write_three_copy_pdf(path, lambda p, w, h: _draw_daily_contact_pdf_page(
+            p, w, h, date_str, contacts, document_number=document_number, place=place), title=_TITLE)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -1861,6 +1868,7 @@ class DailyContactScreen(QWidget):
                     contacts,
                     document_number=str(document_number),
                     place=settings.city if settings else "",
+                    print_layout=get_pdf_print_layout(),
                 )
             else:
                 _write_daily_contact_docx(

@@ -38,7 +38,9 @@ from data.database import (
     get_recent_absences, get_school_settings,
     is_holiday, save_daily_absence,
 )
+from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
+from ui.pdf_layout import write_three_copy_pdf
 from ui.daily_contact_screen import _draw_contact_pdf_cell, _draw_contact_pdf_text, _format_doc_date
 from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
 from ui.widgets.date_input import DateInput
@@ -310,11 +312,16 @@ class _AbsenceCard(QGroupBox):
         )
 
 
-def _write_daily_absence_pdf(path: Path, date_str: str, absences: List[DailyAbsence], *, place: str = "") -> None:
+def _write_daily_absence_pdf(path: Path, date_str: str, absences: List[DailyAbsence],
+                            *, place: str = "", print_layout: str = "standard") -> None:
     """Render a single date's absence sheet as its own PDF. Thin wrapper
     around _draw_daily_absence_pdf_page — batch export uses that directly
     to draw many days onto one shared writer instead of opening a new
     file per day."""
+    if print_layout == "three_copies":
+        write_three_copy_pdf(path, lambda p, w, h: _draw_daily_absence_pdf_page(
+            p, w, h, date_str, absences, place=place), title=_TITLE)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -997,7 +1004,8 @@ class DailyAbsenceScreen(QWidget):
                 save_daily_absence(absence)
             self._refresh_history()
             settings = get_school_settings()
-            _write_daily_absence_pdf(path, date_str, absences, place=settings.city if settings else "")
+            _write_daily_absence_pdf(path, date_str, absences, place=settings.city if settings else "",
+                                     print_layout=get_pdf_print_layout())
             QMessageBox.information(self, "تم", _PDF_SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"{_PDF_SAVE_ERROR}\n{exc}")

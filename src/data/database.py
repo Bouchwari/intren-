@@ -515,6 +515,8 @@ from data.settings_repo import (  # noqa: E402
     get_school_settings,
     get_document_export_format,
     save_document_export_format,
+    get_pdf_print_layout,
+    save_pdf_print_layout,
     get_nutrition_reference_calories,
     save_nutrition_reference_calories,
 )

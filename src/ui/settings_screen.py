@@ -23,6 +23,7 @@ from config.settings import (
 from core.excel_handler import load_level_catalog
 from core.models import Holiday, SchoolSettings
 from data.database import (
+    get_pdf_print_layout, save_pdf_print_layout,
     add_holiday, backup_database, delete_holiday, get_all_holidays,
     get_document_export_format, get_level_preferences, get_school_settings,
     save_document_export_format, save_level_preferences, save_school_settings,
@@ -464,6 +465,16 @@ class SettingsScreen(QWidget):
 
         layout.addWidget(note)
         layout.addWidget(self._export_format_combo)
+        layout.addWidget(QLabel("تخطيط طباعة الوثائق اليومية (PDF)"))
+        self._pdf_layout_combo = QComboBox()
+        self._pdf_layout_combo.setMinimumHeight(36)
+        self._pdf_layout_combo.setStyleSheet(self._export_format_combo.styleSheet())
+        self._pdf_layout_combo.addItem("توفير الورق: 3 نسخ، نسختان في كل ورقة A4", "three_copies")
+        self._pdf_layout_combo.addItem("التخطيط الأصلي", "standard")
+        self._pdf_layout_combo.currentIndexChanged.connect(
+            lambda _index: save_pdf_print_layout(self._pdf_layout_combo.currentData())
+        )
+        layout.addWidget(self._pdf_layout_combo)
         self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def _build_backup_section(self) -> None:
@@ -633,6 +644,11 @@ class SettingsScreen(QWidget):
                 check.setChecked(not education_types or label in education_types)
 
     def _load_export_format_preference(self) -> None:
+        self._pdf_layout_combo.blockSignals(True)
+        self._pdf_layout_combo.setCurrentIndex(
+            self._pdf_layout_combo.findData(get_pdf_print_layout())
+        )
+        self._pdf_layout_combo.blockSignals(False)
         value = get_document_export_format()
         index = self._export_format_combo.findData(value)
         self._export_format_combo.blockSignals(True)

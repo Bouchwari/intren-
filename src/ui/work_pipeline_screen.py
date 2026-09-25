@@ -31,6 +31,7 @@ from data.database import (
     get_all_holidays, get_all_students, get_day_absences, get_day_contacts,
     get_recent_absences, get_recent_contacts, get_school_settings, is_holiday,
 )
+from data.database import get_pdf_print_layout
 from ui.batch_export import _summarize_combined_pdf, pick_date_range, write_combined_pdf
 from ui.bulk_daily_entry import BulkDailyEntryDialog
 from ui.daily_absence_screen import build_absence_pdf_page, generate_and_save_absence_for_date
@@ -498,18 +499,20 @@ class WorkPipelineScreen(QWidget):
 
         settings = get_school_settings()
         summaries: List[str] = []
+        print_layout = get_pdf_print_layout()
         for key in doc_keys:
             path = folder / (
                 f"{_DOC_PDF_NAME[key]}_{start.toString('yyyy-MM-dd')}_إلى_{end.toString('yyyy-MM-dd')}.pdf"
             )
-            build_page = self._page_builder(key, settings)
-            counts, failed_dates = write_combined_pdf(path, start, end, _DOC_ORIENTATION[key], build_page)
+            build_page = self._page_builder(key, settings, print_layout=print_layout)
+            counts, failed_dates = write_combined_pdf(
+                path, start, end, _DOC_ORIENTATION[key], build_page, print_layout=print_layout)
             summaries.append(_summarize_combined_pdf(path, counts, failed_dates))
 
         self.refresh()
         QMessageBox.information(self, "تم", "\n\n".join(summaries))
 
-    def _page_builder(self, key: str, settings) -> Callable:
+    def _page_builder(self, key: str, settings, *, print_layout: str = "standard") -> Callable:
         holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
         if key == DOC_CONTACT:
@@ -520,7 +523,8 @@ class WorkPipelineScreen(QWidget):
             return lambda painter, w, h, d: build_order_letter_pdf_page(painter, w, h, d, holiday_labels, settings)
         if key == DOC_RECEPTION:
             return lambda painter, w, h, d: build_reception_pdf_page(painter, w, h, d, holiday_labels, settings)
-        return lambda painter, w, h, d: build_report_pdf_page(painter, w, h, d, holiday_labels, settings)
+        return lambda painter, w, h, d: build_report_pdf_page(
+            painter, w, h, d, holiday_labels, settings, single_copy=print_layout == "three_copies")
 
     def _auto_fill_range(self, start: QDate, end: QDate, doc_keys: List[str]) -> None:
         needs_contact = DOC_CONTACT in doc_keys and self._range_has_missing_data(

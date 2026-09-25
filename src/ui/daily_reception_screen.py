@@ -32,7 +32,9 @@ from data.database import (
     get_daily_reception_record, get_day_absences, get_day_contacts,
     get_school_settings, save_daily_reception_record,
 )
+from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
+from ui.pdf_layout import write_three_copy_pdf
 from ui.daily_contact_screen import (
     _fill_contact_header_xml, _normalize_template_name, _set_cell_text,
     _set_docx_text, _template_dirs, _WORD_NS, _W_NS, _XML_SPACE,
@@ -384,10 +386,10 @@ def _draw_reception_pdf_page(
         f"quantités suivantes consommées le {display_date} :"
     )
     _draw_reception_pdf_text(
-        painter, QRectF(margin, y, content_w, 70), legal_text,
+        painter, QRectF(margin, y, content_w, 110), legal_text,
         size=9, color=COLOR_TEXT_PRIMARY, direction=ltr, align=left_align,
     )
-    y += 82
+    y += 122
 
     y = _draw_reception_signer_table(painter, top=y, left=margin, content_w=content_w, settings=settings)
 
@@ -419,8 +421,13 @@ def _draw_reception_pdf_page(
     )
 
 
-def _write_reception_pdf(path: Path, settings, date_str: str, record: DailyReceptionRecord) -> None:
+def _write_reception_pdf(path: Path, settings, date_str: str, record: DailyReceptionRecord,
+                         *, print_layout: str = "standard") -> None:
     """Render a single date's reception record as its own standalone PDF."""
+    if print_layout == "three_copies":
+        write_three_copy_pdf(path, lambda p, w, h: _draw_reception_pdf_page(
+            p, w, h, settings, date_str, record), title=_TITLE)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -1551,7 +1558,8 @@ class DailyReceptionScreen(QWidget):
             save_daily_reception_record(record)
             settings = get_school_settings()
             if is_pdf:
-                _write_reception_pdf(path, settings, date_str, record)
+                _write_reception_pdf(path, settings, date_str, record,
+                                     print_layout=get_pdf_print_layout())
             else:
                 _write_reception_docx(path, date_str, record, settings)
             QMessageBox.information(self, "تم", _SAVED_OK)

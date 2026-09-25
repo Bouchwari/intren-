@@ -39,7 +39,9 @@ from data.database import (
     get_school_settings,
     save_daily_report,
 )
+from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
+from ui.pdf_layout import write_three_copy_pdf
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
 from ui.widgets.date_input import DateInput
@@ -499,11 +501,16 @@ def _write_daily_report_pdf(
     settings,
     date_str: str,
     report: DailyReport,
+    *, print_layout: str = "standard",
 ) -> None:
     """Render a single date's report as its own PDF. Thin wrapper around
     _draw_daily_report_pdf_page — batch export uses that directly to draw
     many days onto one shared writer instead of opening a new file per
     day."""
+    if print_layout == "three_copies":
+        write_three_copy_pdf(path, lambda p, w, h: _draw_daily_report_pdf_page(
+            p, w, h, settings, date_str, report, single_copy=True), title=_SUBTITLE)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -526,10 +533,22 @@ def _draw_daily_report_pdf_page(
     settings,
     date_str: str,
     report: DailyReport,
+    *, single_copy: bool = False,
 ) -> None:
     """Draw one landscape page into an already-open painter: two copies of
     the report side by side — one for the مسير, one for the مدير, one
     sheet of paper."""
+    if single_copy:
+        # Keep the report's existing A5 typography; the compositor scales
+        # this enlarged logical A4 copy back to its original physical size.
+        painter.save()
+        try:
+            painter.scale(page_w / 561.5, page_h / 794.0)
+            _draw_report_copy(painter, x=24, y=24, width=513.5, height=746,
+                              settings=settings, date_str=date_str, report=report)
+        finally:
+            painter.restore()
+        return
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     margin = 24.0
     gap = 14.0
@@ -605,6 +624,7 @@ def _report_for_date(date_str: str) -> DailyReport:
 def build_report_pdf_page(
     painter, page_w: float, page_h: float, date_str: str,
     holiday_labels: Dict[str, str], settings,
+    *, single_copy: bool = False,
 ) -> str:
     """Draw one date's page for a combined batch PDF — real data, a
     holiday placeholder, or a no-data placeholder. Used by
@@ -629,7 +649,8 @@ def build_report_pdf_page(
     # already saved keeps their own numbers and ratings untouched.
     if get_daily_report(date_str) is None:
         save_daily_report(report)
-    _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report)
+    _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report,
+                              single_copy=single_copy)
     return "data"
 
 
@@ -1319,6 +1340,7 @@ class DailyReportScreen(QWidget):
                 settings,
                 date_str,
                 report,
+                print_layout=get_pdf_print_layout(),
             )
             QMessageBox.information(self, "تم", _PDF_SAVED_OK)
         except Exception as exc:

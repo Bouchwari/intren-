@@ -38,7 +38,9 @@ from data.database import (
     get_next_order_letter_number, get_order_items, get_ramadan_overrides,
     get_school_settings, save_order_letter,
 )
+from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
+from ui.pdf_layout import write_three_copy_pdf
 from ui.daily_contact_screen import (
     _normalize_template_name, _set_cell_text, _set_docx_text, _template_dirs,
     _WORD_NS, _W_NS,
@@ -592,8 +594,13 @@ def _write_order_letter_pdf(
     letter_date: str,
     number: str,
     items: Dict[str, OrderItem],
+    *, print_layout: str = "standard",
 ) -> None:
     """Render a single order letter as its own standalone PDF file."""
+    if print_layout == "three_copies":
+        write_three_copy_pdf(path, lambda p, w, h: _draw_order_letter_pdf_page(
+            p, w, h, settings, letter_date, number, items), title=_TITLE)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -1050,6 +1057,7 @@ class OrderLetterScreen(QWidget):
                     letter_date=letter_date,
                     number=number,
                     items=items,
+                    print_layout=get_pdf_print_layout(),
                 )
             else:
                 _write_order_letter_docx(path, settings, letter_date, number, items)

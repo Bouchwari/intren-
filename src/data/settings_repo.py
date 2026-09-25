@@ -154,3 +154,22 @@ def save_document_export_format(value: str) -> None:
             INSERT INTO app_preferences (key, value) VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value
         """, (_EXPORT_FORMAT_KEY, value))
+
+
+def get_pdf_print_layout() -> str:
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_preferences WHERE key=?", ("pdf_print_layout",),
+        ).fetchone()
+    value = row["value"] if row else "three_copies"
+    return value if value in {"standard", "three_copies"} else "three_copies"
+
+
+def save_pdf_print_layout(value: str) -> None:
+    if value not in {"standard", "three_copies"}:
+        raise ValueError("Invalid PDF print layout")
+    with _connection() as conn:
+        conn.execute("""
+            INSERT INTO app_preferences (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, ("pdf_print_layout", value))

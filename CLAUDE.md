@@ -1,5 +1,18 @@
 # CLAUDE.md — Instructions for Claude Code
 
+### 2026-09-25 - Three-copy paper-saving PDF layout (v1.4.0)
+
+The five daily PDFs now default to three identical copies packed two-up on
+landscape A4. `ui/pdf_layout.py` records each original form once as a 96-DPI
+QPicture and replays it, so numbering, saved ratings, and other per-day side
+effects happen once. Multi-day exports pair copies across date boundaries.
+Holiday, empty, and failed-day notices are printed once. The daily report
+uses a single-copy renderer in this mode, never a scaled two-copy page.
+`pdf_print_layout` is an app preference with `three_copies` and `standard`
+choices in Settings; Word and non-daily documents remain unchanged. No DB
+migration or data cleanup is part of this update. The reception legal-text
+box is taller so its final French line is no longer clipped.
+
 > This file is permanent context. Read it before every response.
 > If a request conflicts with this file, follow this file and ask the user.
 
