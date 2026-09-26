@@ -52,6 +52,9 @@ class WorkPipelineScreenTests(unittest.TestCase):
         database.save_document_export_format(EXPORT_FORMAT_PDF)
         self._original_info = QMessageBox.information
         QMessageBox.information = staticmethod(lambda *a, **k: None)
+        copies = patch.object(wps, "choose_company_copies", return_value=2)
+        self.choose_copies = copies.start()
+        self.addCleanup(copies.stop)
 
     def tearDown(self) -> None:
         QMessageBox.information = self._original_info
@@ -160,6 +163,40 @@ class WorkPipelineScreenTests(unittest.TestCase):
             self.assertEqual(database.get_day_contacts(day), [])
             self.assertEqual(database.get_day_absences(day), [])
         screen.close()
+
+    def test_company_copies_are_asked_only_for_signable_documents(self) -> None:
+        keys = [DOC_CONTACT, DOC_ABSENCE, DOC_REPORT, DOC_ORDER_LETTER, DOC_RECEPTION]
+        self.choose_copies.side_effect = [3, 2]
+        dialog = _FakeGenerateDialog(QDate(2026, 6, 11), QDate(2026, 6, 12), keys, False)
+        screen = wps.WorkPipelineScreen(navigate_to=lambda _: None)
+        try:
+            with patch.object(wps, "_GenerateEverythingDialog", dialog), \
+                 patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name), \
+                 patch.object(wps, "write_combined_pdf", return_value=({}, [])) as write:
+                screen._on_generate_everything()
+            self.assertEqual(self.choose_copies.call_count, 2)
+            self.assertEqual([call.args[1] for call in self.choose_copies.call_args_list],
+                             [wps._DOC_PDF_NAME[key].replace("_", " ")
+                              for key in (DOC_ORDER_LETTER, DOC_RECEPTION)])
+            self.assertEqual([call.kwargs["copies"] for call in write.call_args_list], [2, 2, 2, 3, 2])
+        finally:
+            screen.close()
+
+    def test_canceling_company_choice_does_not_generate_or_save_anything(self) -> None:
+        self.choose_copies.return_value = None
+        dialog = _FakeGenerateDialog(QDate(2026, 6, 11), QDate(2026, 6, 12), [DOC_ORDER_LETTER], True)
+        screen = wps.WorkPipelineScreen(navigate_to=lambda _: None)
+        try:
+            with patch.object(wps, "_GenerateEverythingDialog", dialog), \
+                 patch.object(QFileDialog, "getExistingDirectory") as folder, \
+                 patch.object(screen, "_auto_fill_range") as fill, \
+                 patch.object(wps, "write_combined_pdf") as write:
+                screen._on_generate_everything()
+            folder.assert_not_called()
+            fill.assert_not_called()
+            write.assert_not_called()
+        finally:
+            screen.close()
 
     def test_saved_bulk_numbers_do_not_require_a_student_list(self) -> None:
         """Real numbers entered in bulk are complete input, so the optional

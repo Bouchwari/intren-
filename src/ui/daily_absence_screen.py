@@ -40,7 +40,7 @@ from data.database import (
 )
 from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
-from ui.pdf_layout import write_three_copy_pdf
+from ui.pdf_layout import write_copy_pdf
 from ui.daily_contact_screen import _draw_contact_pdf_cell, _draw_contact_pdf_text, _format_doc_date
 from ui.document_header import draw_official_pdf_footer, draw_official_pdf_header
 from ui.widgets.date_input import DateInput
@@ -319,7 +319,7 @@ def _write_daily_absence_pdf(path: Path, date_str: str, absences: List[DailyAbse
     to draw many days onto one shared writer instead of opening a new
     file per day."""
     if print_layout == "three_copies":
-        write_three_copy_pdf(path, lambda p, w, h: _draw_daily_absence_pdf_page(
+        write_copy_pdf(path, lambda p, w, h: _draw_daily_absence_pdf_page(
             p, w, h, date_str, absences, place=place), title=_TITLE)
         return
     path.parent.mkdir(parents=True, exist_ok=True)

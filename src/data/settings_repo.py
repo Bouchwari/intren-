@@ -157,6 +157,10 @@ def save_document_export_format(value: str) -> None:
 
 
 def get_pdf_print_layout() -> str:
+    """Keep the legacy 'three_copies' value for the two-up layout preference.
+
+    Recipient counts are now chosen separately for company-signable forms.
+    """
     with _connection() as conn:
         row = conn.execute(
             "SELECT value FROM app_preferences WHERE key=?", ("pdf_print_layout",),

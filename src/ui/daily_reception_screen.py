@@ -34,7 +34,7 @@ from data.database import (
 )
 from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
-from ui.pdf_layout import write_three_copy_pdf
+from ui.pdf_layout import write_copy_pdf, choose_company_copies
 from ui.daily_contact_screen import (
     _fill_contact_header_xml, _normalize_template_name, _set_cell_text,
     _set_docx_text, _template_dirs, _WORD_NS, _W_NS, _XML_SPACE,
@@ -422,11 +422,11 @@ def _draw_reception_pdf_page(
 
 
 def _write_reception_pdf(path: Path, settings, date_str: str, record: DailyReceptionRecord,
-                         *, print_layout: str = "standard") -> None:
+                         *, print_layout: str = "standard", copies: int = 2) -> None:
     """Render a single date's reception record as its own standalone PDF."""
     if print_layout == "three_copies":
-        write_three_copy_pdf(path, lambda p, w, h: _draw_reception_pdf_page(
-            p, w, h, settings, date_str, record), title=_TITLE)
+        write_copy_pdf(path, lambda p, w, h: _draw_reception_pdf_page(
+            p, w, h, settings, date_str, record), title=_TITLE, copies=copies)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
@@ -1540,6 +1540,10 @@ class DailyReceptionScreen(QWidget):
         date_str = self._selected_date_str()
         default_name = f"{_PDF_DEFAULT_NAME}_{date_str}"
         is_pdf = export_format == EXPORT_FORMAT_PDF
+        print_layout = get_pdf_print_layout() if is_pdf else "standard"
+        copies = choose_company_copies(self, _TITLE, print_layout) if is_pdf else 2
+        if copies is None:
+            return
         path_str, _ = QFileDialog.getSaveFileName(
             self, _PDF_DIALOG_TITLE,
             f"{default_name}.{'pdf' if is_pdf else 'docx'}",
@@ -1559,7 +1563,7 @@ class DailyReceptionScreen(QWidget):
             settings = get_school_settings()
             if is_pdf:
                 _write_reception_pdf(path, settings, date_str, record,
-                                     print_layout=get_pdf_print_layout())
+                                     print_layout=print_layout, copies=copies)
             else:
                 _write_reception_docx(path, date_str, record, settings)
             QMessageBox.information(self, "تم", _SAVED_OK)

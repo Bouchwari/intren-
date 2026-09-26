@@ -1,5 +1,22 @@
 # CLAUDE.md — Instructions for Claude Code
 
+### 2026-09-26 - Copy recipients and Arabic punctuation (v1.4.1)
+
+Paper-saving daily PDFs now default to TWO internal copies. Only order letters
+and daily reception records have a company signature area, so only those
+screens ask whether to include a third copy, once per document/export. Batch
+export asks separately for each eligible form before any generation or saves.
+Daily reports, contacts, and absences never receive a company copy. Word and
+the standard layout are unchanged. Keep the legacy `three_copies` preference
+value for compatibility; it now selects two-up layout, not recipient count.
+
+Qt QPicture replay was moving Arabic colons, spaces, and other neutral
+characters. `ui/pdf_layout.py` now records text commands separately with their
+font, pen, transform, clip, opacity, and text options, then uses native drawText
+on the final PDF. The existing non-overlapping form cells allow graphics-first
+and text-second replay. Text remains selectable. Do not reverse strings or
+modify saved values to fix bidi. Pixel tests compare recorded and direct text.
+
 ### 2026-09-25 - Three-copy paper-saving PDF layout (v1.4.0)
 
 The five daily PDFs now default to three identical copies packed two-up on

@@ -43,7 +43,7 @@ from ui.document_header import (
 )
 from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
-from ui.pdf_layout import write_three_copy_pdf
+from ui.pdf_layout import write_copy_pdf
 from ui.theme import body_font_family
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
@@ -581,7 +581,7 @@ def _write_daily_contact_pdf(
     directly to draw many days onto one shared writer instead of opening
     a new file per day."""
     if print_layout == "three_copies":
-        write_three_copy_pdf(path, lambda p, w, h: _draw_daily_contact_pdf_page(
+        write_copy_pdf(path, lambda p, w, h: _draw_daily_contact_pdf_page(
             p, w, h, date_str, contacts, document_number=document_number, place=place), title=_TITLE)
         return
     path.parent.mkdir(parents=True, exist_ok=True)

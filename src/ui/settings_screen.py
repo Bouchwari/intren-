@@ -469,7 +469,7 @@ class SettingsScreen(QWidget):
         self._pdf_layout_combo = QComboBox()
         self._pdf_layout_combo.setMinimumHeight(36)
         self._pdf_layout_combo.setStyleSheet(self._export_format_combo.styleSheet())
-        self._pdf_layout_combo.addItem("توفير الورق: 3 نسخ، نسختان في كل ورقة A4", "three_copies")
+        self._pdf_layout_combo.addItem("توفير الورق: نسختان في كل ورقة A4", "three_copies")
         self._pdf_layout_combo.addItem("التخطيط الأصلي", "standard")
         self._pdf_layout_combo.currentIndexChanged.connect(
             lambda _index: save_pdf_print_layout(self._pdf_layout_combo.currentData())

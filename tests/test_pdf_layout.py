@@ -19,7 +19,7 @@ from core.document_pipeline import (
 from data import database
 from data.database import get_pdf_print_layout, save_pdf_print_layout
 from ui.batch_export import write_combined_pdf
-from ui.pdf_layout import _Picture96, write_copy_sheets, write_three_copy_pdf
+from ui.pdf_layout import _Picture96, write_copy_sheets, write_copy_pdf, choose_company_copies
 from ui.theme import load_fonts, body_font_family
 from ui.work_pipeline_screen import WorkPipelineScreen
 
@@ -59,7 +59,7 @@ class PdfCopyLayoutTests(unittest.TestCase):
             painter.drawText(QRectF(50, 50, 400, 50), "COPY-ONE")
             painter.fillRect(QRectF(100, 150, 80, 80), QColor("red"))
 
-        write_three_copy_pdf(self.path, draw)
+        write_copy_pdf(self.path, draw, copies=3)
         self.assertEqual(len(seen), 1)
         self.assertLess(seen[0][0], seen[0][1])
         pdf = self.open_pdf()
@@ -85,7 +85,7 @@ class PdfCopyLayoutTests(unittest.TestCase):
 
         counts, failed = write_combined_pdf(
             self.path, QDate(2026, 9, 1), QDate(2026, 9, 2),
-            QPageLayout.Orientation.Portrait, build, print_layout="three_copies",
+            QPageLayout.Orientation.Portrait, build, print_layout="three_copies", copies=3,
         )
         self.assertEqual(seen, ["2026-09-01", "2026-09-02"])
         self.assertEqual((counts, failed), ({"data": 2}, []))
@@ -105,7 +105,7 @@ class PdfCopyLayoutTests(unittest.TestCase):
                 raise ValueError("render failed")
             return day
 
-        counts, failed = write_copy_sheets(self.path, ["holiday", "empty", "BAD-PARTIAL", "data"], build)
+        counts, failed = write_copy_sheets(self.path, ["holiday", "empty", "BAD-PARTIAL", "data"], build, copies=3)
         self.assertEqual(counts, {"holiday": 1, "empty": 1, "data": 1})
         self.assertEqual(failed, ["BAD-PARTIAL"])
         pdf = self.open_pdf()
@@ -123,13 +123,26 @@ class PdfCopyLayoutTests(unittest.TestCase):
 
     def test_single_export_reports_render_errors(self):
         with self.assertRaises(RuntimeError):
-            write_three_copy_pdf(self.path, lambda *args: 1 / 0)
+            write_copy_pdf(self.path, lambda *args: 1 / 0)
 
     def test_thirty_days_use_forty_five_sheets(self):
-        counts, failed = write_copy_sheets(self.path, range(30), lambda *args: "data")
+        counts, failed = write_copy_sheets(self.path, range(30), lambda *args: "data", copies=3)
         self.assertEqual(counts, {"data": 30})
         self.assertEqual(failed, [])
         self.assertEqual(self.open_pdf().pageCount(), 45)
+
+    def test_default_is_two_internal_copies_on_one_sheet(self):
+        write_copy_pdf(self.path, lambda *args: None)
+        self.assertEqual(self.open_pdf().pageCount(), 1)
+
+    def test_company_choice_is_explicit_and_cancelable(self):
+        for response, expected in (("2", 2), ("3", 3), (None, None)):
+            with self.subTest(response=response), patch("ui.dialogs.ask_choice", return_value=response) as ask:
+                self.assertEqual(choose_company_copies(None, "رسالة الطلبية", "three_copies"), expected)
+                self.assertEqual(ask.call_args.args[1], "رسالة الطلبية")
+        with patch("ui.dialogs.ask_choice") as ask:
+            self.assertEqual(choose_company_copies(None, "رسالة الطلبية", "standard"), 2)
+            ask.assert_not_called()
 
 
 class PdfLayoutIntegrationTests(unittest.TestCase):
@@ -182,6 +195,7 @@ class PdfLayoutIntegrationTests(unittest.TestCase):
             for fmt in (EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX):
                 with self.subTest(format=fmt), \
                      patch.object(order, "ask_export_format", return_value=fmt), \
+                     patch.object(order, "choose_company_copies", return_value=3) as copies, \
                      patch.object(order.QFileDialog, "getSaveFileName", return_value=(str(Path(self.tmp.name) / "order"), "")), \
                      patch.object(order.QMessageBox, "information"), \
                      patch.object(order.QMessageBox, "critical") as error, \
@@ -191,15 +205,17 @@ class PdfLayoutIntegrationTests(unittest.TestCase):
                     error.assert_not_called()
                     if fmt == EXPORT_FORMAT_PDF:
                         self.assertEqual(pdf.call_args.kwargs["print_layout"], "three_copies")
+                        self.assertEqual(pdf.call_args.kwargs["copies"], 3)
                         docx.assert_not_called()
                     else:
                         docx.assert_called_once()
                         self.assertNotIn("print_layout", docx.call_args.kwargs)
                         pdf.assert_not_called()
+                        copies.assert_not_called()
         finally:
             screen.close()
 
-    def test_all_five_batch_builders_create_three_sheets_for_two_days(self):
+    def test_all_five_batch_builders_default_to_two_sheets_for_two_days(self):
         from ui import daily_report_screen as report
 
         for day in ("2026-09-01", "2026-09-02"):
@@ -220,8 +236,26 @@ class PdfLayoutIntegrationTests(unittest.TestCase):
                 self.assertEqual(pdf.load(str(path)), QPdfDocument.Error.None_)
                 try:
                     # Absences have not been entered, so only two notices are printed.
-                    self.assertEqual(pdf.pageCount(), 1 if key == DOC_ABSENCE else 3)
+                    self.assertEqual(pdf.pageCount(), 1 if key == DOC_ABSENCE else 2)
+                    if key != DOC_ABSENCE:
+                        self.assertIn("37", pdf.getAllText(0).text())
                     if key == DOC_REPORT:
                         self.assertEqual(draw.call_count, 2)
                 finally:
                     pdf.close()
+
+    def test_canceling_reception_company_copy_question_does_not_save(self):
+        from ui import daily_reception_screen as reception
+        from config.settings import EXPORT_FORMAT_PDF
+
+        screen = reception.DailyReceptionScreen()
+        try:
+            with patch.object(reception, "ask_export_format", return_value=EXPORT_FORMAT_PDF), \
+                 patch.object(reception, "choose_company_copies", return_value=None), \
+                 patch.object(reception.QFileDialog, "getSaveFileName") as file, \
+                 patch.object(reception, "save_daily_reception_record") as save:
+                screen._on_export()
+            file.assert_not_called()
+            save.assert_not_called()
+        finally:
+            screen.close()

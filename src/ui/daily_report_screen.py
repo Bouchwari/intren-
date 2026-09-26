@@ -41,7 +41,7 @@ from data.database import (
 )
 from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
-from ui.pdf_layout import write_three_copy_pdf
+from ui.pdf_layout import write_copy_pdf
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
 from ui.widgets.date_input import DateInput
@@ -508,7 +508,7 @@ def _write_daily_report_pdf(
     many days onto one shared writer instead of opening a new file per
     day."""
     if print_layout == "three_copies":
-        write_three_copy_pdf(path, lambda p, w, h: _draw_daily_report_pdf_page(
+        write_copy_pdf(path, lambda p, w, h: _draw_daily_report_pdf_page(
             p, w, h, settings, date_str, report, single_copy=True), title=_SUBTITLE)
         return
     path.parent.mkdir(parents=True, exist_ok=True)

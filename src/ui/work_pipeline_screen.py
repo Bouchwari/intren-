@@ -39,6 +39,7 @@ from ui.daily_contact_screen import build_contact_pdf_page, generate_and_save_co
 from ui.daily_reception_screen import build_reception_pdf_page
 from ui.daily_report_screen import build_report_pdf_page
 from ui.order_letter_screen import build_order_letter_pdf_page
+from ui.pdf_layout import choose_company_copies
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -489,6 +490,15 @@ class WorkPipelineScreen(QWidget):
             return
         start, end, doc_keys, auto_fill = choice
 
+        print_layout = get_pdf_print_layout()
+        copy_counts = {key: 2 for key in doc_keys}
+        for key in doc_keys:
+            if key in (DOC_ORDER_LETTER, DOC_RECEPTION):
+                copies = choose_company_copies(self, _DOC_PDF_NAME[key].replace("_", " "), print_layout)
+                if copies is None:
+                    return
+                copy_counts[key] = copies
+
         folder_str = QFileDialog.getExistingDirectory(self, "اختر مجلد حفظ الوثائق")
         if not folder_str:
             return
@@ -499,14 +509,14 @@ class WorkPipelineScreen(QWidget):
 
         settings = get_school_settings()
         summaries: List[str] = []
-        print_layout = get_pdf_print_layout()
         for key in doc_keys:
             path = folder / (
                 f"{_DOC_PDF_NAME[key]}_{start.toString('yyyy-MM-dd')}_إلى_{end.toString('yyyy-MM-dd')}.pdf"
             )
             build_page = self._page_builder(key, settings, print_layout=print_layout)
             counts, failed_dates = write_combined_pdf(
-                path, start, end, _DOC_ORIENTATION[key], build_page, print_layout=print_layout)
+                path, start, end, _DOC_ORIENTATION[key], build_page,
+                print_layout=print_layout, copies=copy_counts[key])
             summaries.append(_summarize_combined_pdf(path, counts, failed_dates))
 
         self.refresh()

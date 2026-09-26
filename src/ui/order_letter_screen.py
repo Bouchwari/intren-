@@ -40,7 +40,7 @@ from data.database import (
 )
 from data.database import get_pdf_print_layout
 from ui.batch_export import draw_placeholder_pdf_page
-from ui.pdf_layout import write_three_copy_pdf
+from ui.pdf_layout import write_copy_pdf, choose_company_copies
 from ui.daily_contact_screen import (
     _normalize_template_name, _set_cell_text, _set_docx_text, _template_dirs,
     _WORD_NS, _W_NS,
@@ -594,12 +594,12 @@ def _write_order_letter_pdf(
     letter_date: str,
     number: str,
     items: Dict[str, OrderItem],
-    *, print_layout: str = "standard",
+    *, print_layout: str = "standard", copies: int = 2,
 ) -> None:
     """Render a single order letter as its own standalone PDF file."""
     if print_layout == "three_copies":
-        write_three_copy_pdf(path, lambda p, w, h: _draw_order_letter_pdf_page(
-            p, w, h, settings, letter_date, number, items), title=_TITLE)
+        write_copy_pdf(path, lambda p, w, h: _draw_order_letter_pdf_page(
+            p, w, h, settings, letter_date, number, items), title=_TITLE, copies=copies)
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
@@ -1029,6 +1029,10 @@ class OrderLetterScreen(QWidget):
         if fmt is None:
             return
         is_pdf = fmt == EXPORT_FORMAT_PDF
+        print_layout = get_pdf_print_layout() if is_pdf else "standard"
+        copies = choose_company_copies(self, _TITLE, print_layout) if is_pdf else 2
+        if copies is None:
+            return
         letter_date = self._letter_date.date().toString("yyyy-MM-dd")
         number = self._number_edit.text().strip() or "...."
 
@@ -1057,7 +1061,7 @@ class OrderLetterScreen(QWidget):
                     letter_date=letter_date,
                     number=number,
                     items=items,
-                    print_layout=get_pdf_print_layout(),
+                    print_layout=print_layout, copies=copies,
                 )
             else:
                 _write_order_letter_docx(path, settings, letter_date, number, items)
