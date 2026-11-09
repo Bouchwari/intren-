@@ -1,15 +1,40 @@
 """School settings CRUD — moved out of database.py (Stage 1.5, Prompt 6)."""
 import sqlite3
+import json
+import logging
 from contextlib import closing
 from pathlib import Path
 from typing import Optional
 
 from config.settings import EXPORT_FORMAT_ASK, EXPORT_FORMAT_DOCX, EXPORT_FORMAT_PDF
 from core.models import SchoolSettings
+from core.report_defaults import default_report_preferences, normalize_report_preferences
 from data.database import _connection
 
 _EXPORT_FORMAT_KEY = "document_export_format"
 _VALID_EXPORT_FORMATS = {EXPORT_FORMAT_ASK, EXPORT_FORMAT_PDF, EXPORT_FORMAT_DOCX}
+
+
+def get_report_preferences() -> dict:
+    with _connection() as conn:
+        row = conn.execute("SELECT value FROM app_preferences WHERE key=?",
+                           ("daily_report_preferences",)).fetchone()
+    if row is None:
+        return default_report_preferences()
+    try:
+        return normalize_report_preferences(json.loads(row["value"]))
+    except (ValueError, TypeError):
+        logging.getLogger(__name__).warning("Invalid daily report preferences; using defaults")
+        return default_report_preferences()
+
+
+def save_report_preferences(value: dict) -> None:
+    payload = json.dumps(normalize_report_preferences(value))
+    with _connection() as conn:
+        conn.execute("""
+            INSERT INTO app_preferences (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """, ("daily_report_preferences", payload))
 
 
 def backup_database(destination: Path) -> None:

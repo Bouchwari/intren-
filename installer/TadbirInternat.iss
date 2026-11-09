@@ -1,7 +1,10 @@
 #define MyAppName "تدبير الداخلية المدرسية"
-#define MyAppVersion "1.4.1"
+#define MyAppVersion "1.5.3"
 #define MyAppPublisher "Bouchwari"
 #define MyAppExeName "TadbirInternat.exe"
+#ifndef MyAppSource
+  #define MyAppSource "..\dist\TadbirInternat.exe"
+#endif
 
 [Setup]
 AppId={{E540557D-88A8-4EED-BD00-37774F451D57}
@@ -30,7 +33,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "إنشاء اختصار على سطح المكتب"; GroupDescription: "اختصارات التطبيق:"; Flags: checkedonce
 
 [Files]
-Source: "..\dist\TadbirInternat.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#MyAppSource}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

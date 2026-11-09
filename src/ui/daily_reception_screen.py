@@ -10,10 +10,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
+from ui.document_branding import docx_header_part, docx_template_header
 
 from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
 from PySide6.QtGui import (
-    QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
+    QColor, QFont, QImage, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen, QTextOption,
 )
 from PySide6.QtWidgets import (
     QFileDialog, QFrame, QGroupBox, QHBoxLayout, QLabel, QMessageBox,
@@ -40,6 +41,7 @@ from ui.daily_contact_screen import (
     _set_docx_text, _template_dirs, _WORD_NS, _W_NS, _XML_SPACE,
 )
 from ui.document_header import (
+    serialize_docx_xml,
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
@@ -778,10 +780,13 @@ def _fix_reception_header_textbox_clearance(root: ET.Element) -> None:
     body starts — a targeted fix to the actual floating shape's own
     position, independent of body pagination (so it can't push content
     onto a second page the way widening pgMar/top did)."""
-    for offset in root.iter(f"{{{_WP_NS}}}posOffset"):
-        parent_map = {c: p for p in root.iter() for c in p}
-        parent = parent_map.get(offset)
-        if parent is None or parent.tag != f"{{{_WP_NS}}}positionV":
+    for parent in root.iter(f"{{{_WP_NS}}}positionV"):
+        # Paragraph-relative artwork is already above the header paragraph;
+        # shifting it again can put the ministry image outside the page.
+        if parent.get("relativeFrom") != "margin":
+            continue
+        offset = parent.find(f"{{{_WP_NS}}}posOffset")
+        if offset is None:
             continue
         try:
             current = int(offset.text or "0")
@@ -790,6 +795,43 @@ def _fix_reception_header_textbox_clearance(root: ET.Element) -> None:
         if current >= 0:
             continue  # only adjust shapes anchored upward-of-margin like this one
         offset.text = str(current - 254000)  # push ~20pt further above the margin line
+
+
+def _fit_reception_header_image(root: ET.Element, original_image: bytes) -> None:
+    """Keep the standalone ministry image inside the printed page, undistorted."""
+    image = QImage.fromData(original_image)
+    if image.isNull():
+        return
+    drawing_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    for anchor in root.iter(f"{{{_WP_NS}}}anchor"):
+        # Header text must not push the form's signatures below the A4 page.
+        # Its space is already reserved by the document's top margin.
+        for wrapping in list(anchor):
+            if wrapping.tag == f"{{{_WP_NS}}}wrapTopAndBottom":
+                wrapping.tag = f"{{{_WP_NS}}}wrapNone"
+                wrapping.attrib.clear()
+        picture = anchor.find(f".//{{{_PIC_NS}}}pic")
+        # Do not resize a group that also contains school identity text.
+        if picture is None or anchor.find(f".//{{{_W_NS}}}txbxContent") is not None:
+            continue
+        extent = anchor.find(f"{{{_WP_NS}}}extent")
+        position = anchor.find(f"{{{_WP_NS}}}positionV")
+        if extent is None or position is None:
+            continue
+        height = int(extent.get("cy", "0"))
+        if height <= 0:
+            continue
+        width = round(height * image.width() / image.height())
+        extent.set("cx", str(width))
+        transform = picture.find(f"{{{_PIC_NS}}}spPr/{{{drawing_ns}}}xfrm/{{{drawing_ns}}}ext")
+        if transform is not None:
+            transform.set("cx", str(width))
+            transform.set("cy", str(height))
+        position.set("relativeFrom", "page")
+        for child in list(position):
+            position.remove(child)
+        ET.SubElement(position, f"{{{_WP_NS}}}posOffset").text = "180000"  # 5 mm
+        _center_anchor_horizontally(anchor)
 
 
 def _push_reception_title_box_down(root: ET.Element) -> None:
@@ -1261,12 +1303,13 @@ def _write_reception_docx(path: Path, date_str: str, record: DailyReceptionRecor
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with ZipFile(template_path, "r") as source, ZipFile(path, "w", ZIP_DEFLATED) as target:
+        header_image = docx_template_header(source)
         for item in source.infolist():
             data = source.read(item.filename)
             if item.filename == "word/document.xml":
                 root = ET.fromstring(data)
                 _fill_reception_document_xml(root, date_str, record, settings)
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                data = serialize_docx_xml(root, data)
             elif item.filename.startswith("word/header") and item.filename.endswith(".xml"):
                 root = ET.fromstring(data)
                 academy = settings.aref if settings else ""
@@ -1275,6 +1318,7 @@ def _write_reception_docx(path: Path, date_str: str, record: DailyReceptionRecor
                 filled = _fill_contact_header_xml(root, academy=academy, province=province, school_name=school_name)
                 _fix_reception_header_textbox_clearance(root)
                 _stack_reception_header_text_under_image(root)
+                _fit_reception_header_image(root, header_image)
                 if filled == 0:
                     # The template's own header text box has nothing
                     # matchable in it (e.g. a from-scratch/empty template)
@@ -1285,8 +1329,8 @@ def _write_reception_docx(path: Path, date_str: str, record: DailyReceptionRecor
                     # or add a redundant second copy on top of it.
                     _blank_reception_header_dead_text(root)
                     _add_reception_header_reliable_text(root, academy, province, school_name)
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-            target.writestr(item, data)
+                data = serialize_docx_xml(root, data)
+            target.writestr(item, docx_header_part(item.filename, data, header_image))
 
 
 # ── Main screen ──────────────────────────────────────────────────────────────

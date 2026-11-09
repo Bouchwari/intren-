@@ -26,6 +26,8 @@ attestation's legal text and signer table.
 import calendar
 import datetime
 import logging
+import sys
+from zipfile import ZipFile
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 
@@ -48,6 +50,8 @@ from data.database import get_ramadan_overrides, get_school_settings
 from data.monthly_repo import get_daily_meals_by_lot_for_month
 from data.students_repo import get_all_students
 from ui.expense_roster_export import write_expense_roster_excel
+from ui.excel_layout import fit_wrapped_rows, prefer_single_line, columns_width_pixels
+from ui.excel_images import embed_template_header
 from ui.monthly_report_screen import _size_table_to_contents
 from ui.widgets.icon_button import IconButton
 
@@ -789,7 +793,7 @@ def _write_recap_sheet(
         period_sentence = month_numbers
 
     def line(row: int, text, *, span=(1, 8), bold=False, size=11,
-             horizontal="left", fill="", wrap=False, border=False):
+             horizontal="left", fill="", wrap=True, border=False):
         start, end = span
         if end > start:
             ws.merge_cells(start_row=row, start_column=start, end_row=row, end_column=end)
@@ -797,9 +801,8 @@ def _write_recap_sheet(
             _styled(ws, row, col, text if col == start else None, bold=bold, size=size,
                     horizontal=horizontal, fill=fill, wrap=wrap, border=border)
 
-    # Font sizes and row heights below are the template's own measured values,
-    # not house style — this sheet is printed and signed, so its geometry has
-    # to survive the round trip.
+    # Keep the official font sizes and minimum row heights. Wrapped text is
+    # measured after setting the columns, so longer names remain readable.
     line(5, f"ANNEE: {school_year}", span=(1, 4), bold=True, size=14)
     line(6, "Attestation de réception", bold=True, size=18, horizontal="center")
     line(7, period_banner, bold=True, size=18, horizontal="center")
@@ -840,15 +843,16 @@ def _write_recap_sheet(
         ws.cell(row=start_row, column=5).value = lot_caption
 
         header = start_row + 1
-        _styled(ws, header, 1, "N° Article", size=12, fill=_FILL_RECAP_TABLE)
+        _styled(ws, header, 1, "N° Article", size=12, fill=_FILL_RECAP_TABLE, wrap=True)
         ws.merge_cells(start_row=header, start_column=2, end_row=header, end_column=3)
-        _styled(ws, header, 2, "Désignations des articles", size=12, fill=_FILL_RECAP_TABLE)
+        _styled(ws, header, 2, "Désignations des articles", size=12,
+                fill=_FILL_RECAP_TABLE, wrap=True)
         _styled(ws, header, 3, None, fill=_FILL_RECAP_TABLE)
         _styled(ws, header, 4, "U.M", size=12, fill=_FILL_RECAP_TABLE)
         ws.merge_cells(start_row=header, start_column=5, end_row=header, end_column=8)
         for col in range(5, 9):
             _styled(ws, header, col, "Nbre de repas servis" if col == 5 else None,
-                    size=14, fill=_FILL_RECAP_TABLE)
+                    size=14, fill=_FILL_RECAP_TABLE, wrap=True)
 
         articles = [
             ("Le Petit déjeuner", columns["ftour"], False),
@@ -865,7 +869,7 @@ def _write_recap_sheet(
             # rule is to reproduce the official document, not correct it.
             _styled(ws, row, 1, article_numbers[index], size=12)
             ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
-            _styled(ws, row, 2, label, size=12, horizontal="left")
+            _styled(ws, row, 2, label, size=12, horizontal="left", wrap=True)
             _styled(ws, row, 3, None)
             _styled(ws, row, 4, "U", size=12)
             ws.merge_cells(start_row=row, start_column=5, end_row=row, end_column=8)
@@ -917,11 +921,21 @@ def _write_recap_sheet(
     line(44, "Contresigné par le directeur Provincial\xa0;", span=(1, 5),
          size=16, border=True)
 
-    ws.column_dimensions["H"].width = 18.2
+    for column, width in {"A": 7, "B": 16, "C": 16, "D": 6,
+                          "E": 12, "F": 12, "G": 12, "H": 12}.items():
+        ws.column_dimensions[column].width = width
+    for row in range(1, 5):
+        ws.row_dimensions[row].height = 33
     for row, height in _RECAP_ROW_HEIGHTS.items():
         ws.row_dimensions[row].height = height
+    prefer_single_line(ws, range(5, 45), min_size=11)
+    fit_wrapped_rows(ws, range(5, 45))
     ws.print_area = f"'{_SHEET_RECAP}'!$A$1:$H$45"
-    _apply_print_setup(ws, scale=88, tight_margins=True)
+    _apply_print_setup(ws, tight_margins=True)
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 1
+    ws.print_options.horizontalCentered = True
 
 
 def _write_quarterly_reception_excel(
@@ -939,3 +953,13 @@ def _write_quarterly_reception_excel(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
+    template_name = "LOT 02 attestation de reception trimestrielle restauration 01-02-03-2026.xlsx"
+    bases = (Path(getattr(sys, "_MEIPASS", Path.cwd())), Path(__file__).resolve().parents[2])
+    template = next((base / "templets" / template_name for base in bases
+                     if (base / "templets" / template_name).exists()), None)
+    if template is not None:
+        with ZipFile(template) as archive:
+            header = archive.read("xl/media/image1.jpeg")
+        recap = wb[_SHEET_RECAP]
+        embed_template_header(path, header, "jpeg", [
+            (len(wb.worksheets), columns_width_pixels(recap, 1, 8), 132 * 96 / 72)])

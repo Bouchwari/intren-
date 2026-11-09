@@ -18,6 +18,7 @@ installer_output/
 data/app.db
 data/*.xlsx
 matama.db
+/document_header.png
 matama_dist_before_*.db
 src/data/app.db
 *.db

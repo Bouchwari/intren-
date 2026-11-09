@@ -388,6 +388,39 @@ def save_daily_report(report: DailyReport) -> None:
         """, values)
 
 
+def save_new_daily_reports(reports: list[DailyReport]) -> None:
+    """Atomically save reviewed drafts, preserving any concurrently saved day."""
+    columns = ("date",) + _REPORT_COLUMNS
+    placeholders = ",".join("?" * len(columns))
+    values = [(report.date,) + tuple(getattr(report, col) for col in _REPORT_COLUMNS)
+              for report in reports if report.id is None]
+    with _connection() as conn:
+        conn.executemany(f"""
+            INSERT INTO daily_reports ({','.join(columns)}) VALUES ({placeholders})
+            ON CONFLICT(date) DO NOTHING
+        """, values)
+
+
+def save_reviewed_daily_reports(reports: list[DailyReport]) -> None:
+    """Atomically save approved edits, never replacing saved attendance counts."""
+    from core.report_defaults import REPORT_SCALES
+
+    columns = ("date",) + _REPORT_COLUMNS
+    edited = ("notes", *REPORT_SCALES)
+    with _connection() as conn:
+        for report in reports:
+            if report.id is None:
+                conn.execute(f"""
+                    INSERT INTO daily_reports ({','.join(columns)})
+                    VALUES ({','.join('?' for _ in columns)})
+                    ON CONFLICT(date) DO NOTHING
+                """, tuple(getattr(report, col) for col in columns))
+            else:
+                conn.execute(f"UPDATE daily_reports SET {','.join(col + '=?' for col in edited)} "
+                             "WHERE date=? AND id=?",
+                             (*[getattr(report, col) for col in edited], report.date, report.id))
+
+
 def _row_to_reception_record(r: sqlite3.Row) -> DailyReceptionRecord:
     return DailyReceptionRecord(
         id=r["id"],

@@ -60,6 +60,7 @@ DB_PATH: Path = (
 LOGO_PATH: Path = APP_DATA_DIR / (
     "school_logo.png" if IS_FROZEN else "matama_logo.png"
 )
+DOCUMENT_HEADER_PATH: Path = APP_DATA_DIR / "document_header.png"
 
 # Bundled fonts — loaded offline via ui.theme.load_fonts(), never rely on a
 # font being installed on Windows. Frozen builds extract bundled resources to
@@ -82,7 +83,7 @@ APP_ICON_PATH: Path = RESOURCE_DIR / "assets" / "app_icon.png"
 
 APP_NAME: str = "تدبير الداخلية المدرسية"
 APP_NAME_LATIN: str = "Tadbir Internat"
-APP_VERSION: str = "1.4.1"
+APP_VERSION: str = "1.5.3"
 
 # Public release feed used for the optional, non-blocking update check.
 UPDATE_API_URL: str = (

@@ -20,6 +20,7 @@ import copy
 from pathlib import Path
 from typing import Dict, Optional
 from zipfile import ZIP_DEFLATED, ZipFile
+from ui.document_branding import docx_header_part, docx_template_header
 
 from PySide6.QtCore import QMarginsF, QRectF, Qt
 from PySide6.QtGui import QFont, QPageLayout, QPageSize, QPainter, QPdfWriter
@@ -50,6 +51,7 @@ from ui.daily_reception_screen import (
     _draw_reception_pdf_cell, _draw_reception_pdf_text,
     _MEAL_DESIGNATION_FR, _record_quantities,
     _fix_reception_header_body_gap, _fix_reception_header_textbox_clearance,
+    _fit_reception_header_image,
     _normalize_for_match, _push_reception_title_box_down,
     _stack_reception_header_text_under_image,
     _reception_date_format, _set_empty_run_text,
@@ -57,6 +59,7 @@ from ui.daily_reception_screen import (
     _widen_reception_title_clearance_gap,
 )
 from ui.document_header import (
+    serialize_docx_xml,
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
@@ -556,12 +559,13 @@ def _write_monthly_reception_docx(path: Path, month: str, record: MonthlyRecepti
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with ZipFile(template_path, "r") as source, ZipFile(path, "w", ZIP_DEFLATED) as target:
+        header_image = docx_template_header(source)
         for item in source.infolist():
             data = source.read(item.filename)
             if item.filename == "word/document.xml":
                 root = ET.fromstring(data)
                 _fill_monthly_reception_document_xml(root, month, record, settings)
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                data = serialize_docx_xml(root, data)
             elif item.filename.startswith("word/header") and item.filename.endswith(".xml"):
                 root = ET.fromstring(data)
                 academy = settings.aref if settings else ""
@@ -570,11 +574,12 @@ def _write_monthly_reception_docx(path: Path, month: str, record: MonthlyRecepti
                 filled = _fill_contact_header_xml(root, academy=academy, province=province, school_name=school_name)
                 _fix_reception_header_textbox_clearance(root)
                 _stack_reception_header_text_under_image(root)
+                _fit_reception_header_image(root, header_image)
                 if filled == 0:
                     _blank_reception_header_dead_text(root)
                     _add_reception_header_reliable_text(root, academy, province, school_name)
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-            target.writestr(item, data)
+                data = serialize_docx_xml(root, data)
+            target.writestr(item, docx_header_part(item.filename, data, header_image))
 
 
 # ── Main screen ──────────────────────────────────────────────────────────────

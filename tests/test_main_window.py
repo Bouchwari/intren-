@@ -12,7 +12,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QDialog, QPushButton
+from unittest.mock import patch
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -52,6 +53,24 @@ class _SidebarTestCase(unittest.TestCase):
 
 
 class MainWindowSidebarTests(_SidebarTestCase):
+    def test_holiday_review_stays_in_settings_not_global_toolbar(self) -> None:
+        database.save_school_settings(SchoolSettings(
+            school_name="Test", school_year="2026/2027", director="Test"))
+        window = self._window()
+        self.assertFalse(hasattr(window, "_calendar_notice"))
+        self.assertFalse(any(button.text() == "مراجعة العطل"
+                             for button in window.findChildren(QPushButton)))
+        window._navigate(16)
+        settings = window._stack.widget(16)
+        self.assertIn("انتظار", settings._calendar_notice.text())
+        button = next(button for button in settings.findChildren(QPushButton)
+                      if button.text() == "مراجعة لائحة العطل 2026/2027")
+        with patch("ui.holiday_calendar_dialog.HolidayCalendarDialog") as review:
+            review.return_value.exec.return_value = QDialog.DialogCode.Rejected
+            button.click()
+            review.assert_called_once_with(settings)
+        self.assertEqual(database.get_all_holidays(), [])
+
     def test_student_count_lands_on_the_students_button_only(self) -> None:
         """Regression: the count was written to a hardcoded index that pointed
         one button too high, so الإحصائيات renamed itself to

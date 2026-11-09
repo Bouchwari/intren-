@@ -2,6 +2,8 @@ import datetime
 import sys
 import tempfile
 import unittest
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import openpyxl
@@ -467,10 +469,8 @@ class QuarterlyReceptionAuditFixTests(unittest.TestCase):
             [m["is_ramadan"] for m in screen._quarter_data], [False, True, False])
         screen.close()
 
-    def test_recap_carries_the_templates_print_geometry(self) -> None:
-        """RECAP A IMPRIMER is the sheet that gets printed and signed. Without
-        the template's A4/88%/thin-margin page setup it spilled across 2-3
-        sheets of paper, splitting the quantities from the signatures."""
+    def test_recap_fits_one_a4_page_with_wrapped_text(self) -> None:
+        """Wrapping grows rows, so printing must fit the full signed form."""
         database.save_daily_contact(DailyContact(
             date="2026-01-07", meal_type=MEAL_GHADA, collegial_granted=40))
         screen = qrs.QuarterlyReceptionScreen()
@@ -482,11 +482,43 @@ class QuarterlyReceptionAuditFixTests(unittest.TestCase):
         recap = openpyxl.load_workbook(out)["RECAP A IMPRIMER"]
         self.assertEqual(recap.page_setup.orientation, "portrait")
         self.assertEqual(int(recap.page_setup.paperSize), 9)  # A4
-        self.assertEqual(int(recap.page_setup.scale), 88)
+        self.assertTrue(recap.sheet_properties.pageSetUpPr.fitToPage)
+        self.assertEqual(recap.page_setup.fitToWidth, 1)
+        self.assertEqual(recap.page_setup.fitToHeight, 1)
         self.assertLess(float(recap.page_margins.left), 0.1)
-        # Row heights the template tuned for print must survive too.
-        self.assertAlmostEqual(recap.row_dimensions[17].height, 44.25, places=2)
+        # Existing signing space is preserved; text rows may grow to fit.
+        self.assertGreaterEqual(recap.row_dimensions[17].height, 44.25)
         self.assertAlmostEqual(recap.row_dimensions[43].height, 23.25, places=2)
+        for address in ("A7", "A10", "E10", "A13", "B38"):
+            self.assertFalse(recap[address].alignment.wrap_text, address)
+        self.assertGreaterEqual(recap.row_dimensions[13].height, 21.75)
+        with zipfile.ZipFile(out) as archive:
+            self.assertIn("xl/media/image1.jpeg", archive.namelist())
+            self.assertNotIn("xl/worksheets/_rels/sheet1.xml.rels", archive.namelist())
+            drawing = ET.fromstring(archive.read("xl/drawings/drawing4.xml"))
+            extent = drawing.find(".//{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}ext")
+            self.assertAlmostEqual(int(extent.get("cx")) / int(extent.get("cy")), 960 / 259, places=4)
+        screen.close()
+
+    def test_long_signer_and_company_names_grow_rows_without_shortening_text(self) -> None:
+        settings = database.get_school_settings()
+        settings.director = "MOHAMED NOM COMPLET TRES LONG POUR VERIFICATION " * 3
+        settings.company_name = "SOCIETE DE RESTAURATION ET DE SERVICES " * 3
+        database.save_school_settings(settings)
+        database.save_daily_contact(DailyContact(
+            date="2026-01-07", meal_type=MEAL_GHADA, collegial_granted=40))
+        screen = qrs.QuarterlyReceptionScreen()
+        screen._year_combo.setCurrentText("2026")
+        screen._first_month_combo.setCurrentIndex(0)
+        self.app.processEvents()
+        out = self._export(screen, "long-text.xlsx")
+        recap = openpyxl.load_workbook(out)["RECAP A IMPRIMER"]
+        self.assertEqual(recap["A10"].value, settings.director)
+        self.assertIn(settings.company_name, recap["A16"].value)
+        self.assertGreater(recap.row_dimensions[10].height, qrs._RECAP_ROW_HEIGHTS[10])
+        self.assertGreater(recap.row_dimensions[16].height, qrs._RECAP_ROW_HEIGHTS[16])
+        self.assertEqual(recap["E21"].value,
+                         "='MOIS 01 2026'!B35+'MOIS 02 2026'!B32+'MOIS 03 2026'!B35")
         screen.close()
 
     def test_signature_boxes_are_actually_framed(self) -> None:

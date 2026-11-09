@@ -1,13 +1,13 @@
 """
 src/ui/expense_roster_export.py
-Writes بيانات المصاريف — the official quarterly per-student roster, matching
-`templets/بيانات مصاريف يناير.فبراير مارس 2026 -.xlsx` cell-for-cell.
+Writes بيانات المصاريف — the official quarterly per-student roster, preserving
+the wording and tables of `templets/بيانات مصاريف يناير.فبراير مارس 2026 -.xlsx`.
 
 Structure verified by dumping the real file (merges, row heights, column
 widths, formulas, the embedded ministry header image), not inferred:
 
   * One sheet per cycle: ابتدائي / اعدادي / تأهيلي — the template's own
-    sheet names, RTL, A4 portrait.
+    sheet names, RTL, A4 landscape for readable single-line identity fields.
   * Rows 1-5 hold the ministry header image (extracted from the template
     itself, so the crest is the real one rather than a redrawn copy).
   * A6 = المؤسسة, H6 = السلك, A7 = the "بيانات مصاريف : <months> <year>"
@@ -40,6 +40,8 @@ from config.settings import (
     GRANT_FULL, SECTION_CANTINE, SECTION_DAR_TALIB, SECTION_INTERNAT,
 )
 from core.models import SchoolSettings, Student
+from ui.excel_layout import fit_wrapped_rows, prefer_single_line, columns_width_pixels
+from ui.excel_images import embed_template_header
 
 # ── The template this file reproduces ───────────────────────────────────────
 _TEMPLATE_NAME = "بيانات مصاريف يناير.فبراير مارس 2026 -.xlsx"
@@ -110,12 +112,12 @@ _HEADER_ROW = 12             # default header row; اعدادي overrides it to 
 _FIRST_STUDENT_ROW = 15      # = header row + 3
 
 _COL_WIDTHS = {
-    "A": 6.0, "B": 18.0, "C": 13.8, "D": 9.3, "E": 11.5, "F": 11.3, "G": 9.2,
+    "A": 5.0, "B": 29.0, "C": 15.0, "D": 6.0, "E": 18.0, "F": 31.0, "G": 11.0,
 }
-_ROW_HEIGHT_HEADER = 42.0
-_ROW_HEIGHT_SUBHEADER = 19.5
+_ROW_HEIGHT_HEADER = 22.0
+_ROW_HEIGHT_SUBHEADER = 16.0
 _ROW_HEIGHT_DATA = 21.5
-_ROW_HEIGHT_TOTAL = 27.0
+_ROW_HEIGHT_TOTAL = 22.0
 
 
 def _signature_spans(has_monitors: bool, last_col: int) -> List[tuple]:
@@ -166,112 +168,6 @@ def _header_image_bytes() -> Optional[bytes]:
             return archive.read(_TEMPLATE_IMAGE)
     except Exception:
         return None
-
-
-_DRAWING_XML = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/'
-    'spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/'
-    '2006/main"><xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>1'
-    '</xdr:col><xdr:colOff>95250</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>'
-    '47625</xdr:rowOff></xdr:from><xdr:to><xdr:col>{last_col}</xdr:col>'
-    '<xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff>'
-    '</xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Header"/>'
-    '<xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip xmlns:r="http://'
-    'schemas.openxmlformats.org/officeDocument/2006/relationships" '
-    'r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
-    '<xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
-    '</xdr:pic><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>'
-)
-
-_DRAWING_RELS_XML = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
-    'relationships"><Relationship Id="rId1" Type="http://schemas.'
-    'openxmlformats.org/officeDocument/2006/relationships/image" '
-    'Target="../media/image1.png"/></Relationships>'
-)
-
-_SHEET_RELS_XML = (
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
-    'relationships"><Relationship Id="rIdHdr" Type="http://schemas.'
-    'openxmlformats.org/officeDocument/2006/relationships/drawing" '
-    'Target="../drawings/drawing{index}.xml"/></Relationships>'
-)
-
-
-def _embed_header_images(path: Path, sheet_last_cols: List[int],
-                         image_bytes: bytes) -> None:
-    """Put the ministry crest on every sheet by writing the drawing parts
-    into the saved .xlsx directly.
-
-    openpyxl's own `add_image` needs Pillow, which this project does not
-    depend on (and CLAUDE.md §9 forbids adding a library without asking), so
-    the picture parts are assembled by hand instead — a few small XML files
-    plus the PNG, which needs no image library at all.
-    """
-    import re
-    import shutil
-    import tempfile
-
-    handle, temp_name = tempfile.mkstemp(suffix=".xlsx")
-    import os
-    os.close(handle)
-    temp_path = Path(temp_name)
-
-    try:
-        with ZipFile(path) as source, ZipFile(temp_path, "w") as target:
-            names = source.namelist()
-            sheet_parts = sorted(
-                (n for n in names if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)),
-                key=lambda n: int(re.search(r"(\d+)", n.rsplit("/", 1)[-1]).group(1)),
-            )
-            for item in source.infolist():
-                data = source.read(item.filename)
-                if item.filename in sheet_parts:
-                    index = sheet_parts.index(item.filename) + 1
-                    text = data.decode("utf-8")
-                    if "<drawing" not in text:
-                        text = text.replace(
-                            "</worksheet>", '<drawing r:id="rIdHdr"/></worksheet>')
-                        # The sheet element may not declare the r: prefix yet.
-                        if 'xmlns:r=' not in text.split(">", 2)[1]:
-                            text = text.replace(
-                                "<worksheet ",
-                                '<worksheet xmlns:r="http://schemas.openxmlformats.org'
-                                '/officeDocument/2006/relationships" ', 1)
-                    data = text.encode("utf-8")
-                elif item.filename == "[Content_Types].xml":
-                    text = data.decode("utf-8")
-                    if 'Extension="png"' not in text:
-                        text = text.replace(
-                            "<Default", '<Default Extension="png" '
-                            'ContentType="image/png"/><Default', 1)
-                    overrides = "".join(
-                        f'<Override PartName="/xl/drawings/drawing{i}.xml" '
-                        f'ContentType="application/vnd.openxmlformats-officedocument'
-                        f'.drawing+xml"/>' for i in range(1, len(sheet_parts) + 1)
-                    )
-                    text = text.replace("</Types>", overrides + "</Types>")
-                    data = text.encode("utf-8")
-                target.writestr(item, data)
-
-            target.writestr("xl/media/image1.png", image_bytes)
-            for index, last_col in enumerate(sheet_last_cols, start=1):
-                target.writestr(
-                    f"xl/drawings/drawing{index}.xml",
-                    _DRAWING_XML.format(last_col=last_col))
-                target.writestr(
-                    f"xl/drawings/_rels/drawing{index}.xml.rels", _DRAWING_RELS_XML)
-                if f"xl/worksheets/_rels/sheet{index}.xml.rels" not in names:
-                    target.writestr(
-                        f"xl/worksheets/_rels/sheet{index}.xml.rels",
-                        _SHEET_RELS_XML.format(index=index))
-        shutil.move(str(temp_path), str(path))
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
 
 
 def _cycle_of(student: Student) -> str:
@@ -349,13 +245,14 @@ def _write_cycle_sheet(
     # Rows 1-5 are reserved for the ministry crest, which is written into the
     # saved file afterwards by _embed_header_images (no Pillow needed).
     for row in range(1, 6):
-        ws.row_dimensions[row].height = 22.0
+        ws.row_dimensions[row].height = 13.0
 
     # ── Identity line + quarter title ──────────────────────────────────────
     school_name = (settings.school_name if settings else "") or ""
     ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=4)
     cell(6, 1, f"المؤسسة : {school_name}", bold=True, size=12, boxed=False,
-         align=Alignment(horizontal="right", vertical="center", readingOrder=2))
+         align=Alignment(horizontal="right", vertical="center", wrap_text=True,
+                         readingOrder=2))
     ws.merge_cells(start_row=6, start_column=8, end_row=6, end_column=last_col)
     cell(6, 8, f"السلك: {cycle_caption}", bold=True, size=12, boxed=False)
 
@@ -384,7 +281,7 @@ def _write_cycle_sheet(
         grouped under one caption, بنية الاستقبال merged down on the right."""
         ws.row_dimensions[header_row].height = _ROW_HEIGHT_HEADER
         ws.row_dimensions[header_row + 1].height = _ROW_HEIGHT_SUBHEADER
-        ws.row_dimensions[header_row + 2].height = _ROW_HEIGHT_DATA
+        ws.row_dimensions[header_row + 2].height = _ROW_HEIGHT_SUBHEADER
         for index, label in enumerate(_HEADER_LABELS, start=1):
             ws.merge_cells(start_row=header_row, start_column=index,
                            end_row=header_row + 2, end_column=index)
@@ -405,6 +302,8 @@ def _write_cycle_sheet(
             for col in (structure_col, last_col):
                 cell(row, col, _STRUCTURE_LABEL if (row, col) == (header_row, structure_col)
                      else None, bold=True, size=9, fill="D9D9D9")
+
+    fitted_rows = [6, 8, 9, 10]
 
     def write_people(first_row: int, people: List[Student]) -> int:
         """One row per real person; meal columns intentionally left blank."""
@@ -428,6 +327,7 @@ def _write_cycle_sheet(
                 cell(row, col,
                      _SECTION_LABELS_OFFICIAL.get(person.section, "") if col == structure_col
                      else None, size=10)
+            fitted_rows.append(row)
             row += 1
         return row
 
@@ -461,9 +361,11 @@ def _write_cycle_sheet(
     next_row += 1
     ws.merge_cells(start_row=next_row, start_column=1, end_row=next_row, end_column=5)
     cell(next_row, 1, _STRUCTURE_NOTE, size=10, boxed=False,
-         align=Alignment(horizontal="right", vertical="center", readingOrder=2))
+         align=Alignment(horizontal="right", vertical="center", wrap_text=True,
+                         readingOrder=2))
+    fitted_rows.append(next_row)
 
-    signature_row = next_row + 2
+    signature_row = next_row + 1
     ws.row_dimensions[signature_row].height = 24.0
     signers = _signature_spans(has_monitors, last_col)
     for signer, start, end in signers:
@@ -484,9 +386,17 @@ def _write_cycle_sheet(
     ws.column_dimensions[get_column_letter(structure_col)].width = 11.0
     ws.column_dimensions[get_column_letter(last_col)].width = 7.7
 
-    ws.page_setup.orientation = "portrait"
+    prefer_single_line(ws, fitted_rows)
+    fit_wrapped_rows(ws, [*fitted_rows, signature_row])
+
+    ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = 9  # A4
-    ws.page_setup.scale = 70
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_margins.top = ws.page_margins.bottom = 0.25
+    ws.page_margins.header = ws.page_margins.footer = 0
+    ws.print_title_rows = f"{header_row}:{header_row + 2}"
     ws.print_area = (f"'{sheet_name}'!$A$1:"
                      f"${get_column_letter(last_col)}${signature_row + 3}")
 
@@ -510,7 +420,7 @@ def write_expense_roster_excel(
     grouped = group_students_by_cycle(students)
     monitors = [s for s in students if s.is_monitor]
     image_bytes = _header_image_bytes()
-    last_cols: List[int] = []
+    image_boxes = []
 
     for sheet_name, caption, takes_ramadan, has_monitors, header_row in _CYCLE_SHEETS:
         meal_headers = list(_NORMAL_MEAL_HEADERS)
@@ -525,14 +435,16 @@ def write_expense_roster_excel(
             grouped.get(sheet_name, []), sheet_monitors, settings, months,
             header_row,
         )
-        last_cols.append(7 + len(meal_headers) + 2)
+        ws = wb[sheet_name]
+        image_boxes.append((len(wb.worksheets), columns_width_pixels(ws, 1, ws.max_column),
+                            sum(ws.row_dimensions[row].height for row in range(1, 6)) * 96 / 72))
 
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
 
     if image_bytes:
         try:
-            _embed_header_images(path, last_cols, image_bytes)
+            embed_template_header(path, image_bytes, "png", image_boxes)
         except Exception:
             # The roster is still valid without the crest — never lose the
             # whole export over a decorative header.

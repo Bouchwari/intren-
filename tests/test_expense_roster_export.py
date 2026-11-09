@@ -2,9 +2,11 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import openpyxl
+from PySide6.QtWidgets import QApplication
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -39,6 +41,10 @@ def _student(**kwargs) -> Student:
 class ExpenseRosterExportTests(unittest.TestCase):
     """بيانات المصاريف — the official per-student quarterly roster. The
     structure asserted here was read out of the real template, not invented."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -193,9 +199,16 @@ class ExpenseRosterExportTests(unittest.TestCase):
             self.assertIn("xl/drawings/drawing1.xml", names)
             self.assertIn("xl/worksheets/_rels/sheet1.xml.rels", names)
             sheet = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
-            self.assertIn("<drawing", sheet)
+            self.assertIsNotNone(ET.fromstring(sheet).find(
+                "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}drawing"))
             content_types = archive.read("[Content_Types].xml").decode("utf-8")
             self.assertIn('Extension="png"', content_types)
+            self.assertIn('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"', content_types)
+            relationships = archive.read("xl/worksheets/_rels/sheet1.xml.rels").decode("utf-8")
+            self.assertIn('<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"', relationships)
+            drawing = ET.fromstring(archive.read("xl/drawings/drawing1.xml"))
+            extent = drawing.find(".//{http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing}ext")
+            self.assertAlmostEqual(int(extent.get("cx")) / int(extent.get("cy")), 1135 / 150, places=4)
         # Still loadable — the hand-written parts didn't corrupt the package.
         self.assertEqual(
             openpyxl.load_workbook(self.out).sheetnames,
@@ -217,6 +230,24 @@ class ExpenseRosterExportTests(unittest.TestCase):
         wb = self._write([])
         self.assertEqual(wb.sheetnames, ["ابتدائي", "اعدادي", "تأهيلي"])
         self.assertEqual(str(wb["اعدادي"]["A11"].value), "1- التلاميذ الممنوحين:")
+
+    def test_long_identity_rows_fit_in_all_cycles_and_ramadan_layouts(self) -> None:
+        for ramadan in (False, True):
+            with self.subTest(ramadan=ramadan):
+                people = [_student(
+                    cycle=cycle, student_class="الأولى إعدادي مسار دولي خيار فرنسية",
+                    grant_number="7623/25/01493", full_name="تلميذ اختبار ذو اسم طويل جدا",
+                ) for cycle in ("الابتدائي", "الثانوي الإعدادي", "الثانوي التأهيلي")]
+                wb = self._write(people, has_ramadan=ramadan)
+                for ws in wb:
+                    row = _first_student_row(ws.title)
+                    self.assertGreaterEqual(ws.row_dimensions[row].height, 21.5)
+                    self.assertFalse(ws.cell(row, 6).alignment.wrap_text)
+                    self.assertEqual(ws.page_setup.orientation, "landscape")
+                    self.assertEqual(ws.cell(row, 5).value, "7623/25/01493")
+                    self.assertTrue(ws.sheet_properties.pageSetUpPr.fitToPage)
+                    self.assertEqual(ws.page_setup.fitToWidth, 1)
+                    self.assertEqual(ws.page_setup.fitToHeight, 0)
 
 
 if __name__ == "__main__":

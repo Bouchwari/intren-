@@ -1,5 +1,148 @@
 # CLAUDE.md — Instructions for Claude Code
 
+### 2026-11-07 - Holiday Review In Settings Only (v1.5.3)
+
+The user does not want the persistent holiday toolbar button. Removed the global
+button, its navigation callback and the now-unused Settings signal. Calendar
+review and pending-date reminders remain in Settings; no holiday/report data
+changed. This supersedes v1.5.2's main-window reminder below.
+
+OCR was conditional on being simple/small. It is not added: Windows.Media.Ocr
+officially requires package identity (this app is PyInstaller/Inno, not MSIX),
+and Tesseract requires an engine plus language data, absent on this PC. No OCR
+downloads/dependencies or packaging conversion were made. Existing calendar
+remains the reviewed transcription, not general scanned-list recognition.
+Local installer: installer_output/TadbirInternatSetup-1.5.3.exe. Verification:
+30 focused tests and 2 subtests passed; real-parent screenshot, frozen startup,
+packaging and diff check passed. Full suite was not rerun for this narrow removal.
+Build hashes are recorded in AI_HANDOFF.md. No install or GitHub push.
+
+### 2026-11-07 - Editable Reviews And Holiday Calendar (v1.5.2)
+
+User reported that saved daily reports could not be edited. Review now permits
+explicit notes/rating edits on saved days. Untouched saved days produce no
+overrides; Cancel writes nothing. Approved changes persist in both range review
+and batch PDF paths. save_reviewed_daily_reports updates checklist/notes only,
+never attendance counts. New-report defaults still never change saved reports.
+This supersedes the read-only review behavior described under v1.5.1 below.
+
+Settings labels use explicit transparent backgrounds, absolute RTL alignment,
+wrapping and measured minimum heights. QA includes the real MainWindow ancestor
+styles which previously leaked a paper-colored background onto labels.
+
+The user supplied the 2026/2027 holiday image and explicitly chose to add this
+list now, leaving arbitrary scanned-list OCR for later. core/holiday_calendar.py
+is a reviewed transcription, not OCR: 15 periods, 47 fixed Gregorian days and
+3 unresolved Hijri holidays. Source image is bundled as assets/holidays_2026_2027.webp.
+Settings and the main-window review reminder open HolidayCalendarDialog, with
+editable ISO dates, inclusion checkboxes, source preview and mandatory approval.
+Never guess Gregorian dates for Eid al-Fitr, Eid al-Adha or Muharram.
+
+holiday_calendar_repo stores reviewed rows and owned dates in app_preferences.
+Import/reconciliation is transactional and idempotent; manually entered holidays
+and renamed imported days are preserved. Only unchanged owned days can be removed
+when an imported period is edited. A reminder persists for the matching school
+year while the list is unreviewed or Hijri dates remain blank. No real records
+have been imported during development. No schema migration or OCR dependency.
+
+Local installer: installer_output/TadbirInternatSetup-1.5.2.exe. Full suite:
+620 tests and 47 subtests passed in 355.37 seconds; diff check, packaging and
+frozen wizard/main-window startup passed. Hashes are in AI_HANDOFF.md.
+Not installed or pushed by this turn; the user may have installed v1.5.1 themselves.
+
+### 2026-11-07 - Responsive Settings And Official Headers (v1.5.1 Local Update)
+
+Settings groups no longer force a 760px minimum width. Forms wrap long rows;
+the holiday reason/actions sit below the dates. Background styles are scoped
+to their containers instead of leaking into child controls. Report preferences
+and review use wrapping Arabic indicator labels with measured row heights after
+the real app theme is applied and whenever the label column is resized.
+Review uses the existing app-native buttons with explicit Cancel contrast,
+non-collapsible date/detail panes and a visible notes field. Saved reports stay
+read-only. The global dropdown arrow now uses Qt's bundled arrow resource;
+CSS border triangles were rendering as squares. No new asset/dependency.
+
+The official header now has a complete-image crop/preview editor, recommended
+1800x414 pixels, with proportional fitting and a low-resolution warning. The
+approved image is saved atomically to per-user DOCUMENT_HEADER_PATH and used on
+the next PDF/Word/Excel export without restarting. It includes the ministry name;
+there is no separate editable ministry text field. Reset restores template images.
+Old LOGO_PATH uploads require preview/approval rather than silently treating a
+school emblem as the complete ministry header. Word image2 is replaced only when
+identical to image1; blank secondary artwork is preserved.
+
+Word XML serialization retains original namespace declarations used by
+mc:Ignorable/Requires, fixing exports Word previously refused to open. Reception
+headers only move margin-relative shapes for clearance; standalone images are
+centered 5mm below the page edge with their original aspect ratio. Header text
+must not use wrapTopAndBottom, which can push signatures outside the A4 page.
+Native Word print checks cover default/custom headers, single-page A4 and signatures.
+
+Local v1.5.1 output paths: dist/local-1.5.1/TadbirInternat.exe and
+installer_output/TadbirInternatSetup-1.5.1.exe. Not installed or pushed to GitHub;
+the installed app remains the November 2 v1.5.0 build. No real database read/write.
+Final verification: 611 tests and 47 subtests passed in 435.16 seconds;
+git diff --check passed. Installer compilation, frozen wizard/main-window startup
+and packaged-module/header-fix inspection passed. Hashes are in AI_HANDOFF.md.
+
+Annual holiday-list import remains unimplemented pending a real ministry PDF,
+photo or workbook. Extract to a review list and never activate uncertain dates
+silently. The user has been asked for a sample; no response beyond "continue".
+
+### 2026-11-02 - Report Preferences And A4 Excel (v1.5.0 Installed Locally)
+
+Daily-report preferences now live in Settings: preferred rating per indicator,
+up to two alternatives, manual/unrated mode and a 0-100% variation slider.
+Defaults retain good ratings, with occasional alternatives only for dining-hall
+and dorm cleanliness. Suggestions are deterministic per date, field and settings,
+not invented observations; the review dialog allows notes and rating overrides
+before saving/exporting. Notes are never auto-generated. Saved reports, including
+blank ratings and manual beneficiary counts, remain authoritative and unchanged.
+
+The daily report screen can review/save a range. Batch generation opens the same
+review before any auto-fill/write. Cancel does not persist changes. Reviewed
+overrides affect ratings/notes only; new beneficiary counts come from contact and
+absence records after auto-fill. Preferences use the existing app_preferences
+table, without a schema migration. Date ranges are limited to 366 days and skip
+holidays; days without source data are skipped unless batch auto-fill is enabled.
+
+The user prefers NO wrapped Excel text where practical and requires A4 printing.
+`ui/excel_layout.py` prefers readable single-line text, with wrapping/row growth
+only as a fallback. Student rosters use landscape A4, one page wide, and repeat
+table headings on additional pages. Reception attestation uses portrait A4, one
+page, with centered content. Original template header images are embedded with
+preserved proportions by `ui/excel_images.py`; OPC package roots use default
+namespaces for compatibility with both Excel and other spreadsheet readers.
+Values, formulas, official wording and per-student meal blanks are preserved.
+
+Synthetic eight-student normal/Ramadan samples and reception print on one page;
+an 80-student sample prints across four A4 pages with repeated headings. Native
+Excel and the spreadsheet skill both recalculated the sample reception totals
+to 2760 per normal meal with no formula errors. No real database was read or
+modified for these checks. Version 1.5.0 was subsequently packaged and installed
+on this PC at the user's request, without a GitHub push or public release.
+Final verification: 599 tests and 41 subtests passed; `git diff --check` passed.
+
+Local installer: `installer_output/TadbirInternatSetup-1.5.0.exe`. The installed
+executable matches the tested build, the desktop shortcut still points to it,
+and the database hash was unchanged after installation. A verified DB/old-exe
+backup is in `installer_output/backups/before-1.5.0-20261102-113348/`.
+The isolated Python 3.12 build environment also passed all 599 tests and 41
+subtests. Frozen wizard and main-window startup checks passed using test data.
+
+Packaging fix: the local packager was collecting Poppler's incompatible
+`icuuc.dll` from the host's tool environment, causing QtGui DLL startup errors.
+`Matama.spec` now excludes unversioned Windows ICU DLLs so the OS supplies its
+native API. This fixes the old local-build issue; it was not a Python 3.13-only
+failure. Keep this exclusion and verify packaged startup before installing.
+
+Standing user preference: ALWAYS use the spreadsheet/Excel skill for Excel work.
+Preserve the app's existing openpyxl exporters; use skill tools for inspection
+and verification rather than replacing the desktop application's dependencies.
+
+Per-student meal entry/calculation still awaits the user's workflow choice; daily
+cycle totals cannot determine actual meals for each individual student.
+
 ### 2026-09-26 - Copy recipients and Arabic punctuation (v1.4.1)
 
 Paper-saving daily PDFs now default to TWO internal copies. Only order letters

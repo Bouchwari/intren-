@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from zipfile import ZIP_DEFLATED, ZipFile
+from ui.document_branding import docx_header_part, docx_template_header
 
 from PySide6.QtCore import QDate, QEvent, QMarginsF, QPoint, QRectF, QTimer, Signal, Qt
 from PySide6.QtGui import (
@@ -38,6 +39,7 @@ from core.contact_counts import (
 )
 from core.models import DailyContact
 from ui.document_header import (
+    serialize_docx_xml,
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
@@ -291,6 +293,7 @@ def _write_daily_contact_docx(
     display_date = _format_doc_date(date_str)
 
     with ZipFile(template_path, "r") as source, ZipFile(path, "w", ZIP_DEFLATED) as target:
+        header_image = docx_template_header(source)
         for item in source.infolist():
             data = source.read(item.filename)
             if item.filename == "word/document.xml":
@@ -305,7 +308,7 @@ def _write_daily_contact_docx(
                     meals=_meals_for_document(date_str),
                 )
                 _fix_contact_header_body_gap(root)
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+                data = serialize_docx_xml(root, data)
             elif item.filename.startswith("word/header") and item.filename.endswith(".xml"):
                 root = ET.fromstring(data)
                 _fill_contact_header_xml(
@@ -314,8 +317,8 @@ def _write_daily_contact_docx(
                     province=province,
                     school_name=school_name,
                 )
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-            target.writestr(item, data)
+                data = serialize_docx_xml(root, data)
+            target.writestr(item, docx_header_part(item.filename, data, header_image))
 
 
 def _force_arabswell_font(paragraph: ET.Element) -> None:

@@ -40,6 +40,7 @@ from ui.daily_reception_screen import build_reception_pdf_page
 from ui.daily_report_screen import build_report_pdf_page
 from ui.order_letter_screen import build_order_letter_pdf_page
 from ui.pdf_layout import choose_company_copies
+from ui.report_options import review_report_range
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
 
@@ -504,6 +505,14 @@ class WorkPipelineScreen(QWidget):
             return
         folder = Path(folder_str)
 
+        report_overrides = {}
+        if DOC_REPORT in doc_keys:
+            report_overrides = review_report_range(
+                self, start, end,
+                include_empty=auto_fill and (DOC_CONTACT in doc_keys or DOC_ABSENCE in doc_keys))
+            if report_overrides is None:
+                return
+
         if auto_fill and (DOC_CONTACT in doc_keys or DOC_ABSENCE in doc_keys):
             self._auto_fill_range(start, end, doc_keys)
 
@@ -513,7 +522,8 @@ class WorkPipelineScreen(QWidget):
             path = folder / (
                 f"{_DOC_PDF_NAME[key]}_{start.toString('yyyy-MM-dd')}_إلى_{end.toString('yyyy-MM-dd')}.pdf"
             )
-            build_page = self._page_builder(key, settings, print_layout=print_layout)
+            build_page = self._page_builder(key, settings, print_layout=print_layout,
+                                            report_overrides=report_overrides)
             counts, failed_dates = write_combined_pdf(
                 path, start, end, _DOC_ORIENTATION[key], build_page,
                 print_layout=print_layout, copies=copy_counts[key])
@@ -522,7 +532,8 @@ class WorkPipelineScreen(QWidget):
         self.refresh()
         QMessageBox.information(self, "تم", "\n\n".join(summaries))
 
-    def _page_builder(self, key: str, settings, *, print_layout: str = "standard") -> Callable:
+    def _page_builder(self, key: str, settings, *, print_layout: str = "standard",
+                      report_overrides: dict | None = None) -> Callable:
         holiday_labels = {h.date: h.label for h in get_all_holidays()}
 
         if key == DOC_CONTACT:
@@ -534,7 +545,8 @@ class WorkPipelineScreen(QWidget):
         if key == DOC_RECEPTION:
             return lambda painter, w, h, d: build_reception_pdf_page(painter, w, h, d, holiday_labels, settings)
         return lambda painter, w, h, d: build_report_pdf_page(
-            painter, w, h, d, holiday_labels, settings, single_copy=print_layout == "three_copies")
+            painter, w, h, d, holiday_labels, settings, single_copy=print_layout == "three_copies",
+            overrides=(report_overrides or {}).get(d))
 
     def _auto_fill_range(self, start: QDate, end: QDate, doc_keys: List[str]) -> None:
         needs_contact = DOC_CONTACT in doc_keys and self._range_has_missing_data(

@@ -297,6 +297,21 @@ class BatchExportBuildPageTests(unittest.TestCase):
         self.assertEqual(saved.ftour_expected, 99, "the user's own numbers were overwritten")
         self.assertEqual(saved.ftour_present, 98)
 
+    def test_report_batch_saves_explicit_review_edits_without_changing_counts(self) -> None:
+        day = "2026-06-01"
+        database.save_daily_contact(DailyContact(date=day, meal_type=drs.MEAL_FTOUR, collegial_granted=3))
+        database.save_daily_report(drs.DailyReport(date=day, notes="Before", ftour_expected=99, ftour_present=98))
+        settings = database.get_school_settings()
+        be.write_combined_pdf(
+            self._out_path, QDate(2026, 6, 1), QDate(2026, 6, 1),
+            QPageLayout.Orientation.Landscape,
+            lambda painter, w, h, d: drs.build_report_pdf_page(
+                painter, w, h, d, {}, settings, overrides={"notes": "After", "hygiene_staff": 2}),
+        )
+        saved = database.get_daily_report(day)
+        self.assertEqual((saved.notes, saved.hygiene_staff, saved.ftour_expected, saved.ftour_present),
+                         ("After", 2, 99, 98))
+
     def test_report_batch_suggests_checklist_for_every_day_not_just_the_first(self) -> None:
         """الصفحة الرئيسية's "توليد شامل لعدة أيام" must suggest real ratings for
         EVERY day in the range, not just a day that happens to already have
@@ -318,7 +333,7 @@ class BatchExportBuildPageTests(unittest.TestCase):
         for date_str in ("2026-06-01", "2026-06-02", "2026-06-03"):
             report = drs._report_for_date(date_str)
             for field, _ in drs._HYGIENE_ITEMS:
-                if field in drs._VARIABLE_HYGIENE_FIELDS:
+                if field in {"hygiene_dining_hall", "hygiene_dorms"}:
                     self.assertIn(getattr(report, field), variable_allowed)
                 else:
                     self.assertEqual(getattr(report, field), hygiene_good)
@@ -330,9 +345,7 @@ class BatchExportBuildPageTests(unittest.TestCase):
             self.assertIsNone(database.get_daily_report(date_str))
 
     def test_report_batch_preserves_already_saved_ratings(self) -> None:
-        """A day that already has a saved report with a real (even bad)
-        rating must keep it exactly — batch export only fills in items
-        that are still genuinely unrated, same rule as the live screen."""
+        """Saved reports remain authoritative, including deliberately blank items."""
         database.save_daily_report(DailyReport(date="2026-06-01", hygiene_staff=0))  # ضعيفة, a real problem
 
         report = drs._report_for_date("2026-06-01")
@@ -340,7 +353,7 @@ class BatchExportBuildPageTests(unittest.TestCase):
         self.assertEqual(report.hygiene_staff, 0)  # untouched
         for field, _ in drs._HYGIENE_ITEMS:
             if field != "hygiene_staff":
-                self.assertNotEqual(getattr(report, field), -1, f"{field} was left unrated")
+                self.assertEqual(getattr(report, field), -1, f"{field} was changed")
 
     @unittest.skipUnless(_HAS_PDFINFO, "pdfinfo not installed")
     def test_daily_absence_makes_one_combined_pdf(self) -> None:

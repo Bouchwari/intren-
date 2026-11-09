@@ -553,32 +553,18 @@ class ReceptionDocxDynamicContentTests(unittest.TestCase):
         gap_pt = (top_margin - header_dist) / 20
         self.assertGreaterEqual(gap_pt, 20)
 
-    def test_header_textbox_pushed_further_above_the_margin_line(self) -> None:
-        """Regression: the header's academy/directorate/school text lives
-        inside a floating DrawingML group (image + text box) anchored to
-        the page margin with wp:positionV/wp:posOffset — a NEGATIVE value
-        exactly equal to the group's own height, meaning the group (and
-        the text box inside it) sits flush against the margin line with
-        zero clearance from the body. Every such upward-anchored offset
-        in the header must end up more negative than the template's own
-        original value, giving the text real breathing room."""
-        out = self._write(_test_settings())
-        with zipfile.ZipFile(out) as z:
-            generated_h2 = z.read("word/header2.xml").decode("utf-8")
-        template_path = Path(drs.__file__).resolve().parents[2] / "templets" / "المحضر اليومي لتسلم الخدمة.docx"
-        with zipfile.ZipFile(template_path) as z:
-            original_h2 = z.read("word/header2.xml").decode("utf-8")
-
-        wp_ns = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
-        pattern = re.compile(rf"<[\w]*:?positionV[^>]*>\s*<[\w]*:?posOffset[^>]*>(-?\d+)</")
-        original_offsets = [int(m) for m in pattern.findall(original_h2)]
-        generated_offsets = [int(m) for m in pattern.findall(generated_h2)]
-
-        self.assertTrue(original_offsets)
-        self.assertEqual(len(original_offsets), len(generated_offsets))
-        for original, generated in zip(original_offsets, generated_offsets):
-            if original < 0:
-                self.assertLess(generated, original)
+    def test_header_clearance_only_moves_margin_relative_shapes(self) -> None:
+        wp = drs._WP_NS
+        root = ET.fromstring(
+            f'<root xmlns:wp="{wp}">'
+            '<wp:positionV relativeFrom="margin"><wp:posOffset>-500000</wp:posOffset></wp:positionV>'
+            '<wp:positionV relativeFrom="paragraph"><wp:posOffset>-500000</wp:posOffset></wp:positionV>'
+            '<wp:positionV relativeFrom="page"><wp:posOffset>180000</wp:posOffset></wp:positionV>'
+            '</root>'
+        )
+        drs._fix_reception_header_textbox_clearance(root)
+        self.assertEqual([int(el.text) for el in root.iter(f"{{{wp}}}posOffset")],
+                         [-754000, -500000, 180000])
 
     def _header_with(self, image_top, image_cy, text_top, text_cy, *, frame=False):
         wp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"

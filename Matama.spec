@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+from pathlib import PureWindowsPath
 
 a = Analysis(
     ['src/main.py'],
@@ -10,6 +12,7 @@ a = Analysis(
         ('assets/fonts', 'assets/fonts'),
         ('assets/icons', 'assets/icons'),
         ('assets/app_icon.png', 'assets'),
+        ('assets/holidays_2026_2027.webp', 'assets'),
     ],
     hiddenimports=[],
     hookspath=[],
@@ -19,6 +22,12 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+if sys.platform == 'win32':
+    # Qt uses Windows' ICU API. Other tools on PATH may supply incompatible
+    # DLLs with these same names, which break QtGui in the frozen application.
+    system_icu = {'icu.dll', 'icuuc.dll', 'icuin.dll'}
+    a.binaries = [entry for entry in a.binaries
+                  if PureWindowsPath(entry[0]).name.lower() not in system_icu]
 pyz = PYZ(a.pure)
 
 exe = EXE(

@@ -4,8 +4,8 @@ Daily report (التقرير اليومي) — auto-generated attendance/absence
 plus the مسير's inspection checklist (hygiene / meal quality / building) and
 notes, matching the real accepted form.
 """
-import dataclasses
 import datetime
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -31,7 +31,8 @@ from core.active_cycles import visible_cycles
 from core.contact_counts import (
     CATEGORY_COLLEGIAL, CATEGORY_PRIMARY, CATEGORY_QUALIFYING,
 )
-from core.report_defaults import suggest_rating_index
+from core.report_defaults import fill_report_defaults, apply_report_overrides
+from data.settings_repo import get_report_preferences
 from core.ramadan import meals_for_date
 from data.database import (
     get_day_contacts, get_day_absences,
@@ -40,7 +41,7 @@ from data.database import (
     save_daily_report,
 )
 from data.database import get_pdf_print_layout
-from ui.batch_export import draw_placeholder_pdf_page
+from ui.batch_export import draw_placeholder_pdf_page, pick_date_range
 from ui.pdf_layout import write_copy_pdf
 from ui.daily_contact_screen import _academy_line, _province_line
 from ui.document_header import _template_header_image, official_font_family
@@ -62,6 +63,8 @@ _BTN_SAVE_NOTES = "💾  حفظ الملاحظات"
 _LBL_DATE       = "التاريخ:"
 _LBL_NOTES      = "ملاحظات المسير"
 _NOTES_HINT     = "أدخل ملاحظاتك هنا..."
+_BTN_REVIEW = "تعبئة ومراجعة عدة أيام"
+_REVIEW_FAILED = "تعذر حفظ التقارير. حاول مرة أخرى."
 _NO_DATA        = "لا توجد بيانات لهذا اليوم.\nأدخل بيانات ورقة الاتصال أو الغياب أولاً."
 _SAVED_OK       = "تم حفظ التقرير بنجاح."
 _BTN_SAVE_REPORT      = "حفظ التقرير"
@@ -108,20 +111,6 @@ def _meals_for_document(date_str: str) -> List[Tuple[str, str]]:
 _NOT_RATED = "—"
 _HYGIENE_SCALE = ["ضعيفة", "ناقصة", "متوسطة", "لا بأس بها", "حسنة", "جيدة"]
 _THREE_SCALE = ["ناقصة", "لابأس بها", "جيدة"]
-
-# Auto-fill defaults for a fresh (never-saved) report. Everything starts as
-# جيدة except the two cleanliness rows the user explicitly allowed to vary.
-# Those still remain جيدة most days and only occasionally drop one or two
-# levels. A saved manual rating is never replaced by these defaults.
-_HYGIENE_GOOD = 5
-_THREE_SCALE_GOOD = 2
-_VARIABLE_HYGIENE_FIELDS = {"hygiene_dining_hall", "hygiene_dorms"}
-_VARIABLE_HYGIENE_EXCLUDED = [0, 1, 2]  # ضعيفة, ناقصة, متوسطة
-_VARIABLE_HYGIENE_WEIGHTS = {
-    3: 5,   # لا بأس بها
-    4: 10,  # حسنة
-    5: 85,  # جيدة
-}
 
 _LBL_HYGIENE = "1 — تتبع النظافة"
 _HYGIENE_ITEMS: List[Tuple[str, str]] = [
@@ -569,29 +558,8 @@ def _draw_daily_report_pdf_page(
 
 
 def _fill_unrated_items(report: DailyReport) -> DailyReport:
-    """Return a copy of `report` with every still-unrated (-1) checklist
-    item replaced by the same weighted-random suggestion the مسير would
-    see on screen — an item that already has a real answer is always left
-    exactly as it is. Shared by the live screen and batch export so a date
-    looks the same whichever path generated it."""
-    updates: Dict[str, int] = {}
-    for field, _ in _HYGIENE_ITEMS:
-        if getattr(report, field) == -1:
-            if field in _VARIABLE_HYGIENE_FIELDS:
-                updates[field] = suggest_rating_index(
-                    len(_HYGIENE_SCALE),
-                    _VARIABLE_HYGIENE_EXCLUDED,
-                    _VARIABLE_HYGIENE_WEIGHTS,
-                )
-            else:
-                updates[field] = _HYGIENE_GOOD
-    for field, _ in _QUALITY_ITEMS:
-        if getattr(report, field) == -1:
-            updates[field] = _THREE_SCALE_GOOD
-    for field, _ in _BUILDING_ITEMS:
-        if getattr(report, field) == -1:
-            updates[field] = _THREE_SCALE_GOOD
-    return dataclasses.replace(report, **updates) if updates else report
+    """Share saved preferences and stable per-date suggestions across exports."""
+    return fill_report_defaults(report, get_report_preferences())
 
 
 def _report_for_date(date_str: str) -> DailyReport:
@@ -599,12 +567,8 @@ def _report_for_date(date_str: str) -> DailyReport:
     saved report if one exists (respecting a manual beneficiary override —
     see DailyReportScreen._load_report_fields), otherwise beneficiary
     counts freshly computed from that date's contact/absence sheets. Any
-    still-unrated checklist item gets a fresh suggestion via
-    _fill_unrated_items — never persisted here (batch export must stay
-    read-only, see test_report_export_never_saves_report_to_database), so
-    it's re-rolled on every batch run just like an unsaved date would be
-    if opened on screen, until someone actually saves it. Used by batch
-    export, which has no open screen to read live widget state from."""
+    still-unrated item in a new report receives a date-stable suggestion.
+    This lookup does not persist anything; the confirmed caller saves it."""
     report = get_daily_report(date_str) or DailyReport(date=date_str)
     if report.id is None:
         contacts = {c.meal_type: c for c in get_day_contacts(date_str)}
@@ -624,7 +588,7 @@ def _report_for_date(date_str: str) -> DailyReport:
 def build_report_pdf_page(
     painter, page_w: float, page_h: float, date_str: str,
     holiday_labels: Dict[str, str], settings,
-    *, single_copy: bool = False,
+    *, single_copy: bool = False, overrides: dict | None = None,
 ) -> str:
     """Draw one date's page for a combined batch PDF — real data, a
     holiday placeholder, or a no-data placeholder. Used by
@@ -642,13 +606,13 @@ def build_report_pdf_page(
             "لم يتم تسجيل بيانات ورقتي الاتصال أو الغياب لهذا اليوم بعد.",
         )
         return "empty"
-    report = _report_for_date(date_str)
-    # Batch generation saves what it prints, so a day produced from الصفحة الرئيسية
-    # ends up in the database exactly as if it had been opened and saved on
-    # screen. Only a date with no report yet is written — a day the user
-    # already saved keeps their own numbers and ratings untouched.
+    report = apply_report_overrides(_report_for_date(date_str), overrides)
+    # Existing reports change only when the user explicitly edits the review.
     if get_daily_report(date_str) is None:
         save_daily_report(report)
+    elif overrides:
+        from data.daily_repo import save_reviewed_daily_reports
+        save_reviewed_daily_reports([report])
     _draw_daily_report_pdf_page(painter, page_w, page_h, settings, date_str, report,
                               single_copy=single_copy)
     return "data"
@@ -687,6 +651,9 @@ class DailyReportScreen(QWidget):
 
         inner.addLayout(self._build_header())
         inner.addLayout(self._build_date_bar())
+        review = self._btn(_BTN_REVIEW, COLOR_ACCENT)
+        review.clicked.connect(self._review_range)
+        inner.addWidget(review, alignment=Qt.AlignmentFlag.AlignRight)
         inner.addWidget(self._build_report_card())
         inner.addWidget(self._build_checklist_card())
         inner.addWidget(self._build_notes_section())
@@ -1308,6 +1275,26 @@ class DailyReportScreen(QWidget):
             fields[f"{meal_key}_expected"] = expected.value()
             fields[f"{meal_key}_present"] = present.value()
         return DailyReport(**fields)
+
+    def _review_range(self) -> None:
+        from data.daily_repo import save_reviewed_daily_reports
+        from ui.report_options import review_report_range
+
+        selected = pick_date_range(self)
+        if selected is None:
+            return
+        overrides = review_report_range(self, *selected)
+        if overrides is None or not overrides:
+            return
+        try:
+            reports = [apply_report_overrides(_report_for_date(day), values)
+                       for day, values in overrides.items()]
+            save_reviewed_daily_reports(reports)
+            self._generate()
+            QMessageBox.information(self, "تم", _SAVED_OK)
+        except Exception:
+            logging.getLogger(__name__).exception("Cannot save reviewed reports")
+            QMessageBox.warning(self, "خطأ", _REVIEW_FAILED)
 
     def _on_save_report(self) -> None:
         try:

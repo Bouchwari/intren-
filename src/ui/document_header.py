@@ -1,5 +1,6 @@
 """Shared official document header drawing helpers for exported UI documents."""
 import sys
+from io import BytesIO
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from zipfile import ZipFile
@@ -16,6 +17,7 @@ from config.settings import (
 from core.models import SchoolSettings
 from ui.dialogs import ask_choice
 from ui.theme import body_font_family
+from ui.document_branding import custom_header, fitted_header
 
 # Word documents declare many namespace prefixes (w, mc, wp, wps, v, o, ...)
 # on the root element. ElementTree's tostring() does NOT preserve these — by
@@ -73,6 +75,21 @@ def register_docx_namespaces() -> None:
         ET.register_namespace(prefix, uri)
 
 
+def serialize_docx_xml(root: ET.Element, original: bytes) -> bytes:
+    """Preserve namespace declarations referenced by Word's compatibility flags."""
+    namespaces = dict(value for _, value in ET.iterparse(BytesIO(original), events=("start-ns",)))
+    for prefix, uri in namespaces.items():
+        ET.register_namespace(prefix, uri)
+    serialized = ET.tostring(root, encoding="utf-8")
+    declared = dict(value for _, value in ET.iterparse(BytesIO(serialized), events=("start-ns",)))
+    # ElementTree drops namespaces used only as text in mc:Ignorable/Requires.
+    # Word rejects those dangling prefix references as a corrupt document.
+    for prefix, uri in namespaces.items():
+        if prefix not in declared:
+            root.set(f"xmlns:{prefix}" if prefix else "xmlns", uri)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
 _HEADER_TEMPLATE_NAME = "البرنامج الغذائي لشهر رمضان المبارك.docx"
 _HEADER_IMAGE = "word/media/image1.jpeg"
 _OFFICIAL_FONT_NAME = "maghribi-font 1.ttf"
@@ -126,7 +143,7 @@ def official_font_family() -> str:
     return _FONT_FAMILY
 
 
-def _template_header_image() -> QImage:
+def _original_template_header_image() -> QImage:
     global _HEADER_IMAGE_CACHE
     if _HEADER_IMAGE_CACHE is not None:
         return _HEADER_IMAGE_CACHE
@@ -142,6 +159,17 @@ def _template_header_image() -> QImage:
 
     _HEADER_IMAGE_CACHE = image
     return _HEADER_IMAGE_CACHE
+
+
+def _template_header_image() -> QImage:
+    original = _original_template_header_image()
+    custom = custom_header()
+    if custom is None:
+        return original
+    if original.isNull():
+        return custom
+    size = original.size().scaled(1800, 1800, Qt.AspectRatioMode.KeepAspectRatio)
+    return fitted_header(custom, size)
 
 
 def _text(

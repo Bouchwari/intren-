@@ -2,13 +2,12 @@
 src/ui/settings_screen.py
 Application settings: edit school info, supplier info, logo, and backup.
 """
-import shutil
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
+    QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
     QScrollArea, QFrame, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -30,6 +29,11 @@ from data.database import (
 )
 from ui.widgets.date_input import DateInput
 from ui.widgets.icon_button import IconButton
+from ui.report_options import ReportPreferencesWidget
+from data.settings_repo import save_report_preferences
+from ui import document_branding as branding
+from ui.document_header import _template_header_image
+from ui.header_editor import HeaderEditorDialog
 
 _PAGE_BG = "#f5f5f0"
 _PANEL_BG = "#ffffff"
@@ -48,19 +52,19 @@ _RAMADAN_HINT   = ("حدّد مدة رمضان بصيغة YYYY-MM-DD. خلال �
                    "الوثائق تلقائياً إلى وجبتي الإفطار والسحور بدل الوجبات "
                    "الثلاث العادية. يمكنك تصحيح يوم واحد من ورقة الاتصال "
                    "اليومية إذا اختلف الهلال.")
-_GRP_LOGO       = "شعار المؤسسة"
+_GRP_LOGO       = "ترويسة الوثائق الرسمية"
 _GRP_EXPORT     = "تصدير الوثائق"
 _GRP_BACKUP     = "النسخ الاحتياطي"
 _GRP_HOLIDAYS   = "أيام العطل"
 _BTN_SAVE       = "حفظ التغييرات"
 _BTN_SAVE_ICON  = "💾"
-_BTN_LOGO       = "اختيار صورة الشعار"
+_BTN_LOGO       = "اختيار صورة الترويسة"
 _BTN_LOGO_ICON  = "📁"
 _BTN_BACKUP     = "إنشاء نسخة احتياطية"
 _BTN_BACKUP_ICON = "💾"
 _MSG_SAVED      = "تم حفظ الإعدادات بنجاح."
 _MSG_REQUIRED   = "الحقول التالية مطلوبة:\n• اسم المؤسسة\n• السنة الدراسية\n• اسم المدير"
-_MSG_LOGO_OK    = "تم تحديث الشعار بنجاح."
+_MSG_LOGO_OK    = "تم تحديث الترويسة. ستظهر في الوثائق المصدرة من الآن؛ الملفات القديمة لا تتغير."
 _MSG_BACKUP_OK  = "تم إنشاء النسخة الاحتياطية بنجاح."
 
 # ── Holidays ──────────────────────────────────────────────────────────────
@@ -84,10 +88,8 @@ _HOLIDAY_DEL_CONFIRM = "حذف هذا اليوم من لائحة العطل؟"
 _HOLIDAY_DEL_CONFIRM_RANGE = "حذف كل الأيام ({count}) من لائحة العطل؟"
 
 
-def _field(text: str = "", placeholder: str = "", min_width: int = 430) -> QLineEdit:
-    """A settings input. `min_width` is reducible because two fields placed
-    side by side at the full 430px leave their labels zero width — which is
-    exactly why every price label was invisible on this screen."""
+def _field(text: str = "", placeholder: str = "", min_width: int = 220) -> QLineEdit:
+    """Keep a usable input width without forcing the whole page to scroll sideways."""
     w = QLineEdit(text)
     w.setPlaceholderText(placeholder)
     w.setMinimumHeight(34)
@@ -100,9 +102,20 @@ def _field(text: str = "", placeholder: str = "", min_width: int = 430) -> QLine
     return w
 
 
+class _SettingsFormLayout(QFormLayout):
+    def addRow(self, *args) -> None:
+        super().addRow(*args)
+        if len(args) == 2 and isinstance(args[0], str):
+            label = self.labelForField(args[1])
+            label.setWordWrap(True)
+            label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute
+                               | Qt.AlignmentFlag.AlignVCenter)
+            label.setMinimumHeight(label.fontMetrics().height() + 8)
+            label.setStyleSheet("background:transparent; border:0; padding:0;")
+
+
 def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
     box = QGroupBox(title)
-    box.setMinimumWidth(760)
     box.setMaximumWidth(1120)
     box.setStyleSheet(f"""
         QGroupBox {{
@@ -116,11 +129,13 @@ def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
             padding: 0 8px; right: 14px;
         }}
     """)
-    form = QFormLayout(box)
+    form = _SettingsFormLayout(box)
     form.setSpacing(10)
     form.setHorizontalSpacing(18)
-    form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+    form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute
+                           | Qt.AlignmentFlag.AlignVCenter)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
     return box, form
 
 
@@ -166,7 +181,12 @@ class SettingsScreen(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setStyleSheet(f"background-color: {_PAGE_BG};")
+        self.setObjectName("settingsScreen")
+        self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+        self.setStyleSheet(f"""
+            QWidget#settingsScreen {{ background-color: {_PAGE_BG}; }}
+            QLabel {{ background:transparent; border:0; }}
+        """)
         self._build_ui()
         self._load_current_settings()
 
@@ -179,14 +199,15 @@ class SettingsScreen(QWidget):
 
         # Sticky top bar with title + save button
         topbar = QWidget()
-        topbar.setStyleSheet(f"background:{_PANEL_BG}; border-bottom:1px solid {_PANEL_BORDER};")
+        topbar.setObjectName("settingsTopbar")
+        topbar.setStyleSheet(f"#settingsTopbar {{ background:{_PANEL_BG}; border-bottom:1px solid {_PANEL_BORDER}; }}")
         topbar_layout = QHBoxLayout(topbar)
         topbar_layout.setContentsMargins(18, 12, 18, 12)
 
         title = QLabel(_TITLE)
         f = QFont(); f.setPointSize(16); f.setBold(True)
         title.setFont(f)
-        title.setStyleSheet(f"color: {_INK};")
+        title.setStyleSheet(f"color: {_INK}; background:transparent; border:0;")
 
         self._save_btn = _section_btn(_BTN_SAVE, COLOR_ACCENT, icon=_BTN_SAVE_ICON)
         self._save_btn.clicked.connect(self._on_save)
@@ -200,10 +221,11 @@ class SettingsScreen(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet("background:transparent;")
+        scroll.setStyleSheet("QScrollArea { background:transparent; }")
 
         content = QWidget()
-        content.setStyleSheet("background:transparent;")
+        content.setObjectName("settingsContent")
+        content.setStyleSheet("#settingsContent { background:transparent; }")
         self._form_layout = QVBoxLayout(content)
         self._form_layout.setContentsMargins(18, 16, 18, 22)
         self._form_layout.setSpacing(12)
@@ -217,6 +239,8 @@ class SettingsScreen(QWidget):
         self._build_levels_section()
         self._build_logo_section()
         self._build_export_format_section()
+        self._report_preferences = ReportPreferencesWidget()
+        self._form_layout.addWidget(self._report_preferences)
         self._build_holidays_section()
         self._build_backup_section()
         self._form_layout.addStretch()
@@ -240,7 +264,7 @@ class SettingsScreen(QWidget):
         form.addRow("الجماعة",                   self._city)
         form.addRow("Nom de la ville",           self._city_fr)
         form.addRow("السنة الدراسية *",          self._school_year)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_staff_section(self) -> None:
         grp, form = _group(_GRP_STAFF)
@@ -248,7 +272,7 @@ class SettingsScreen(QWidget):
         self._gestionnaire = _field(placeholder="مسير المصالح المادية والمالية")
         form.addRow("اسم مدير المؤسسة *",                  self._director)
         form.addRow("مسير المصالح المادية والمالية",        self._gestionnaire)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_contract_section(self) -> None:
         grp, form = _group(_GRP_CONTRACT)
@@ -258,17 +282,18 @@ class SettingsScreen(QWidget):
         form.addRow("رقم الصفقة",       self._contract_number)
         form.addRow("اسم الشركة",       self._company_name)
         form.addRow("العنوان",          self._supplier_address)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_prices_section(self) -> None:
         grp, _ = _group(_GRP_PRICES)
         price_row = QHBoxLayout()
 
-        left  = QFormLayout()
-        right = QFormLayout()
+        left  = _SettingsFormLayout()
+        right = _SettingsFormLayout()
         for f in (left, right):
             f.setSpacing(10)
             f.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+            f.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
         # Narrow: two of these sit side by side, and at the default width
         # their labels get squeezed out of existence entirely.
@@ -291,7 +316,7 @@ class SettingsScreen(QWidget):
         price_row.addLayout(right)
         grp.layout().addRow(price_row)  # type: ignore[union-attr]
 
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_ramadan_section(self) -> None:
         """Its own titled section — buried among the prices, these two dates
@@ -306,11 +331,10 @@ class SettingsScreen(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_CAPTION}px;")
         form.addRow(hint)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_levels_section(self) -> None:
         grp = QGroupBox(_GRP_LEVELS)
-        grp.setMinimumWidth(760)
         grp.setMaximumWidth(1120)
         grp.setStyleSheet(f"""
             QGroupBox {{
@@ -342,6 +366,7 @@ class SettingsScreen(QWidget):
         note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px; font-weight:400;")
         layout.addWidget(note)
 
+
         catalog = load_level_catalog()
         cycles = _unique([option.cycle_label for option in catalog])
         education_types = _unique([option.education_type for option in catalog])
@@ -349,7 +374,7 @@ class SettingsScreen(QWidget):
         self._cycle_checks: dict[str, QCheckBox] = {}
         self._type_checks: dict[str, QCheckBox] = {}
 
-        columns = QHBoxLayout()
+        columns = QVBoxLayout()
         cycle_box = QGroupBox("السلك")
         type_box = QGroupBox("نوع التعليم")
         for box in (cycle_box, type_box):
@@ -383,11 +408,10 @@ class SettingsScreen(QWidget):
         self._levels_apply_btn.clicked.connect(self._on_save_level_preferences)
         layout.addWidget(self._levels_apply_btn, alignment=Qt.AlignmentFlag.AlignRight)
 
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_logo_section(self) -> None:
         grp = QGroupBox(_GRP_LOGO)
-        grp.setMinimumWidth(760)
         grp.setMaximumWidth(1120)
         grp.setStyleSheet(f"""
             QGroupBox {{
@@ -405,7 +429,7 @@ class SettingsScreen(QWidget):
         layout.setSpacing(20)
 
         self._logo_preview = QLabel()
-        self._logo_preview.setFixedSize(96, 96)
+        self._logo_preview.setFixedSize(240, 80)
         self._logo_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._logo_preview.setStyleSheet(
             f"background:#fafaf6; border:2px dashed {_PANEL_BORDER}; border-radius:14px; color:{COLOR_TEXT_SECONDARY};"
@@ -414,7 +438,7 @@ class SettingsScreen(QWidget):
         self._refresh_logo_preview()
 
         right_col = QVBoxLayout()
-        note = QLabel("يستخدم الشعار في رأس المستندات الرسمية المصدّرة.")
+        note = QLabel("صورة تشمل الشعار واسم الوزارة. PNG أو JPG بدقة \u20661800 × 414\u2069 بكسل أو أعلى.")
         note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         note.setWordWrap(True)
 
@@ -423,15 +447,20 @@ class SettingsScreen(QWidget):
 
         right_col.addWidget(note)
         right_col.addWidget(logo_btn)
+        previous = _section_btn("تعديل الصورة الحالية أو السابقة", _INK)
+        previous.clicked.connect(self._on_edit_current_header)
+        right_col.addWidget(previous)
+        restore = _section_btn("استعادة ترويسة النموذج", _INK)
+        restore.clicked.connect(self._on_reset_header)
+        right_col.addWidget(restore)
         right_col.addStretch()
 
         layout.addWidget(self._logo_preview)
         layout.addLayout(right_col)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_export_format_section(self) -> None:
         grp = QGroupBox(_GRP_EXPORT)
-        grp.setMinimumWidth(760)
         grp.setMaximumWidth(1120)
         grp.setStyleSheet(f"""
             QGroupBox {{
@@ -475,11 +504,10 @@ class SettingsScreen(QWidget):
             lambda _index: save_pdf_print_layout(self._pdf_layout_combo.currentData())
         )
         layout.addWidget(self._pdf_layout_combo)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_backup_section(self) -> None:
         grp = QGroupBox(_GRP_BACKUP)
-        grp.setMinimumWidth(760)
         grp.setMaximumWidth(1120)
         grp.setStyleSheet(f"""
             QGroupBox {{
@@ -506,11 +534,10 @@ class SettingsScreen(QWidget):
 
         layout.addWidget(note)
         layout.addWidget(backup_btn, alignment=Qt.AlignmentFlag.AlignRight)
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
 
     def _build_holidays_section(self) -> None:
         grp = QGroupBox(_GRP_HOLIDAYS)
-        grp.setMinimumWidth(760)
         grp.setMaximumWidth(1120)
         grp.setStyleSheet(f"""
             QGroupBox {{
@@ -531,6 +558,14 @@ class SettingsScreen(QWidget):
         note.setStyleSheet(f"color:{COLOR_TEXT_SECONDARY}; font-size:{FONT_LABEL}px;")
         note.setWordWrap(True)
         layout.addWidget(note)
+
+        calendar_button = _section_btn("مراجعة لائحة العطل 2026/2027", COLOR_ACCENT)
+        calendar_button.clicked.connect(self._open_holiday_calendar)
+        layout.addWidget(calendar_button)
+        self._calendar_notice = QLabel()
+        self._calendar_notice.setWordWrap(True)
+        layout.addWidget(self._calendar_notice)
+        self._refresh_calendar_notice()
 
         def _date_field() -> DateInput:
             d = DateInput()
@@ -563,9 +598,12 @@ class SettingsScreen(QWidget):
         add_row.addWidget(self._holiday_date_from)
         add_row.addWidget(QLabel(_LBL_TO))
         add_row.addWidget(self._holiday_date_to)
-        add_row.addWidget(self._holiday_label, 1)
-        add_row.addWidget(add_btn)
+        add_row.addStretch()
         layout.addLayout(add_row)
+        reason_row = QHBoxLayout()
+        reason_row.addWidget(self._holiday_label, 1)
+        reason_row.addWidget(add_btn)
+        layout.addLayout(reason_row)
 
         self._holidays_table = QTableWidget(0, len(_HOLIDAYS_HEADERS))
         self._holidays_table.setHorizontalHeaderLabels(_HOLIDAYS_HEADERS)
@@ -599,7 +637,7 @@ class SettingsScreen(QWidget):
         )
         layout.addWidget(self._holidays_empty_lbl)
 
-        self._form_layout.addWidget(grp, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self._form_layout.addWidget(grp)
         self._refresh_holidays_table()
 
     # ── Load / Save ────────────────────────────────────────────────────────
@@ -731,7 +769,9 @@ class SettingsScreen(QWidget):
         )
         try:
             save_school_settings(settings)
+            self._refresh_calendar_notice()
             save_level_preferences(*level_prefs)
+            save_report_preferences(self._report_preferences.preferences())
             QMessageBox.information(self, "تم", _MSG_SAVED)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")
@@ -739,9 +779,14 @@ class SettingsScreen(QWidget):
     # ── Logo ───────────────────────────────────────────────────────────────
 
     def _refresh_logo_preview(self) -> None:
-        if LOGO_PATH.exists():
-            pix = QPixmap(str(LOGO_PATH)).scaled(
-                90, 90,
+        try:
+            image = _template_header_image()
+        except (OSError, ValueError):
+            self._logo_preview.setText("تعذر قراءة الترويسة")
+            return
+        if not image.isNull():
+            pix = QPixmap.fromImage(image).scaled(
+                230, 74,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -749,21 +794,46 @@ class SettingsScreen(QWidget):
             self._logo_preview.setText("")
         else:
             self._logo_preview.clear()
-            self._logo_preview.setText("لا يوجد\nشعار")
+            self._logo_preview.setText("لا توجد ترويسة")
 
     def _on_choose_logo(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(
-            self, "اختر صورة الشعار", "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.svg)"
+            self, "اختر صورة الترويسة الكاملة", "",
+            "Images (*.png *.jpg *.jpeg *.bmp)"
         )
         if not path_str:
             return
+        self._edit_header(Path(path_str))
+
+    def _edit_header(self, path: Path) -> None:
         try:
-            shutil.copy2(path_str, str(LOGO_PATH))
+            image = branding.load_header_source(path)
+            dialog = HeaderEditorDialog(image, self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._refresh_logo_preview()
+                QMessageBox.information(self, "تم", _MSG_LOGO_OK)
+        except (OSError, ValueError):
+            QMessageBox.warning(self, "خطأ", "تعذر فتح الصورة. اختر صورة PNG أو JPG صالحة لا تتجاوز 40 مليون بكسل.")
+
+    def _on_edit_current_header(self) -> None:
+        if branding.DOCUMENT_HEADER_PATH.exists():
+            self._edit_header(branding.DOCUMENT_HEADER_PATH)
+        elif LOGO_PATH.exists():
+            self._edit_header(LOGO_PATH)
+        else:
+            dialog = HeaderEditorDialog(_template_header_image(), self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._refresh_logo_preview()
+
+    def _on_reset_header(self) -> None:
+        answer = QMessageBox.question(self, "استعادة الترويسة", "العودة إلى الترويسات الأصلية في النماذج؟")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            branding.reset_header()
             self._refresh_logo_preview()
-            QMessageBox.information(self, "تم", _MSG_LOGO_OK)
-        except Exception as exc:
-            QMessageBox.critical(self, "خطأ", f"تعذر نسخ الصورة:\n{exc}")
+        except OSError:
+            QMessageBox.warning(self, "خطأ", "تعذر استعادة الترويسة. حاول مرة أخرى.")
 
     # ── Backup ─────────────────────────────────────────────────────────────
 
@@ -785,6 +855,17 @@ class SettingsScreen(QWidget):
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")
 
     # ── Holidays ───────────────────────────────────────────────────────────
+
+    def _refresh_calendar_notice(self) -> None:
+        from data.holiday_calendar_repo import calendar_notice
+        self._calendar_notice.setText(calendar_notice())
+        self._calendar_notice.setVisible(bool(self._calendar_notice.text()))
+
+    def _open_holiday_calendar(self) -> None:
+        from ui.holiday_calendar_dialog import HolidayCalendarDialog
+        if HolidayCalendarDialog(self).exec() == QDialog.DialogCode.Accepted:
+            self._refresh_holidays_table()
+            self._refresh_calendar_notice()
 
     def _refresh_holidays_table(self) -> None:
         holidays = get_all_holidays()

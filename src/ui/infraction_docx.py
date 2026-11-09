@@ -18,6 +18,7 @@ import sys
 from typing import List, Optional
 from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
+from ui.document_branding import replace_header_image
 
 from core.models import InfractionRecord, SchoolSettings
 
@@ -95,9 +96,10 @@ def _crest_bytes() -> Optional[bytes]:
         if candidate.exists():
             try:
                 with ZipFile(candidate) as archive:
-                    return archive.read(_CREST_MEMBER)
+                    original = archive.read(_CREST_MEMBER)
             except Exception:
                 return None
+            return replace_header_image(original, "jpeg")
     return None
 
 

@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from zipfile import ZIP_DEFLATED, ZipFile
+from ui.document_branding import docx_header_part, docx_template_header
 
 from PySide6.QtCore import QDate, QMarginsF, QRectF, Qt
 from PySide6.QtGui import (
@@ -46,6 +47,7 @@ from ui.daily_contact_screen import (
     _WORD_NS, _W_NS,
 )
 from ui.document_header import (
+    serialize_docx_xml,
     ask_export_format, draw_official_pdf_footer, draw_official_pdf_header,
     register_docx_namespaces,
 )
@@ -772,6 +774,7 @@ def _write_order_letter_docx(
     display_date = letter_date.replace("-", "/")
 
     with ZipFile(template_path, "r") as source, ZipFile(path, "w", ZIP_DEFLATED) as target:
+        header_image = docx_template_header(source)
         for item in source.infolist():
             data = source.read(item.filename)
             if item.filename == "word/document.xml":
@@ -786,8 +789,8 @@ def _write_order_letter_docx(
                     items=items,
                     meals=_meals_for_document(letter_date),
                 )
-                data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-            target.writestr(item, data)
+                data = serialize_docx_xml(root, data)
+            target.writestr(item, docx_header_part(item.filename, data, header_image))
 
 
 # ── Main screen ───────────────────────────────────────────────────────────────

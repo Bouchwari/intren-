@@ -129,13 +129,9 @@ def build_stylesheet() -> str:
             border-radius: 0 6px 6px 0;
         }}
         QComboBox::down-arrow, QDateEdit::down-arrow {{
-            image: none;
-            width: 0;
-            height: 0;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 6px solid {COLOR_ACCENT};
-            margin-top: 2px;
+            image: url(:/qt-project.org/styles/commonstyle/images/arrow-down-16.png);
+            width: 12px;
+            height: 12px;
         }}
 
         QAbstractItemView, QListView, QComboBox QAbstractItemView {{

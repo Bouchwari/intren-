@@ -154,7 +154,7 @@ class DailyReportScreenTests(unittest.TestCase):
             hygiene_good,
         }
         for field, combo in screen._hygiene_combos.items():
-            if field in drs._VARIABLE_HYGIENE_FIELDS:
+            if field in {"hygiene_dining_hall", "hygiene_dorms"}:
                 self.assertIn(combo.currentData(), allowed_variable)
             else:
                 self.assertEqual(combo.currentData(), hygiene_good)
@@ -168,17 +168,15 @@ class DailyReportScreenTests(unittest.TestCase):
     def test_only_allowed_cleanliness_rows_receive_random_suggestions(self) -> None:
         """The two variable rows can use حسنة and لا بأس بها; no other row can."""
         report = DailyReport(date="2026-06-11")
-        with patch.object(drs, "suggest_rating_index", side_effect=[4, 3]) as suggest:
-            filled = drs._fill_unrated_items(report)
-
-        self.assertEqual(filled.hygiene_dining_hall, 4)  # حسنة
-        self.assertEqual(filled.hygiene_dorms, 3)  # لا بأس بها
-        self.assertEqual(suggest.call_count, 2)
+        filled = drs._fill_unrated_items(report)
+        self.assertEqual(filled, drs._fill_unrated_items(report))
+        self.assertIn(filled.hygiene_dining_hall, (3, 4, 5))
+        self.assertIn(filled.hygiene_dorms, (3, 4, 5))
         for field, _ in drs._HYGIENE_ITEMS:
-            if field not in drs._VARIABLE_HYGIENE_FIELDS:
-                self.assertEqual(getattr(filled, field), drs._HYGIENE_GOOD)
+            if field not in {"hygiene_dining_hall", "hygiene_dorms"}:
+                self.assertEqual(getattr(filled, field), 5)
         for field, _ in drs._QUALITY_ITEMS + drs._BUILDING_ITEMS:
-            self.assertEqual(getattr(filled, field), drs._THREE_SCALE_GOOD)
+            self.assertEqual(getattr(filled, field), 2)
 
     def test_fresh_report_notes_stay_empty(self) -> None:
         """Notes are free text from the مسير — never auto-filled."""
@@ -262,11 +260,8 @@ class DailyReportScreenTests(unittest.TestCase):
         self.assertFalse(screen._contact_table.isHidden())
         screen.close()
 
-    def test_report_saved_with_blank_checklist_still_gets_suggestions(self) -> None:
-        """A report saved before this feature existed (or saved only for
-        its notes) has every checklist item at -1 — regenerating it must
-        still suggest real ratings, not treat "a row exists" as "already
-        answered". This is the exact case that shipped broken."""
+    def test_saved_blank_checklist_is_not_changed_by_new_preferences(self) -> None:
+        """A saved blank can now be intentional manual entry; keep it blank."""
         database.save_daily_report(DailyReport(date="2026-06-11", notes="سبق حفظه"))
 
         screen = drs.DailyReportScreen()
@@ -274,7 +269,7 @@ class DailyReportScreenTests(unittest.TestCase):
         screen._generate()
 
         for field, combo in screen._hygiene_combos.items():
-            self.assertNotEqual(combo.currentData(), -1, f"{field} was left at not-rated")
+            self.assertEqual(combo.currentData(), -1, f"{field} was changed")
         self.assertEqual(screen._notes_edit.toPlainText(), "سبق حفظه")  # notes untouched
         screen.close()
 

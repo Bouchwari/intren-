@@ -55,6 +55,9 @@ class WorkPipelineScreenTests(unittest.TestCase):
         copies = patch.object(wps, "choose_company_copies", return_value=2)
         self.choose_copies = copies.start()
         self.addCleanup(copies.stop)
+        review = patch.object(wps, "review_report_range", return_value={})
+        self.review_reports = review.start()
+        self.addCleanup(review.stop)
 
     def tearDown(self) -> None:
         QMessageBox.information = self._original_info
@@ -162,6 +165,34 @@ class WorkPipelineScreenTests(unittest.TestCase):
         for day in ("2026-06-11", "2026-06-12"):
             self.assertEqual(database.get_day_contacts(day), [])
             self.assertEqual(database.get_day_absences(day), [])
+        screen.close()
+
+    def test_report_review_cancellation_does_not_generate_or_save(self) -> None:
+        day = QDate(2026, 6, 11)
+        dialog = _FakeGenerateDialog(day, day, [DOC_REPORT, DOC_CONTACT], True)
+        self.review_reports.return_value = None
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        with patch.object(wps, "_GenerateEverythingDialog", dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name), \
+             patch.object(screen, "_auto_fill_range") as fill, \
+             patch.object(wps, "write_combined_pdf") as write:
+            screen._on_generate_everything()
+        fill.assert_not_called()
+        write.assert_not_called()
+        self.assertIsNone(database.get_daily_report("2026-06-11"))
+        screen.close()
+
+    def test_reviewed_report_is_used_by_batch_export(self) -> None:
+        day = QDate(2026, 6, 11)
+        database.save_daily_contact(DailyContact(date="2026-06-11", meal_type="ghada", collegial_granted=37))
+        dialog = _FakeGenerateDialog(day, day, [DOC_REPORT], False)
+        self.review_reports.return_value = {"2026-06-11": {"notes": "Reviewed", "hygiene_staff": 1}}
+        screen = wps.WorkPipelineScreen(navigate_to=lambda i: None)
+        with patch.object(wps, "_GenerateEverythingDialog", dialog), \
+             patch.object(QFileDialog, "getExistingDirectory", return_value=self._out_tmpdir.name):
+            screen._on_generate_everything()
+        report = database.get_daily_report("2026-06-11")
+        self.assertEqual((report.notes, report.hygiene_staff, report.ghada_expected), ("Reviewed", 1, 37))
         screen.close()
 
     def test_company_copies_are_asked_only_for_signable_documents(self) -> None:
