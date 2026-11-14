@@ -115,7 +115,7 @@ def sum_daily_reception_for_month(month: str) -> dict:
             SELECT SUM(ftour_qty) AS ftour, SUM(ghada_qty) AS ghada, SUM(asha_qty) AS asha,
                    SUM(ftour_ramadan_qty) AS iftar, SUM(shour_qty) AS shour
             FROM daily_reception_records
-            WHERE date LIKE ?
+            WHERE date LIKE ? AND date NOT IN (SELECT date FROM holidays)
         """, (f"{month}-%",)).fetchone()
     return {
         "ftour": row["ftour"] or 0,
@@ -249,7 +249,7 @@ def get_daily_meals_by_lot_for_month(month: str) -> List[dict]:
             rows = conn.execute(f"""
                 SELECT date, meal_type, {column_list}
                 FROM {table}
-                WHERE date LIKE ?
+                WHERE date LIKE ? AND date NOT IN (SELECT date FROM holidays)
             """, (f"{month}-%",)).fetchall()
         return {
             (r["date"], r["meal_type"]): {col: r[col] or 0 for col in all_columns}

@@ -340,6 +340,12 @@ def _write_monthly_summary_pdf(
     path: Path, settings, month_label: str,
     summaries: List[MonthlyMealSummary], notes: str,
 ) -> None:
+    from data.settings_repo import get_pdf_print_layout
+    from ui.pdf_layout import write_copy_pdf
+    if get_pdf_print_layout() == 'three_copies':
+        write_copy_pdf(path, lambda p, w, h: _draw_monthly_summary_pdf_page(
+            p, w, h, settings, month_label, summaries, notes), title=_TITLE)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -601,6 +607,11 @@ class MonthlyReportScreen(QWidget):
         )
         export_btn.clicked.connect(self._on_export)
         row.addWidget(export_btn)
+
+        roster = IconButton('وجبات التلاميذ', bg=COLOR_ACCENT, text_color='white',
+                            min_height=38, padding_h=14)
+        roster.clicked.connect(self._export_student_meals)
+        row.addWidget(roster)
 
         return row
 
@@ -905,6 +916,37 @@ class MonthlyReportScreen(QWidget):
             QMessageBox.information(self, "تم", _SAVED_OK)
         except Exception as exc:
             QMessageBox.critical(self, "خطأ", f"تعذر الحفظ:\n{exc}")
+
+    def _export_student_meals(self) -> None:
+        from PySide6.QtWidgets import QDialog
+        from data.database import get_all_students
+        from data.student_meals_repo import period_student_meals
+        from ui.student_meals_dialog import StudentMealsDialog
+        from ui.expense_roster_export import write_expense_roster_excel
+
+        students = get_all_students()
+        if not students:
+            QMessageBox.warning(self, 'تنبيه', 'أضف لائحة التلاميذ أولا.')
+            return
+        month = self._selected_month_str()
+        months = [tuple(map(int, month.split('-')))]
+        if StudentMealsDialog(months, students, self).exec() != QDialog.DialogCode.Accepted:
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self, 'وجبات التلاميذ', str(Path.home() / f'وجبات_التلاميذ_{month}.xlsx'),
+            'Excel Files (*.xlsx)')
+        if not filename:
+            return
+        try:
+            counts = period_student_meals(months, students)
+            has_ramadan = any(v.get(MEAL_IFTAR, 0) or v.get(MEAL_SHOUR, 0) for v in counts.values())
+            path = Path(filename).with_suffix('.xlsx')
+            write_expense_roster_excel(path, get_school_settings(), students, months,
+                                      has_ramadan, meal_counts=counts)
+            QMessageBox.information(self, 'تم', f'تم حفظ الملف\n{path}')
+        except Exception:
+            logging.getLogger(__name__).exception('Cannot export student meals')
+            QMessageBox.warning(self, 'خطأ', 'تعذر تصدير وجبات التلاميذ.')
 
     def _on_export(self) -> None:
         if not self._summaries:

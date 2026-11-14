@@ -73,8 +73,8 @@ _BTN_ROSTER_ICON = "👥"
 _ROSTER_SAVED = "تم تصدير بيانات المصاريف بنجاح إلى:\n"
 _ROSTER_NO_STUDENTS = ("لا توجد لائحة تلاميذ.\n"
                        "استورد لائحة التلاميذ أولاً من صفحة «لائحة التلاميذ».")
-_ROSTER_HINT = ("بيانات المصاريف تُملأ بأسماء التلاميذ الحقيقية؛ "
-                "خانات عدد الوجبات تُترك فارغة لتملأها بخط اليد.")
+_ROSTER_HINT = ("بيانات المصاريف تعرض توزيع الوجبات المسجلة على التلاميذ، "
+                "مع مراجعة الأعداد ومقارنتها بمجموع المحضر قبل التصدير.")
 _BTN_EXCEL_ICON = "📊"
 _LBL_YEAR   = "السنة:"
 _LBL_FIRST_MONTH = "الشهر الأول من الفصل:"
@@ -436,6 +436,11 @@ class QuarterlyReceptionScreen(QWidget):
             return
 
         months = self._selected_quarter()
+        from PySide6.QtWidgets import QDialog
+        from ui.student_meals_dialog import StudentMealsDialog
+        from data.student_meals_repo import period_student_meals
+        if StudentMealsDialog(months, students, self).exec() != QDialog.DialogCode.Accepted:
+            return
         default_name = f"بيانات_المصاريف_{months[0][0]}-{months[0][1]:02d}.xlsx"
         path_str, _ = QFileDialog.getSaveFileName(
             self, _BTN_ROSTER, str(Path.home() / default_name), "Excel Files (*.xlsx)")
@@ -448,7 +453,8 @@ class QuarterlyReceptionScreen(QWidget):
         try:
             has_ramadan = any(m["is_ramadan"] for m in self._quarter_data)
             write_expense_roster_excel(
-                path, get_school_settings(), students, months, has_ramadan)
+                path, get_school_settings(), students, months, has_ramadan,
+                meal_counts=period_student_meals(months, students))
             QMessageBox.information(self, "تم", f"{_ROSTER_SAVED}{path}")
         except ImportError:
             _LOGGER.exception("openpyxl is unavailable — cannot export the roster")

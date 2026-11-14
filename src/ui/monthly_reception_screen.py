@@ -315,8 +315,14 @@ def _draw_monthly_reception_pdf_page(
     )
 
 
-def _write_monthly_reception_pdf(path: Path, settings, month: str, record: MonthlyReceptionRecord) -> None:
+def _write_monthly_reception_pdf(path: Path, settings, month: str, record: MonthlyReceptionRecord,
+                                 *, print_layout: str = 'standard', copies: int = 2) -> None:
     """Render a single month's reception record as its own standalone PDF."""
+    if print_layout == 'three_copies':
+        from ui.pdf_layout import write_copy_pdf
+        write_copy_pdf(path, lambda p, w, h: _draw_monthly_reception_pdf_page(
+            p, w, h, settings, month, record), title=_TITLE, copies=copies)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     writer = QPdfWriter(str(path))
     writer.setResolution(96)
@@ -836,6 +842,12 @@ class MonthlyReceptionScreen(QWidget):
         month = self._selected_month_str()
         default_name = f"{_PDF_DEFAULT_NAME}_{month}"
         is_pdf = export_format == EXPORT_FORMAT_PDF
+        from data.settings_repo import get_pdf_print_layout
+        from ui.pdf_layout import choose_company_copies
+        print_layout = get_pdf_print_layout() if is_pdf else 'standard'
+        copies = choose_company_copies(self, _TITLE, print_layout) if is_pdf else 2
+        if copies is None:
+            return
         path_str, _ = QFileDialog.getSaveFileName(
             self, _PDF_DIALOG_TITLE,
             f"{default_name}.{'pdf' if is_pdf else 'docx'}",
@@ -854,7 +866,8 @@ class MonthlyReceptionScreen(QWidget):
             save_monthly_reception_record(record)
             settings = get_school_settings()
             if is_pdf:
-                _write_monthly_reception_pdf(path, settings, month, record)
+                _write_monthly_reception_pdf(path, settings, month, record,
+                                             print_layout=print_layout, copies=copies)
             else:
                 _write_monthly_reception_docx(path, month, record, settings)
             QMessageBox.information(self, "تم", _SAVED_OK)

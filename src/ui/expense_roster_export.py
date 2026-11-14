@@ -23,12 +23,8 @@ widths, formulas, the embedded ministry header image), not inferred:
   * اعدادي and تأهيلي additionally carry the "معلموا الداخلية" table and a
     المجموع (1)/(2)/العام block; ابتدائي has neither, again per the template.
 
-Identity data (name, Massar, gender, grant number, level, grant type,
-بنية الاستقبال) is filled from the real student list. **The per-student meal
-counts are deliberately left EMPTY** — the app records attendance as daily
-per-cycle totals, never per pupil, so there is no honest per-student number
-to put there. On a document a government body pays against, a blank the user
-fills in is the only defensible option; see CLAUDE.md §7.
+Identity data comes from the student list. Optional reviewed monthly service-day
+counts populate the meal columns and their totals.
 """
 import logging
 import sys
@@ -210,6 +206,7 @@ def _write_cycle_sheet(
     has_monitors: bool, students: List[Student], monitors: List[Student],
     settings: Optional[SchoolSettings], months: List[tuple],
     header_row: int = _HEADER_ROW,
+    meal_counts: dict | None = None,
 ) -> None:
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
@@ -306,7 +303,7 @@ def _write_cycle_sheet(
     fitted_rows = [6, 8, 9, 10]
 
     def write_people(first_row: int, people: List[Student]) -> int:
-        """One row per real person; meal columns intentionally left blank."""
+        """One row per person with optional reviewed meal counts."""
         row = first_row
         for serial, person in enumerate(people, start=1):
             ws.row_dimensions[row].height = _ROW_HEIGHT_DATA
@@ -320,7 +317,9 @@ def _write_cycle_sheet(
             cell(row, 6, person.student_class, size=11)
             cell(row, 7, _grant_label(person), size=11)
             for offset in range(meal_count):
-                cell(row, 8 + offset, None, size=11)   # filled in by hand
+                meal = ['ftour', 'ghada', 'asha', 'shour', 'ftour_ramadan'][offset]
+                value = meal_counts.get(person.id, {}).get(meal) if meal_counts is not None else None
+                cell(row, 8 + offset, value, size=11)
             ws.merge_cells(start_row=row, start_column=structure_col,
                            end_row=row, end_column=last_col)
             for col in (structure_col, last_col):
@@ -343,6 +342,11 @@ def _write_cycle_sheet(
     next_row = write_people(header_row + 3, students)
     granted_total_row = next_row
     write_total(granted_total_row, "المجموع (1)" if has_monitors else "المجموع")
+    if meal_counts is not None:
+        for col in range(8, 8 + meal_count):
+            letter = get_column_letter(col)
+            ws.cell(granted_total_row, col, f'=SUM({letter}{header_row + 3}:{letter}{granted_total_row - 1})'
+                    if students else '=0')
     next_row = granted_total_row + 1
 
     if has_monitors:
@@ -351,10 +355,21 @@ def _write_cycle_sheet(
         next_row += 1
         write_table_header(next_row)
         next_row += 3
+        monitor_start = next_row
         next_row = write_people(next_row, monitors)
         write_total(next_row, "المجموع (2)")
+        monitor_total = next_row
+        if meal_counts is not None:
+            for col in range(8, 8 + meal_count):
+                letter = get_column_letter(col)
+                ws.cell(next_row, col, f'=SUM({letter}{monitor_start}:{letter}{next_row - 1})'
+                        if monitors else '=0')
         next_row += 1
         write_total(next_row, "المجموع العام (1)+(2)")
+        if meal_counts is not None:
+            for col in range(8, 8 + meal_count):
+                letter = get_column_letter(col)
+                ws.cell(next_row, col, f'={letter}{granted_total_row}+{letter}{monitor_total}')
         next_row += 1
 
     # ── Footer: the بنية الاستقبال note and the signature row ──────────────
@@ -404,6 +419,7 @@ def _write_cycle_sheet(
 def write_expense_roster_excel(
     path: Path, settings: Optional[SchoolSettings], students: List[Student],
     months: List[tuple], has_ramadan: bool = False,
+    meal_counts: dict | None = None,
 ) -> None:
     """Write بيانات المصاريف for the given quarter — one sheet per cycle.
 
@@ -433,7 +449,7 @@ def write_expense_roster_excel(
         _write_cycle_sheet(
             wb, sheet_name, caption, meal_headers, has_monitors,
             grouped.get(sheet_name, []), sheet_monitors, settings, months,
-            header_row,
+            header_row, meal_counts,
         )
         ws = wb[sheet_name]
         image_boxes.append((len(wb.worksheets), columns_width_pixels(ws, 1, ws.max_column),

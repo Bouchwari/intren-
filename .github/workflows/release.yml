@@ -58,3 +58,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${{ github.ref_name }}" dist/TadbirInternat.exe installer_output/TadbirInternatSetup.exe --notes-file RELEASE_NOTES.md --title "Tadbir Internat ${{ github.ref_name }}"
+
+      - name: Revise previous release descriptions
+        if: github.ref == 'refs/tags/v1.5.6'
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json
+          import os
+          import urllib.request
+
+          base = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY']
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                     'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'}
+
+          def request(path, body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(base + path, data=data, headers=headers,
+                                           method='PATCH' if body is not None else 'GET')
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+
+          removals = {
+              'v1.5.3': ('- تفضيلات التقرير اليومي:',),
+              'v1.3.1': ('- جعل التقييم', '- السماح فقط لبندي', '- إبقاء **جيدة**'),
+              'v1.1.0': ('- تحسين التوليد الشهري للغياب', '- الحفاظ على التقدير'),
+          }
+          for tag, prefixes in removals.items():
+              release = request('/releases/tags/' + tag)
+              original = release.get('body') or ''
+              revised = '\n'.join(line for line in original.splitlines()
+                                  if not line.startswith(prefixes))
+              if revised != original.replace('\r\n', '\n').rstrip('\n'):
+                  path = '/releases/' + str(release['id'])
+                  request(path, {'body': revised})
+                  if request(path)['body'] != revised:
+                      raise RuntimeError('Release description verification failed for ' + tag)
+                  print('Updated description for ' + tag)
